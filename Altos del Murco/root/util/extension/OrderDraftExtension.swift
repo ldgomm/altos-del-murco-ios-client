@@ -14,7 +14,8 @@ extension OrderDraft {
                 menuItemId: $0.menuItem.id,
                 name: $0.menuItem.name,
                 unitPrice: $0.unitPrice,
-                quantity: $0.quantity
+                quantity: $0.quantity,
+                notes: $0.notes
             )
         }
         

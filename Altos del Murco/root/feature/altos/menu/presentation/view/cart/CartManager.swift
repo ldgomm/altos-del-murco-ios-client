@@ -47,6 +47,7 @@ final class CartManager: ObservableObject {
         if let index = draft.items.firstIndex(where: { $0.menuItem.id == item.id && $0.notes == finalNotes }) {
             draft.items[index].quantity += quantity
         } else {
+            print("CartManager: \(finalNotes ?? "empty")")
             draft.items.append(CartItem(menuItem: item, quantity: quantity, notes: finalNotes))
         }
     }

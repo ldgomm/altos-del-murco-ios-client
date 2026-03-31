@@ -20,4 +20,16 @@ struct CartItem: Identifiable, Hashable {
     var totalPrice: Double {
         Double(quantity) * unitPrice
     }
+    
+    init(menuItem: MenuItem, quantity: Int, notes: String? = nil) {
+        self.menuItem = menuItem
+        self.quantity = quantity
+        self.notes = notes
+        
+        printDebugging()
+    }
+    
+    func printDebugging() {
+        print("CartItem: \(String(describing: notes))")
+    }
 }

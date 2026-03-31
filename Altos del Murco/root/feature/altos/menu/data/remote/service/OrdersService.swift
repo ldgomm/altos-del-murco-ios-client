@@ -15,6 +15,7 @@ final class FirebaseOrdersService: OrdersServiceable {
         let dto = OrderDto(from: order)
         let data = try Firestore.Encoder().encode(dto)
         
+        print("OrdersService, notes: \(order.items.map { $0.notes ?? "" })")
         try await db
             .collection(FirestoreConstants.restaurant_orders)
             .document(order.id)
@@ -55,3 +56,4 @@ final class FirebaseOrdersService: OrdersServiceable {
         }
     }
 }
+

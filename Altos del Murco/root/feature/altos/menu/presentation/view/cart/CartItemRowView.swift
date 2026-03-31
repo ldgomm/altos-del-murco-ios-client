@@ -32,7 +32,13 @@ struct CartItemRowView: View {
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                         .lineLimit(2)
-                    
+
+                    if let notes = cartItem.notes, !notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        Text(notes)
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+
                     HStack(spacing: 8) {
                         if cartItem.menuItem.hasOffer {
                             Text(cartItem.menuItem.price.priceText)

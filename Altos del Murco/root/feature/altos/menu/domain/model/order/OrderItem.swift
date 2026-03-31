@@ -34,6 +34,8 @@ struct OrderItem: Identifiable, Hashable, Codable {
         self.preparedQuantity = min(max(preparedQuantity, 0), quantity)
         self.totalPrice = Double(quantity) * unitPrice
         self.notes = notes
+        
+        printDebugging()
     }
 
     var remainingQuantity: Int {
@@ -55,7 +57,12 @@ struct OrderItem: Identifiable, Hashable, Codable {
             name: name,
             unitPrice: unitPrice,
             quantity: quantity,
-            preparedQuantity: min(max(newValue, 0), quantity)
+            preparedQuantity: min(max(newValue, 0), quantity),
+            notes: notes
         )
+    }
+    
+    func printDebugging() {
+        print("OrderItem: \(String(describing: notes))")
     }
 }
