@@ -33,7 +33,7 @@ struct BookingsView: View {
                     } label: {
                         bookingCard(
                             title: "Adventure Reservations",
-                            subtitle: "Manage off-road, paintball, go kart, and shooting reservations.",
+                            subtitle: "See combos, single activities, camping, and night fun reservations.",
                             systemImage: "calendar.badge.clock"
                         )
                     }

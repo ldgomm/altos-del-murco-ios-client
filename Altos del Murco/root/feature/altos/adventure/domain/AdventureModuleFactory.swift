@@ -14,11 +14,11 @@ final class AdventureModuleFactory {
         self.service = service
     }
     
-    func makeReservationViewModel(
-        initialPackage: AdventurePackageType = .singleOffRoad
-    ) -> AdventureReservationViewModel {
-        AdventureReservationViewModel(
-            initialPackage: initialPackage,
+    func makeBuilderViewModel(
+        prefilledItems: [AdventureReservationItemDraft] = []
+    ) -> AdventureComboBuilderViewModel {
+        AdventureComboBuilderViewModel(
+            prefilledItems: prefilledItems,
             getAvailabilityUseCase: GetAdventureAvailabilityUseCase(service: service),
             createBookingUseCase: CreateAdventureBookingUseCase(service: service)
         )

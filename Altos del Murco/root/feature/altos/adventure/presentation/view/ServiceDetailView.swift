@@ -99,38 +99,20 @@ struct ServiceDetailView: View {
     }
     
     private var actionSection: some View {
-        VStack(spacing: 12) {
-            NavigationLink {
-                AdventureReservationView(
-                    viewModel: adventureModuleFactory.makeReservationViewModel(
-                        initialPackage: service.defaultPackage
-                    )
+        NavigationLink {
+            AdventureComboBuilderView(
+                viewModel: adventureModuleFactory.makeBuilderViewModel(
+                    prefilledItems: [service.defaultDraft]
                 )
-            } label: {
-                Text("Book Now")
-                    .font(.headline)
-                    .frame(maxWidth: .infinity)
-                    .padding()
-                    .background(Color.primary)
-                    .foregroundStyle(Color(.systemBackground))
-                    .clipShape(RoundedRectangle(cornerRadius: 16))
-            }
-            
-            NavigationLink {
-                AdventureReservationView(
-                    viewModel: adventureModuleFactory.makeReservationViewModel(
-                        initialPackage: .fullAdventure
-                    )
-                )
-            } label: {
-                Text("Book Complete Adventure")
-                    .font(.headline)
-                    .frame(maxWidth: .infinity)
-                    .padding()
-                    .background(Color(.systemGray6))
-                    .foregroundStyle(.primary)
-                    .clipShape(RoundedRectangle(cornerRadius: 16))
-            }
+            )
+        } label: {
+            Text("Book Now")
+                .font(.headline)
+                .frame(maxWidth: .infinity)
+                .padding()
+                .background(Color.primary)
+                .foregroundStyle(Color(.systemBackground))
+                .clipShape(RoundedRectangle(cornerRadius: 16))
         }
     }
 }

@@ -32,10 +32,10 @@ struct MainTabView: View {
             .tag(MainTab.restaurant)
             ExperiencesView(adventureModuleFactory: adventureModuleFactory)
                 .tabItem {
-                    Label("Experiences", systemImage: "figure.off.and.run")
+                    Label("Experiences", systemImage: "figure")
                 }
                 .tag(MainTab.experiences)
-            
+
             BookingsView(
                 ordersViewModel: ordersViewModel,
                 adventureModuleFactory: adventureModuleFactory
@@ -43,6 +43,7 @@ struct MainTabView: View {
             .tabItem {
                 Label("Bookings", systemImage: "calendar")
             }
+            .tag(MainTab.bookings)
             
             ProfileView()
                 .tabItem {

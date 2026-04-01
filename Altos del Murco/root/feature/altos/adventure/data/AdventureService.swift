@@ -40,17 +40,8 @@ struct AdventureService: Identifiable, Hashable {
         self.includes = includes
     }
     
-    var defaultPackage: AdventurePackageType {
-        switch activityType {
-        case .offRoad:
-            return .singleOffRoad
-        case .paintball:
-            return .singlePaintball
-        case .goKarts:
-            return .singleGoKarts
-        case .shootingRange:
-            return .singleShooting
-        }
+    var defaultDraft: AdventureReservationItemDraft {
+        AdventureActivityType.defaultDraft(for: activityType)
     }
 }
 
@@ -60,9 +51,9 @@ extension AdventureService {
             activityType: .offRoad,
             title: "Off-Road",
             systemImage: "car.fill",
-            shortDescription: "Explore mountain routes with adrenaline and nature.",
-            fullDescription: "Enjoy an off-road experience through outdoor routes near Altos del Murco.",
-            priceText: "$20 / hour / person",
+            shortDescription: "Book 1, 2, or 3 hours by vehicle.",
+            fullDescription: "One off-road vehicle supports 1 or 2 riders. Pricing is per vehicle per hour.",
+            priceText: "$20 / hour / vehicle",
             durationText: "1 - 3 hours",
             includes: ["Vehicle", "Guide", "Safety briefing"]
         ),
@@ -70,31 +61,51 @@ extension AdventureService {
             activityType: .paintball,
             title: "Paintball",
             systemImage: "shield.lefthalf.filled",
-            shortDescription: "Action-packed matches for friends and teams.",
-            fullDescription: "Challenge your friends in exciting paintball games with outdoor fun.",
-            priceText: "$5 / person",
-            durationText: "30 min",
+            shortDescription: "Flexible sessions for groups.",
+            fullDescription: "Reserve paintball by 30-minute blocks for as many people as you want.",
+            priceText: "$5 / 30 min / person",
+            durationText: "30 - 120 min",
             includes: ["Marker", "Mask", "Basic ammo"]
         ),
         AdventureService(
             activityType: .goKarts,
             title: "Go Karts",
             systemImage: "flag.checkered",
-            shortDescription: "Fast laps and competitive fun.",
-            fullDescription: "Feel the speed and excitement of go kart racing.",
-            priceText: "$5 / person",
-            durationText: "30 min",
+            shortDescription: "Fast laps with flexible duration.",
+            fullDescription: "Reserve go karts by 30-minute blocks for small or large groups.",
+            priceText: "$5 / 30 min / person",
+            durationText: "30 - 120 min",
             includes: ["Kart", "Helmet", "Track access"]
         ),
         AdventureService(
             activityType: .shootingRange,
             title: "Shooting Range",
             systemImage: "target",
-            shortDescription: "Precision, focus, and outdoor challenge.",
-            fullDescription: "Practice aim and concentration in a controlled session.",
-            priceText: "$5 / person",
-            durationText: "30 min",
-            includes: ["Equipment", "Safety briefing", "Supervised session"]
+            shortDescription: "Precision sessions by time and headcount.",
+            fullDescription: "Reserve the shooting range alone or inside a combo.",
+            priceText: "$5 / 30 min / person",
+            durationText: "30 - 120 min",
+            includes: ["Equipment", "Safety briefing"]
+        ),
+        AdventureService(
+            activityType: .camping,
+            title: "Camping",
+            systemImage: "tent.fill",
+            shortDescription: "Night stay with food and included off-road experience.",
+            fullDescription: "Camping is booked per person per night and works as an overnight add-on.",
+            priceText: "$30 / person / night",
+            durationText: "1+ nights",
+            includes: ["Food", "Sleeping area", "Included off-road experience"]
+        ),
+        AdventureService(
+            activityType: .extremeSlide,
+            title: "Extreme Slide",
+            systemImage: "figure.fall",
+            shortDescription: "Slide experience with included off-road transportation.",
+            fullDescription: "A fixed session that reserves transport and the slide itself.",
+            priceText: "$15 / person",
+            durationText: "30 min + transport",
+            includes: ["Slide session", "Included off-road transportation"]
         )
     ]
 }

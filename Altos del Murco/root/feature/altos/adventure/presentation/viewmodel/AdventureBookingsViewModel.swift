@@ -15,13 +15,6 @@ struct AdventureBookingsState {
     var errorMessage: String?
 }
 
-enum AdventureBookingsEvent {
-    case onAppear
-    case onDisappear
-    case selectedDateChanged(Date)
-    case cancelBooking(String)
-}
-
 @MainActor
 final class AdventureBookingsViewModel: ObservableObject {
     @Published private(set) var state = AdventureBookingsState()
@@ -38,21 +31,27 @@ final class AdventureBookingsViewModel: ObservableObject {
         self.cancelBookingUseCase = cancelBookingUseCase
     }
     
-    func onEvent(_ event: AdventureBookingsEvent) {
-        switch event {
-        case .onAppear:
-            startListening()
-            
-        case .onDisappear:
-            listenerToken?.remove()
-            listenerToken = nil
-            
-        case let .selectedDateChanged(date):
-            state.selectedDate = date
-            startListening()
-            
-        case let .cancelBooking(id):
-            Task { await cancelBooking(id: id) }
+    func onAppear() {
+        startListening()
+    }
+    
+    func onDisappear() {
+        listenerToken?.remove()
+        listenerToken = nil
+    }
+    
+    func setDate(_ date: Date) {
+        state.selectedDate = date
+        startListening()
+    }
+    
+    func cancelBooking(_ id: String) {
+        Task {
+            do {
+                try await cancelBookingUseCase.execute(id: id)
+            } catch {
+                state.errorMessage = error.localizedDescription
+            }
         }
     }
     
@@ -67,23 +66,14 @@ final class AdventureBookingsViewModel: ObservableObject {
                 
                 switch result {
                 case let .success(bookings):
-                    self.state.bookings = bookings.sorted { $0.startAt < $1.startAt }
+                    self.state.bookings = bookings
                     self.state.isLoading = false
-                    
                 case let .failure(error):
                     self.state.bookings = []
                     self.state.errorMessage = error.localizedDescription
                     self.state.isLoading = false
                 }
             }
-        }
-    }
-    
-    private func cancelBooking(id: String) async {
-        do {
-            try await cancelBookingUseCase.execute(id: id)
-        } catch {
-            state.errorMessage = error.localizedDescription
         }
     }
 }
