@@ -15,7 +15,8 @@ struct AltosDelMurcoApp: App {
 
     @StateObject private var ordersViewModel: OrdersViewModel
     @StateObject private var checkoutViewModel: CheckoutViewModel
-
+    private let adventureModuleFactory: AdventureModuleFactory
+    
     init() {
         FirebaseApp.configure()
 
@@ -40,17 +41,22 @@ struct AltosDelMurcoApp: App {
         )
 
         _cartManager = StateObject(wrappedValue: cartManager)
+        
+        let adventureModuleFactory: AdventureModuleFactory
+        let adventureService = FirestoreAdventureBookingsService()
+        self.adventureModuleFactory = AdventureModuleFactory(service: adventureService)
+          
     }
 
     var body: some Scene {
-        WindowGroup {
-            MenuListView(
-                sections: MenuMockData.sections,
-                ordersViewModel: ordersViewModel,
-                checkoutViewModel: checkoutViewModel
-            )
-            .environmentObject(cartManager)
-            .environmentObject(router)
+            WindowGroup {
+                MainTabView(
+                    ordersViewModel: ordersViewModel,
+                    checkoutViewModel: checkoutViewModel,
+                    adventureModuleFactory: adventureModuleFactory
+                )
+                .environmentObject(cartManager)
+//                .environmentObject(router)
+            }
         }
-    }
 }
