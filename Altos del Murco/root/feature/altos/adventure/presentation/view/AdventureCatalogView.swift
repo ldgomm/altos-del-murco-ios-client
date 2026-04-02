@@ -144,8 +144,7 @@ private struct TemplateCard: View {
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
             
-            Text("From $\(AdventurePricingEngine.estimatedSubtotal(items: template.items), specifier: "%.2f")")
-                .font(.subheadline.weight(.semibold))
+            Text("From $\(AdventurePricingEngine.estimatedDiscountedSubtotal(items: template.items), default: "%.2f")")                .font(.subheadline.weight(.semibold))
                 .foregroundStyle(.primary)
         }
         .padding()
@@ -177,8 +176,8 @@ private struct SingleActivityCard: View {
                 Text(item.summaryText)
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
-                Text("From $\(AdventurePricingEngine.subtotal(for: item), specifier: "%.2f")")
-                    .font(.caption.weight(.semibold))
+                let base = AdventurePricingEngine.subtotal(for: item)
+                Text("From $\(AdventurePricingEngine.discountedSubtotal(for: base), specifier: "%.2f")")                    .font(.caption.weight(.semibold))
             }
             
             Spacer()

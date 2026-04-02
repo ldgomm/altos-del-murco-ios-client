@@ -232,12 +232,21 @@ struct AdventureComboBuilderView: View {
                     .font(.headline)
                 
                 if let slot = viewModel.state.selectedSlot {
-                    summaryRow("Subtotal", "$\(slot.subtotal.priceText)")
-                    summaryRow("Night premium", "$\(slot.nightPremium.priceText)")
-                    summaryRow("Total", "$\(slot.totalAmount.priceText)", bold: true)
+                    summaryRow("Subtotal", "$\(slot.subtotal, default: "%.2f")")
+                    summaryRow("Discount", "-$\(slot.discountAmount, default: "%.2f")")
+                    summaryRow("Night premium", "$\(slot.nightPremium, default: "%.2f")")
+                    summaryRow("Total", "$\(slot.totalAmount, default: "%.2f")", bold: true)
                 } else {
-                    summaryRow("Estimated subtotal", "$\(viewModel.estimatedSubtotal.priceText)")
-                }
+                    summaryRow("Estimated subtotal", "$\(viewModel.estimatedSubtotal, default: "%.2f")")
+                    summaryRow(
+                        "Estimated discount",
+                        "-$\(AdventurePricingEngine.discount(for: viewModel.estimatedSubtotal), default: "%.2f")"
+                    )
+                    summaryRow(
+                        "Estimated total",
+                        "$\(AdventurePricingEngine.discountedSubtotal(for: viewModel.estimatedSubtotal), default: "%.2f")",
+                        bold: true
+                    )                }
             }
             .padding(.vertical, 6)
             .listRowBackground(

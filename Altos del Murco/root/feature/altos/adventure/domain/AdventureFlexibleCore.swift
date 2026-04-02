@@ -194,6 +194,7 @@ struct AdventureBuildPlan: Hashable {
     let endAt: Date
     let blocks: [AdventureBookingBlock]
     let subtotal: Double
+    let discountAmount: Double
     let nightPremium: Double
     let totalAmount: Double
     let hasNightPremium: Bool
@@ -205,6 +206,7 @@ struct AdventureAvailabilitySlot: Identifiable, Hashable {
     let endAt: Date
     let blocks: [AdventureBookingBlock]
     let subtotal: Double
+    let discountAmount: Double
     let nightPremium: Double
     let totalAmount: Double
 }
@@ -232,6 +234,7 @@ struct AdventureBooking: Identifiable, Hashable {
     let items: [AdventureReservationItemDraft]
     let blocks: [AdventureBookingBlock]
     let subtotal: Double
+    let discountAmount: Double
     let nightPremium: Double
     let totalAmount: Double
     let status: AdventureBookingStatus
@@ -249,25 +252,25 @@ struct AdventureTemplate: Identifiable, Hashable {
 
 enum AdventureSchedule {
     static let slotMinutes = 30
-    static let daytimeStartHour = 7
-    static let daytimeEndHour = 19
+    static let daytimeStartHour = 8
+    static let daytimeEndHour = 22
     static let nightPremiumStartHour = 18
     static let offRoadPeoplePerVehicle = 2
     
     static func capacity(for resource: AdventureResourceType) -> Int {
         switch resource {
         case .offRoadVehicles:
-            return 6
+            return 600
         case .paintballPeople:
-            return 40
+            return 1000
         case .goKartPeople:
-            return 12
+            return 1000
         case .shootingPeople:
-            return 12
+            return 1000
         case .campingPeople:
-            return 30
+            return 100
         case .extremeSlidePeople:
-            return 20
+            return 100
         }
     }
 }
@@ -361,12 +364,20 @@ enum AdventurePricingEngine {
     static func estimatedSubtotal(items: [AdventureReservationItemDraft]) -> Double {
         items.reduce(0) { $0 + subtotal(for: $1) }
     }
-}
+    
+    static func discount(for subtotal: Double) -> Double {
+        let completeTenDollarSteps = Int(subtotal / 10)
+        return Double(completeTenDollarSteps) * 0.5
+    }
 
-struct AdventureInventoryKey: Hashable {
-    let dayKey: String
-    let resourceType: AdventureResourceType
-    let slotIndex: Int
+    static func discountedSubtotal(for subtotal: Double) -> Double {
+        max(0, subtotal - discount(for: subtotal))
+    }
+
+    static func estimatedDiscountedSubtotal(items: [AdventureReservationItemDraft]) -> Double {
+        let subtotal = estimatedSubtotal(items: items)
+        return discountedSubtotal(for: subtotal)
+    }
 }
 
 enum AdventurePlanner {
@@ -552,22 +563,34 @@ enum AdventurePlanner {
             }
         }
         
+        let hasMisalignedOffRoadBlock = blocks.contains {
+            $0.activity == .offRoad &&
+            AdventureDateHelper.calendar.component(.minute, from: $0.startAt) != 0
+        }
+
+        guard !hasMisalignedOffRoadBlock else { return nil }
+        
         guard let last = blocks.last else { return nil }
         
         let hasNightPremium = blocks.contains {
             $0.activity == .camping
             || AdventureDateHelper.isNightPremiumTime($0.startAt, $0.endAt)
         }
-        
-        let premium = hasNightPremium ? subtotal * AdventurePricingEngine.nightPremiumRate : 0
-        
+
+        let discountAmount = AdventurePricingEngine.discount(for: subtotal)
+        let discountedSubtotal = AdventurePricingEngine.discountedSubtotal(for: subtotal)
+        let premium = hasNightPremium
+            ? discountedSubtotal * AdventurePricingEngine.nightPremiumRate
+            : 0
+
         return AdventureBuildPlan(
             startAt: startAt,
             endAt: last.endAt,
             blocks: blocks,
             subtotal: subtotal,
+            discountAmount: discountAmount,
             nightPremium: premium,
-            totalAmount: subtotal + premium,
+            totalAmount: discountedSubtotal + premium,
             hasNightPremium: hasNightPremium
         )
     }
@@ -583,30 +606,9 @@ enum AdventurePlanner {
         }
     }
     
-    static func inventoryKeys(
-        for block: AdventureBookingBlock
-    ) -> [AdventureInventoryKey] {
-        var result: [AdventureInventoryKey] = []
-        var cursor = block.startAt
-        
-        while cursor < block.endAt {
-            result.append(
-                AdventureInventoryKey(
-                    dayKey: AdventureDateHelper.dayKey(from: cursor),
-                    resourceType: block.resourceType,
-                    slotIndex: AdventureDateHelper.slotIndex(cursor)
-                )
-            )
-            cursor = AdventureDateHelper.addMinutes(AdventureSchedule.slotMinutes, to: cursor)
-        }
-        
-        return result
-    }
-    
     static func buildAvailability(
         day: Date,
-        items: [AdventureReservationItemDraft],
-        inventory: [AdventureInventoryKey: Int]
+        items: [AdventureReservationItemDraft]
     ) -> [AdventureAvailabilitySlot] {
         guard !items.isEmpty else { return [] }
         
@@ -629,8 +631,7 @@ enum AdventurePlanner {
         
         while current <= endWindow {
             if !(isToday && current < now),
-               let plan = buildPlan(day: day, startAt: current, items: items),
-               isAvailable(plan: plan, inventory: inventory) {
+               let plan = buildPlan(day: day, startAt: current, items: items) {
                 slots.append(
                     AdventureAvailabilitySlot(
                         id: UUID().uuidString,
@@ -638,6 +639,7 @@ enum AdventurePlanner {
                         endAt: plan.endAt,
                         blocks: plan.blocks,
                         subtotal: plan.subtotal,
+                        discountAmount: plan.discountAmount,
                         nightPremium: plan.nightPremium,
                         totalAmount: plan.totalAmount
                     )
@@ -648,22 +650,6 @@ enum AdventurePlanner {
         }
         
         return slots
-    }
-    
-    static func isAvailable(
-        plan: AdventureBuildPlan,
-        inventory: [AdventureInventoryKey: Int]
-    ) -> Bool {
-        for block in plan.blocks {
-            for key in inventoryKeys(for: block) {
-                let reserved = inventory[key] ?? 0
-                let capacity = AdventureSchedule.capacity(for: key.resourceType)
-                if reserved + block.reservedUnits > capacity {
-                    return false
-                }
-            }
-        }
-        return true
     }
 }
 

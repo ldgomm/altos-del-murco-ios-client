@@ -131,6 +131,7 @@ struct AdventureBookingDTO: Codable {
     let items: [AdventureReservationItemDraftDTO]
     let blocks: [AdventureBookingBlockDTO]
     let subtotal: Double
+    let discountAmount: Double
     let nightPremium: Double
     let totalAmount: Double
     let status: String
@@ -150,6 +151,7 @@ struct AdventureBookingDTO: Codable {
             items: items.compactMap { $0.toDomain() },
             blocks: blocks.compactMap { $0.toDomain() },
             subtotal: subtotal,
+            discountAmount: discountAmount,
             nightPremium: nightPremium,
             totalAmount: totalAmount,
             status: AdventureBookingStatus(rawValue: status) ?? .confirmed,
@@ -176,6 +178,7 @@ struct AdventureBookingDTO: Codable {
             items: request.items.map(AdventureReservationItemDraftDTO.init(from:)),
             blocks: plan.blocks.map(AdventureBookingBlockDTO.init(from:)),
             subtotal: plan.subtotal,
+            discountAmount: plan.discountAmount,
             nightPremium: plan.nightPremium,
             totalAmount: plan.totalAmount,
             status: AdventureBookingStatus.confirmed.rawValue,
@@ -185,22 +188,10 @@ struct AdventureBookingDTO: Codable {
     }
 }
 
-struct AdventureInventoryDTO: Codable {
-    @DocumentID var id: String?
-    
-    let dayKey: String
-    let resourceType: String
-    let slotIndex: Int
-    let reservedUnits: Int
-    let capacity: Int
-    let updatedAt: Timestamp
-}
-
-
 final class FirestoreAdventureBookingsService: AdventureBookingsServiceable {
     private let db: Firestore
     private let bookingsCollection = "adventure_bookings"
-    private let inventoryCollection = "adventure_slot_inventory"
+//    private let inventoryCollection = "adventure_slot_inventory"
     
     init(db: Firestore = Firestore.firestore()) {
         self.db = db
@@ -244,8 +235,7 @@ final class FirestoreAdventureBookingsService: AdventureBookingsServiceable {
         for date: Date,
         items: [AdventureReservationItemDraft]
     ) async throws -> [AdventureAvailabilitySlot] {
-        let inventory = try await fetchInventoryMap(for: date, items: items)
-        return AdventurePlanner.buildAvailability(day: date, items: items, inventory: inventory)
+        AdventurePlanner.buildAvailability(day: date, items: items)
     }
     
     func createBooking(_ request: AdventureBookingRequest) async throws -> AdventureBooking {
@@ -267,179 +257,35 @@ final class FirestoreAdventureBookingsService: AdventureBookingsServiceable {
             createdAt: createdAt
         )
         
-        let deltas = aggregatedInventoryDeltas(from: plan.blocks)
-        
-        try await runVoidTransaction { transaction, errorPointer in
-            do {
-                // 1) READ EVERYTHING FIRST
-                var currentReservedByKey: [AdventureInventoryKey: Int] = [:]
-                var capacityByKey: [AdventureInventoryKey: Int] = [:]
-                
-                for key in deltas.keys {
-                    let ref = self.inventoryDocument(for: key)
-                    let snapshot = try transaction.getDocument(ref)
-                    
-                    currentReservedByKey[key] = snapshot.data()?["reservedUnits"] as? Int ?? 0
-                    capacityByKey[key] = snapshot.data()?["capacity"] as? Int
-                        ?? AdventureSchedule.capacity(for: key.resourceType)
+        let encodedBooking = try Firestore.Encoder().encode(dto)
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in            bookingRef.setData(encodedBooking) { error in
+                if let error {
+                    continuation.resume(throwing: error)
+                } else {
+                    continuation.resume(returning: ())
                 }
-                
-                // 2) VALIDATE
-                for (key, delta) in deltas {
-                    let currentReserved = currentReservedByKey[key] ?? 0
-                    let capacity = capacityByKey[key]
-                        ?? AdventureSchedule.capacity(for: key.resourceType)
-                    
-                    guard currentReserved + delta <= capacity else {
-                        errorPointer?.pointee = self.makeError("This time slot is no longer available.")
-                        return nil
-                    }
-                }
-                
-                // 3) WRITE INVENTORY
-                for (key, delta) in deltas {
-                    let ref = self.inventoryDocument(for: key)
-                    let currentReserved = currentReservedByKey[key] ?? 0
-                    let capacity = capacityByKey[key]
-                        ?? AdventureSchedule.capacity(for: key.resourceType)
-                    
-                    let inventoryDTO = AdventureInventoryDTO(
-                        id: ref.documentID,
-                        dayKey: key.dayKey,
-                        resourceType: key.resourceType.rawValue,
-                        slotIndex: key.slotIndex,
-                        reservedUnits: currentReserved + delta,
-                        capacity: capacity,
-                        updatedAt: Timestamp(date: createdAt)
-                    )
-                    
-                    let encodedInventory = try Firestore.Encoder().encode(inventoryDTO)
-                    transaction.setData(encodedInventory, forDocument: ref)
-                }
-                
-                // 4) WRITE BOOKING
-                let encodedBooking = try Firestore.Encoder().encode(dto)
-                transaction.setData(encodedBooking, forDocument: bookingRef)
-                
-                return nil
-            } catch {
-                errorPointer?.pointee = error as NSError
-                return nil
             }
         }
-        
+
         return dto.toDomain(documentId: bookingRef.documentID)
     }
     
     func cancelBooking(id: String) async throws {
         let bookingRef = db.collection(bookingsCollection).document(id)
-        
-        try await runVoidTransaction { transaction, errorPointer in
-            do {
-                // 1) READ BOOKING FIRST
-                let bookingSnapshot = try transaction.getDocument(bookingRef)
-                guard bookingSnapshot.exists else {
-                    errorPointer?.pointee = self.makeError("Booking not found.")
-                    return nil
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            bookingRef.updateData(
+                ["status": AdventureBookingStatus.canceled.rawValue]
+            ) { error in
+                if let error {
+                    continuation.resume(throwing: error)
+                } else {
+                    continuation.resume(returning: ())
                 }
-                
-                let dto = try bookingSnapshot.data(as: AdventureBookingDTO.self)
-                let booking = dto.toDomain(documentId: bookingRef.documentID)
-                
-                guard booking.status != .canceled else {
-                    return nil
-                }
-                
-                let deltas = self.aggregatedInventoryDeltas(from: booking.blocks)
-                
-                // 2) READ ALL INVENTORY DOCS BEFORE ANY WRITE
-                var currentReservedByKey: [AdventureInventoryKey: Int] = [:]
-                var capacityByKey: [AdventureInventoryKey: Int] = [:]
-                
-                for key in deltas.keys {
-                    let ref = self.inventoryDocument(for: key)
-                    let snapshot = try transaction.getDocument(ref)
-                    
-                    currentReservedByKey[key] = snapshot.data()?["reservedUnits"] as? Int ?? 0
-                    capacityByKey[key] = snapshot.data()?["capacity"] as? Int
-                        ?? AdventureSchedule.capacity(for: key.resourceType)
-                }
-                
-                // 3) WRITE INVENTORY
-                for (key, delta) in deltas {
-                    let ref = self.inventoryDocument(for: key)
-                    let currentReserved = currentReservedByKey[key] ?? 0
-                    let capacity = capacityByKey[key]
-                        ?? AdventureSchedule.capacity(for: key.resourceType)
-                    
-                    let inventoryDTO = AdventureInventoryDTO(
-                        id: ref.documentID,
-                        dayKey: key.dayKey,
-                        resourceType: key.resourceType.rawValue,
-                        slotIndex: key.slotIndex,
-                        reservedUnits: max(0, currentReserved - delta),
-                        capacity: capacity,
-                        updatedAt: Timestamp(date: Date())
-                    )
-                    
-                    let encodedInventory = try Firestore.Encoder().encode(inventoryDTO)
-                    transaction.setData(encodedInventory, forDocument: ref)
-                }
-                
-                // 4) WRITE BOOKING STATUS
-                transaction.updateData(
-                    ["status": AdventureBookingStatus.canceled.rawValue],
-                    forDocument: bookingRef
-                )
-                
-                return nil
-            } catch {
-                errorPointer?.pointee = error as NSError
-                return nil
             }
         }
     }
+    
     // MARK: - Helpers
-    
-    private func fetchInventoryMap(
-        for date: Date,
-        items: [AdventureReservationItemDraft]
-    ) async throws -> [AdventureInventoryKey: Int] {
-        let dayKeys = AdventurePlanner.affectedDayKeys(day: date, items: items)
-        var result: [AdventureInventoryKey: Int] = [:]
-        
-        for dayKey in dayKeys {
-            let snapshot = try await getDocuments(
-                query: db.collection(inventoryCollection)
-                    .whereField("dayKey", isEqualTo: dayKey)
-            )
-            
-            for doc in snapshot.documents {
-                let dto = try doc.data(as: AdventureInventoryDTO.self)
-                guard let resourceType = AdventureResourceType(rawValue: dto.resourceType) else { continue }
-                
-                result[
-                    AdventureInventoryKey(
-                        dayKey: dto.dayKey,
-                        resourceType: resourceType,
-                        slotIndex: dto.slotIndex
-                    )
-                ] = dto.reservedUnits
-            }
-        }
-        
-        return result
-    }
-    
-    private func inventoryDocument(
-        dayKey: String,
-        resourceType: AdventureResourceType,
-        slotIndex: Int
-    ) -> DocumentReference {
-        db.collection(inventoryCollection)
-            .document("\(dayKey)_\(resourceType.rawValue)_\(slotIndex)")
-    }
-    
     private func getDocuments(query: Query) async throws -> QuerySnapshot {
         try await withCheckedThrowingContinuation { continuation in
             query.getDocuments { snapshot, error in
@@ -454,20 +300,6 @@ final class FirestoreAdventureBookingsService: AdventureBookingsServiceable {
         }
     }
     
-    private func runVoidTransaction(
-        _ updateBlock: @escaping (Transaction, NSErrorPointer) -> Any?
-    ) async throws {
-        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-            db.runTransaction(updateBlock) { _, error in
-                if let error {
-                    continuation.resume(throwing: error)
-                } else {
-                    continuation.resume(returning: ())
-                }
-            }
-        }
-    }
-    
     private func makeError(_ message: String) -> NSError {
         NSError(
             domain: "AdventureBookingsService",
@@ -475,26 +307,4 @@ final class FirestoreAdventureBookingsService: AdventureBookingsServiceable {
             userInfo: [NSLocalizedDescriptionKey: message]
         )
     }
-    
-    private func aggregatedInventoryDeltas(
-        from blocks: [AdventureBookingBlock]
-    ) -> [AdventureInventoryKey: Int] {
-        var deltas: [AdventureInventoryKey: Int] = [:]
-        
-        for block in blocks {
-            for key in AdventurePlanner.inventoryKeys(for: block) {
-                deltas[key, default: 0] += block.reservedUnits
-            }
-        }
-        
-        return deltas
-    }
-
-    private func inventoryDocument(
-        for key: AdventureInventoryKey
-    ) -> DocumentReference {
-        db.collection(inventoryCollection)
-            .document("\(key.dayKey)_\(key.resourceType.rawValue)_\(key.slotIndex)")
-    }
 }
-
