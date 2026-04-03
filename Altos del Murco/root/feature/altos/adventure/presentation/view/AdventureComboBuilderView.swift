@@ -25,7 +25,7 @@ struct AdventureComboBuilderView: View {
             confirmSection
         }
         .listStyle(.plain)
-        .navigationTitle("Build Adventure")
+        .navigationTitle("Crear aventura")
         .toolbar {
             EditButton()
         }
@@ -53,15 +53,15 @@ struct AdventureComboBuilderView: View {
     private var comboSection: some View {
         Section {
             VStack(alignment: .leading, spacing: 12) {
-                Text("Your Combo")
+                Text("Tu combo")
                     .font(.title3.bold())
                 
-                Text("You can mix any activities, set different durations and people counts, and drag to change the order.")
+                Text("Puedes combinar cualquier actividad, establecer diferentes duraciones y número de personas, y arrastrar para cambiar el orden.")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                 
                 if viewModel.state.items.contains(where: { $0.activity == .offRoad }) {
-                    Label("Each off-road vehicle supports 1 or 2 riders. Pricing is per vehicle, not per rider.", systemImage: "info.circle")
+                    Label("Cada vehículo off-road admite 1 o 2 personas. El precio es por vehículo, no por persona.", systemImage: "info.circle")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
@@ -88,7 +88,7 @@ struct AdventureComboBuilderView: View {
                     }
                 }
             } label: {
-                Label("Add Activity", systemImage: "plus.circle.fill")
+                Label("Agregar actividad", systemImage: "plus.circle.fill")
                     .frame(maxWidth: .infinity)
             }
         }
@@ -97,11 +97,11 @@ struct AdventureComboBuilderView: View {
     private var schedulingSection: some View {
         Section {
             VStack(alignment: .leading, spacing: 14) {
-                Text("Date")
+                Text("Fecha")
                     .font(.headline)
                 
                 DatePicker(
-                    "Reservation day",
+                    "Día de la reserva",
                     selection: Binding(
                         get: { viewModel.state.selectedDate },
                         set: { viewModel.setDate($0) }
@@ -111,7 +111,7 @@ struct AdventureComboBuilderView: View {
                 )
                 .datePickerStyle(.graphical)
                 
-                Text("Regular activities run from 7:00 AM to 7:00 PM. Night fun premium applies from 6:00 PM onward.")
+                Text("Las actividades regulares funcionan de 7:00 AM a 7:00 PM. El recargo nocturno aplica desde las 6:00 PM en adelante.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
@@ -128,7 +128,7 @@ struct AdventureComboBuilderView: View {
         Section {
             VStack(spacing: 14) {
                 TextField(
-                    "Client name",
+                    "Nombre del cliente",
                     text: Binding(
                         get: { viewModel.state.clientName },
                         set: { viewModel.setClientName($0) }
@@ -137,7 +137,7 @@ struct AdventureComboBuilderView: View {
                 .textInputAutocapitalization(.words)
                 
                 TextField(
-                    "WhatsApp number",
+                    "Número de WhatsApp",
                     text: Binding(
                         get: { viewModel.state.whatsappNumber },
                         set: { viewModel.setWhatsapp($0) }
@@ -146,7 +146,7 @@ struct AdventureComboBuilderView: View {
                 .keyboardType(.phonePad)
                 
                 TextField(
-                    "National ID",
+                    "Cédula",
                     text: Binding(
                         get: { viewModel.state.nationalId },
                         set: { viewModel.setNationalId($0) }
@@ -155,7 +155,7 @@ struct AdventureComboBuilderView: View {
                 .keyboardType(.numberPad)
                 
                 TextField(
-                    "Notes (optional)",
+                    "Notas (opcional)",
                     text: Binding(
                         get: { viewModel.state.notes },
                         set: { viewModel.setNotes($0) }
@@ -171,21 +171,21 @@ struct AdventureComboBuilderView: View {
                     .padding(.vertical, 4)
             )
         } header: {
-            Text("Contact")
+            Text("Contacto")
         }
     }
     
     private var availabilitySection: some View {
         Section {
             if viewModel.state.isLoadingAvailability {
-                ProgressView("Checking availability...")
+                ProgressView("Verificando disponibilidad...")
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 12)
             } else if viewModel.state.availableSlots.isEmpty {
                 ContentUnavailableView(
-                    "No slots",
+                    "Sin horarios disponibles",
                     systemImage: "calendar.badge.exclamationmark",
-                    description: Text("Try another date, another order, or reduce some quantities.")
+                    description: Text("Intenta otra fecha, otro orden o reduce algunas cantidades.")
                 )
             } else {
                 ScrollView(.horizontal, showsIndicators: false) {
@@ -197,7 +197,7 @@ struct AdventureComboBuilderView: View {
                                 VStack(alignment: .leading, spacing: 8) {
                                     Text(AdventureDateHelper.timeText(slot.startAt))
                                         .font(.headline)
-                                    Text("Ends \(AdventureDateHelper.timeText(slot.endAt))")
+                                    Text("Termina \(AdventureDateHelper.timeText(slot.endAt))")
                                         .font(.caption)
                                         .foregroundStyle(.secondary)
                                     Text("$\(slot.totalAmount, specifier: "%.2f")")
@@ -221,32 +221,33 @@ struct AdventureComboBuilderView: View {
                 }
             }
         } header: {
-            Text("Available Start Times")
+            Text("Horarios disponibles de inicio")
         }
     }
     
     private var summarySection: some View {
         Section {
             VStack(alignment: .leading, spacing: 10) {
-                Text("Summary")
+                Text("Resumen")
                     .font(.headline)
                 
                 if let slot = viewModel.state.selectedSlot {
                     summaryRow("Subtotal", "$\(slot.subtotal, default: "%.2f")")
-                    summaryRow("Discount", "-$\(slot.discountAmount, default: "%.2f")")
-                    summaryRow("Night premium", "$\(slot.nightPremium, default: "%.2f")")
+                    summaryRow("Descuento", "-$\(slot.discountAmount, default: "%.2f")")
+                    summaryRow("Recargo nocturno", "$\(slot.nightPremium, default: "%.2f")")
                     summaryRow("Total", "$\(slot.totalAmount, default: "%.2f")", bold: true)
                 } else {
-                    summaryRow("Estimated subtotal", "$\(viewModel.estimatedSubtotal, default: "%.2f")")
+                    summaryRow("Subtotal estimado", "$\(viewModel.estimatedSubtotal, default: "%.2f")")
                     summaryRow(
-                        "Estimated discount",
+                        "Descuento estimado",
                         "-$\(AdventurePricingEngine.discount(for: viewModel.estimatedSubtotal), default: "%.2f")"
                     )
                     summaryRow(
-                        "Estimated total",
+                        "Total estimado",
                         "$\(AdventurePricingEngine.discountedSubtotal(for: viewModel.estimatedSubtotal), default: "%.2f")",
                         bold: true
-                    )                }
+                    )
+                }
             }
             .padding(.vertical, 6)
             .listRowBackground(
@@ -266,7 +267,7 @@ struct AdventureComboBuilderView: View {
                     ProgressView()
                         .frame(maxWidth: .infinity)
                 } else {
-                    Text("Confirm Reservation")
+                    Text("Confirmar reserva")
                         .frame(maxWidth: .infinity)
                         .font(.headline)
                 }
@@ -337,67 +338,67 @@ private struct AdventureItemEditorView: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section("Activity") {
+                Section("Actividad") {
                     Text(item.activity.title)
                 }
                 
                 switch item.activity {
                 case .offRoad:
-                    Section("Off-Road") {
-                        Picker("Duration", selection: $item.durationMinutes) {
+                    Section("Off-road") {
+                        Picker("Duración", selection: $item.durationMinutes) {
                             ForEach(item.activity.durationOptions, id: \.self) { minutes in
-                                Text("\(minutes / 60) hour(s)").tag(minutes)
+                                Text("\(minutes / 60) hora(s)").tag(minutes)
                             }
                         }
                         
-                        Stepper("Vehicles: \(item.vehicleCount)", value: $item.vehicleCount, in: 1...10)
-                        Stepper("Riders: \(item.offRoadRiderCount)", value: $item.offRoadRiderCount, in: 1...20)
+                        Stepper("Vehículos: \(item.vehicleCount)", value: $item.vehicleCount, in: 1...10)
+                        Stepper("Personas: \(item.offRoadRiderCount)", value: $item.offRoadRiderCount, in: 1...20)
                         
-                        Text("Each vehicle supports 1 or 2 riders. Example: 8 riders can use 4 vehicles.")
+                        Text("Cada vehículo admite 1 o 2 personas. Ejemplo: 8 personas pueden usar 4 vehículos.")
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                     }
                     
                 case .paintball, .goKarts, .shootingRange:
-                    Section("Configuration") {
-                        Picker("Duration", selection: $item.durationMinutes) {
+                    Section("Configuración") {
+                        Picker("Duración", selection: $item.durationMinutes) {
                             ForEach(item.activity.durationOptions, id: \.self) { minutes in
                                 Text("\(minutes) min").tag(minutes)
                             }
                         }
-                        Stepper("People: \(item.peopleCount)", value: $item.peopleCount, in: 1...20)
+                        Stepper("Personas: \(item.peopleCount)", value: $item.peopleCount, in: 1...20)
                     }
                     
                 case .camping:
                     Section("Camping") {
-                        Stepper("People: \(item.peopleCount)", value: $item.peopleCount, in: 1...20)
-                        Stepper("Nights: \(item.nights)", value: $item.nights, in: 1...7)
-                        Text("Camping is scheduled from 7:00 PM to 7:00 AM and should stay last in the combo.")
+                        Stepper("Personas: \(item.peopleCount)", value: $item.peopleCount, in: 1...20)
+                        Stepper("Noches: \(item.nights)", value: $item.nights, in: 1...7)
+                        Text("El camping se programa de 7:00 PM a 7:00 AM y debe mantenerse al final del combo.")
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                     }
                     
                 case .extremeSlide:
-                    Section("Extreme Slide") {
-                        Stepper("People: \(item.peopleCount)", value: $item.peopleCount, in: 1...20)
-                        Text("This includes 30 minutes of off-road transportation plus the slide session.")
+                    Section("Columpio extremo") {
+                        Stepper("Personas: \(item.peopleCount)", value: $item.peopleCount, in: 1...20)
+                        Text("Incluye 30 minutos de transporte off-road más la sesión del columpio.")
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                     }
                 }
                 
-                Section("Price") {
+                Section("Precio") {
                     Text("$\(AdventurePricingEngine.subtotal(for: item), specifier: "%.2f")")
                         .font(.headline)
                 }
             }
-            .navigationTitle("Edit Activity")
+            .navigationTitle("Editar actividad")
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    Button("Cancel") { dismiss() }
+                    Button("Cancelar") { dismiss() }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("Save") {
+                    Button("Guardar") {
                         onSave(item)
                         dismiss()
                     }

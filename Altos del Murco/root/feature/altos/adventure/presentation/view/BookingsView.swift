@@ -19,8 +19,8 @@ struct BookingsView: View {
                         OrdersView(viewModel: ordersViewModel)
                     } label: {
                         bookingCard(
-                            title: "Restaurant Orders",
-                            subtitle: "Review your current and past food orders.",
+                            title: "Pedidos del restaurante",
+                            subtitle: "Revisa tus pedidos actuales y anteriores de comida.",
                             systemImage: "fork.knife"
                         )
                     }
@@ -32,8 +32,8 @@ struct BookingsView: View {
                         )
                     } label: {
                         bookingCard(
-                            title: "Adventure Reservations",
-                            subtitle: "See combos, single activities, camping, and night fun reservations.",
+                            title: "Reservas de aventura",
+                            subtitle: "Mira combos, actividades individuales, camping y reservas nocturnas.",
                             systemImage: "calendar.badge.clock"
                         )
                     }
@@ -41,7 +41,7 @@ struct BookingsView: View {
                 }
                 .padding()
             }
-            .navigationTitle("Bookings")
+            .navigationTitle("Reservas")
         }
     }
     

@@ -20,7 +20,7 @@ struct OrderDraft: Identifiable, Hashable {
     
     init(
         id: UUID = UUID(),
-        clientId: String = "",
+        clientId: String? = nil,
         clientName: String = "",
         tableNumber: String = "",
         createdAt: Date = Date(),

@@ -7,22 +7,24 @@
 
 import SwiftUI
 import FirebaseCore
+import SwiftData
 
 final class AppDelegate: NSObject, UIApplicationDelegate {
     func application(
         _ application: UIApplication,
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
     ) -> Bool {
-        
-        return true
+        true
     }
 }
 
 @main
 struct AltosDelMurcoApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) var delegate
-    
-    @StateObject private var cartManager = CartManager()
+
+    private let sharedModelContainer: ModelContainer
+
+    @StateObject private var cartManager: CartManager
     @StateObject private var router = AppRouter()
 
     @StateObject private var ordersViewModel: OrdersViewModel
@@ -31,22 +33,49 @@ struct AltosDelMurcoApp: App {
 
     init() {
         FirebaseApp.configure()
-        // Build services and use cases using local temporaries to avoid capturing self
-        let ordersService: OrdersServiceable = FirebaseOrdersService()
-        let observeOrdersUseCase = ObserveOrdersUseCase(service: ordersService)
-        let submitOrderUseCase = SubmitOrderUseCase(service: ordersService)
 
-        // Build view models without referencing self
-        let ordersVM = OrdersViewModel(observeOrdersUseCase: observeOrdersUseCase)
-        let checkoutVM = CheckoutViewModel(submitOrderUseCase: submitOrderUseCase, cartManager: CartManager())
+        do {
+            let schema = Schema([
+                CartDraftEntity.self,
+                CartItemEntity.self
+            ])
 
-        // Assign to StateObjects
-        _ordersViewModel = StateObject(wrappedValue: ordersVM)
-        _checkoutViewModel = StateObject(wrappedValue: checkoutVM)
+            let configuration = ModelConfiguration(
+                schema: schema,
+                isStoredInMemoryOnly: false
+            )
 
-        // Build other dependencies
-        let adventureService = FirestoreAdventureBookingsService()
-        self.adventureModuleFactory = AdventureModuleFactory(service: adventureService)
+            let container = try ModelContainer(
+                for: schema,
+                configurations: [configuration]
+            )
+
+            self.sharedModelContainer = container
+
+            let cartPersistence = CartPersistenceService(context: container.mainContext)
+            let sharedCartManager = CartManager(persistence: cartPersistence)
+
+            _cartManager = StateObject(wrappedValue: sharedCartManager)
+
+            let ordersService: OrdersServiceable = FirebaseOrdersService()
+            let observeOrdersUseCase = ObserveOrdersUseCase(service: ordersService)
+            let submitOrderUseCase = SubmitOrderUseCase(service: ordersService)
+
+            let ordersVM = OrdersViewModel(observeOrdersUseCase: observeOrdersUseCase)
+            let checkoutVM = CheckoutViewModel(
+                submitOrderUseCase: submitOrderUseCase,
+                cartManager: sharedCartManager
+            )
+
+            _ordersViewModel = StateObject(wrappedValue: ordersVM)
+            _checkoutViewModel = StateObject(wrappedValue: checkoutVM)
+
+            let adventureService = FirestoreAdventureBookingsService()
+            self.adventureModuleFactory = AdventureModuleFactory(service: adventureService)
+
+        } catch {
+            fatalError("Failed to create SwiftData container: \(error)")
+        }
     }
 
     var body: some Scene {
@@ -59,61 +88,6 @@ struct AltosDelMurcoApp: App {
             .environmentObject(cartManager)
             .environmentObject(router)
         }
+        .modelContainer(sharedModelContainer)
     }
 }
-//
-//import FirebaseCore
-//import SwiftUI
-//
-//@main
-//struct AltosDelMurcoApp: App {
-//    @StateObject private var cartManager = CartManager()
-//    @StateObject private var router = AppRouter()
-//
-//    @StateObject private var ordersViewModel: OrdersViewModel
-//    @StateObject private var checkoutViewModel: CheckoutViewModel
-//    private let adventureModuleFactory: AdventureModuleFactory
-//    
-//    init() {
-//        FirebaseApp.configure()
-//
-//        let ordersService = FirebaseOrdersService()
-//
-//        let observeOrdersUseCase = ObserveOrdersUseCase(service: ordersService)
-//        let submitOrderUseCase = SubmitOrderUseCase(service: ordersService)
-//
-//        let cartManager = CartManager()
-//
-//        _ordersViewModel = StateObject(
-//            wrappedValue: OrdersViewModel(
-//                observeOrdersUseCase: observeOrdersUseCase
-//            )
-//        )
-//
-//        _checkoutViewModel = StateObject(
-//            wrappedValue: CheckoutViewModel(
-//                submitOrderUseCase: submitOrderUseCase,
-//                cartManager: cartManager
-//            )
-//        )
-//
-//        _cartManager = StateObject(wrappedValue: cartManager)
-//        
-//        let adventureModuleFactory: AdventureModuleFactory
-//        let adventureService = FirestoreAdventureBookingsService()
-//        self.adventureModuleFactory = AdventureModuleFactory(service: adventureService)
-//          
-//    }
-//
-//    var body: some Scene {
-//            WindowGroup {
-//                MainTabView(
-//                    ordersViewModel: ordersViewModel,
-//                    checkoutViewModel: checkoutViewModel,
-//                    adventureModuleFactory: adventureModuleFactory
-//                )
-//                .environmentObject(cartManager)
-////                .environmentObject(router)
-//            }
-//        }
-//}

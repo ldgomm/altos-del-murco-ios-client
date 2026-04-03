@@ -24,16 +24,16 @@ struct AdventureCatalogView: View {
                 }
                 .padding()
             }
-            .navigationTitle("Adventures")
+            .navigationTitle("Aventura en Los Altos")
         }
     }
     
     private var heroSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Build your perfect combo")
+            Text("Construye tu combo perfecto")
                 .font(.largeTitle.bold())
             
-            Text("Mix off-road, paintball, go karts, shooting range, camping, and extreme slide with custom durations and headcounts.")
+            Text("Mezcla off-road, paintball, go karts, campo de tiro, camping y columpio extremo con duraciones y número de personas personalizados.")
                 .foregroundStyle(.secondary)
             
             NavigationLink {
@@ -41,7 +41,7 @@ struct AdventureCatalogView: View {
                     viewModel: adventureModuleFactory.makeBuilderViewModel()
                 )
             } label: {
-                Text("Start Custom Combo")
+                Text("Iniciar combo personalizado")
                     .font(.headline)
                     .frame(maxWidth: .infinity)
                     .padding()
@@ -59,7 +59,7 @@ struct AdventureCatalogView: View {
     
     private var featuredSection: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("Featured Packages")
+            Text("Paquetes destacados")
                 .font(.title3.bold())
             
             ForEach(AdventureCatalogTemplates.featured) { template in
@@ -79,7 +79,7 @@ struct AdventureCatalogView: View {
     
     private var singlesSection: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("Single Activities")
+            Text("Actividades individuales")
                 .font(.title3.bold())
             
             ForEach(singles, id: \.id) { item in
@@ -99,10 +99,10 @@ struct AdventureCatalogView: View {
     
     private var customComboSection: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("Need something different?")
+            Text("¿Necesitas algo diferente?")
                 .font(.title3.bold())
-            
-            Text("You can drag to reorder activities and set different durations and people counts per activity.")
+
+            Text("Puedes arrastrar para reordenar las actividades y establecer diferentes duraciones y número de personas por actividad.")
                 .foregroundStyle(.secondary)
             
             NavigationLink {
@@ -110,7 +110,7 @@ struct AdventureCatalogView: View {
                     viewModel: adventureModuleFactory.makeBuilderViewModel()
                 )
             } label: {
-                Text("Open Combo Builder")
+                Text("Abrir creador de combos")
                     .font(.headline)
                     .frame(maxWidth: .infinity)
                     .padding()
@@ -177,12 +177,12 @@ private struct SingleActivityCard: View {
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                 let base = AdventurePricingEngine.subtotal(for: item)
-                Text("From $\(AdventurePricingEngine.discountedSubtotal(for: base), specifier: "%.2f")")                    .font(.caption.weight(.semibold))
+                Text("Desde $\(AdventurePricingEngine.discountedSubtotal(for: base), specifier: "%.2f")")                    .font(.caption.weight(.semibold))
             }
             
             Spacer()
             
-            Text("Book now")
+            Text("Reservar ahora")
                 .font(.caption.bold())
                 .foregroundStyle(.secondary)
         }

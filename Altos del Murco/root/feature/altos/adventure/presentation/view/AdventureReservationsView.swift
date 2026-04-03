@@ -17,13 +17,13 @@ struct AdventureReservationsView: View {
     var body: some View {
         Group {
             if viewModel.state.isLoading && viewModel.state.bookings.isEmpty {
-                ProgressView("Loading reservations...")
+                ProgressView("Cargando reservas...")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 List {
-                    Section("Date") {
+                    Section("Fecha") {
                         DatePicker(
-                            "Selected date",
+                            "Fecha seleccionada",
                             selection: Binding(
                                 get: { viewModel.state.selectedDate },
                                 set: { viewModel.setDate($0) }
@@ -36,13 +36,13 @@ struct AdventureReservationsView: View {
                     if viewModel.state.bookings.isEmpty {
                         Section {
                             ContentUnavailableView(
-                                "No reservations",
+                                "Sin reservas",
                                 systemImage: "calendar",
-                                description: Text("Reservations for the selected date will appear here.")
+                                description: Text("Las reservas para la fecha seleccionada aparecerán aquí.")
                             )
                         }
                     } else {
-                        Section("Reservations") {
+                        Section("Reservas") {
                             ForEach(viewModel.state.bookings) { booking in
                                 AdventureReservationRow(booking: booking)
                                     .swipeActions(edge: .trailing) {
@@ -50,7 +50,7 @@ struct AdventureReservationsView: View {
                                             Button(role: .destructive) {
                                                 viewModel.cancelBooking(booking.id)
                                             } label: {
-                                                Label("Cancel", systemImage: "xmark")
+                                                Label("Cancelar", systemImage: "xmark")
                                             }
                                         }
                                     }
@@ -61,7 +61,7 @@ struct AdventureReservationsView: View {
                 .listStyle(.insetGrouped)
             }
         }
-        .navigationTitle("Adventure Reservations")
+        .navigationTitle("Reservas de aventura")
         .onAppear { viewModel.onAppear() }
         .onDisappear { viewModel.onDisappear() }
     }
@@ -84,7 +84,7 @@ private struct AdventureReservationRow: View {
                     .clipShape(Capsule())
             }
             
-            Text("\(AdventureDateHelper.timeText(booking.startAt)) • \(booking.whatsappNumber) • ID \(booking.nationalId)")
+            Text("\(AdventureDateHelper.timeText(booking.startAt)) • \(booking.whatsappNumber) • Cédula \(booking.nationalId)")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
             

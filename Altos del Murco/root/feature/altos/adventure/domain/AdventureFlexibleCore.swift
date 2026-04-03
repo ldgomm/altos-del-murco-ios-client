@@ -376,7 +376,7 @@ enum AdventurePricingEngine {
 
     static func estimatedDiscountedSubtotal(items: [AdventureReservationItemDraft]) -> Double {
         let subtotal = estimatedSubtotal(items: items)
-        return discountedSubtotal(for: subtotal)
+        return subtotal
     }
 }
 

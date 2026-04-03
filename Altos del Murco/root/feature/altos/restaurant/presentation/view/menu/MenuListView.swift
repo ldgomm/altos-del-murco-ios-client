@@ -9,7 +9,6 @@ import SwiftUI
 
 struct MenuListView: View {
     let sections: [MenuSection]
-//    @ObservedObject var ordersViewModel: OrdersViewModel
     @ObservedObject var checkoutViewModel: CheckoutViewModel
     @EnvironmentObject private var cartManager: CartManager
     
@@ -42,14 +41,23 @@ struct MenuListView: View {
         .navigationTitle("Restaurant")
         .toolbar {
             ToolbarItemGroup(placement: .topBarTrailing) {
-//                Button {
-//                    path.append(Route.orders)
-//                } label: {
-//                    Image(systemName: "clock.arrow.circlepath")
-//                }
-                
                 NavigationLink(value: Route.cart) {
-                    Image(systemName: "cart")
+                    ZStack(alignment: .topTrailing) {
+                        Image(systemName: "cart")
+                            .font(.system(size: 17))
+
+                        if cartManager.totalItems > 0 {
+                            Text("\(cartManager.totalItems)")
+                                .font(.system(size: 8, weight: .bold))
+                                .monospacedDigit()
+                                .foregroundStyle(.white)
+                                .frame(minWidth: 14, minHeight: 14)
+                                .padding(.horizontal, cartManager.totalItems > 9 ? 3 : 0)
+                                .background(Color.red)
+                                .clipShape(Capsule())
+                                .offset(x: 2, y: -4)
+                        }
+                    }
                 }
             }
         }
@@ -61,14 +69,9 @@ struct MenuListView: View {
                 CartView()
             case .checkout:
                 CheckoutView(viewModel: checkoutViewModel)
-//            case .orders:
-//                OrdersView(viewModel: ordersViewModel)
             case let .orderSuccess(order):
                 OrderSuccessView(order: order)
             }
         }
-//        .onAppear {
-//            ordersViewModel.onEvent(.onAppear)
-//        }
     }
 }

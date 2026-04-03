@@ -17,7 +17,6 @@ struct HomeView: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 24) {
-//                    heroSection
                     quickAccessSection
                     featuredSection
                 }
@@ -26,34 +25,7 @@ struct HomeView: View {
             .navigationTitle("Altos del Murco")
         }
     }
-    
-    private var heroSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Welcome to Altos del Murco")
-                .font(.largeTitle.bold())
-            
-            Text("Food, adventure, and unforgettable experiences in one place.")
-                .font(.body)
-                .foregroundStyle(.secondary)
-            
-            Button {
-                selectedTab = .restaurant
-            } label: {
-                Text("Explore Restaurant")
-                    .font(.headline)
-                    .frame(maxWidth: .infinity)
-                    .padding()
-                    .background(Color.primary)
-                    .foregroundStyle(Color(.systemBackground))
-                    .clipShape(RoundedRectangle(cornerRadius: 18))
-            }
-        }
-        .padding()
-        .background(
-            RoundedRectangle(cornerRadius: 24)
-                .fill(Color(.systemGray6))
-        )
-    }
+
     
     private var quickAccessSection: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -69,7 +41,7 @@ struct HomeView: View {
                 
                 quickAccessCard(
                     title: "Experiences",
-                    systemImage: "figure.off.and.run",
+                    systemImage: "figure",
                     action: { selectedTab = .experiences }
                 )
             }

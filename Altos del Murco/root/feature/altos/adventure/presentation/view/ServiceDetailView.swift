@@ -60,8 +60,8 @@ struct ServiceDetailView: View {
     
     private var infoSection: some View {
         HStack(spacing: 16) {
-            infoCard(title: "Price", value: service.priceText, systemImage: "dollarsign.circle")
-            infoCard(title: "Duration", value: service.durationText, systemImage: "clock")
+            infoCard(title: "Precio", value: service.priceText, systemImage: "dollarsign.circle")
+            infoCard(title: "Duración", value: service.durationText, systemImage: "clock")
         }
     }
     

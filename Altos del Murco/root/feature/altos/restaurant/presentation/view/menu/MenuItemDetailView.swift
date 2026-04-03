@@ -15,6 +15,9 @@ struct MenuItemDetailView: View {
     @State private var quantity: Int = 1
     @State private var notesText: String = ""
     
+    @Environment(\.dismiss) private var dismiss
+    @State private var showAddedMessage = false
+    
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
@@ -136,6 +139,17 @@ struct MenuItemDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
         .safeAreaInset(edge: .bottom) {
             VStack(spacing: 10) {
+                if showAddedMessage {
+                    Text("Order has been added")
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 10)
+                        .background(Color.green)
+                        .clipShape(Capsule())
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
                 HStack {
                     Text("Total")
                         .font(.subheadline)
@@ -151,6 +165,20 @@ struct MenuItemDetailView: View {
                 
                 Button {
                     cartManager.add(item: item, quantity: quantity, notes: notesText)
+
+                    withAnimation(.easeInOut(duration: 0.25)) {
+                        showAddedMessage = true
+                    }
+
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+                        withAnimation(.easeInOut(duration: 0.25)) {
+                            showAddedMessage = false
+                        }
+
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                            dismiss()
+                        }
+                    }
                 } label: {
                     Text(item.isAvailable ? "Add to Order" : "Unavailable")
                         .font(.headline)
