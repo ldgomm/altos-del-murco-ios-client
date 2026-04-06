@@ -9,8 +9,8 @@ import SwiftUI
 
 struct HomeView: View {
     @Binding var selectedTab: MainTab
-    let adventureModuleFactory: AdventureModuleFactory
-
+    @ObservedObject var comboBuilderViewModel: AdventureComboBuilderViewModel
+    
     private let featuredServices = AdventureService.mockServices
     
     var body: some View {
@@ -29,18 +29,18 @@ struct HomeView: View {
     
     private var quickAccessSection: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("Quick Access")
+            Text("Acceso rápido")
                 .font(.title3.bold())
             
             HStack(spacing: 12) {
                 quickAccessCard(
-                    title: "Restaurant",
+                    title: "Restaurante",
                     systemImage: "fork.knife",
                     action: { selectedTab = .restaurant }
                 )
                 
                 quickAccessCard(
-                    title: "Experiences",
+                    title: "Experiencias",
                     systemImage: "figure",
                     action: { selectedTab = .experiences }
                 )
@@ -48,13 +48,13 @@ struct HomeView: View {
             
             HStack(spacing: 12) {
                 quickAccessCard(
-                    title: "Bookings",
+                    title: "Reservas",
                     systemImage: "calendar",
                     action: { selectedTab = .bookings }
                 )
                 
                 quickAccessCard(
-                    title: "Profile",
+                    title: "Perfil",
                     systemImage: "person.crop.circle",
                     action: { selectedTab = .profile }
                 )
@@ -87,12 +87,14 @@ struct HomeView: View {
     
     private var featuredSection: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("Featured Experiences")
+            Text("Experiencias destacadas")
                 .font(.title3.bold())
-            
             ForEach(featuredServices) { service in
                 NavigationLink {
-                    ServiceDetailView(service: service, adventureModuleFactory: adventureModuleFactory)
+                    ServiceDetailView(
+                        service: service,
+                        comboBuilderViewModel: comboBuilderViewModel
+                    )
                 } label: {
                     ServiceCardView(service: service)
                 }

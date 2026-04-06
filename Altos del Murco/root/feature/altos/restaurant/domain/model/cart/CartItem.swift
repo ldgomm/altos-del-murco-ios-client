@@ -25,11 +25,5 @@ struct CartItem: Identifiable, Hashable {
         self.menuItem = menuItem
         self.quantity = quantity
         self.notes = notes
-        
-        printDebugging()
-    }
-    
-    func printDebugging() {
-        print("CartItem: \(String(describing: notes))")
     }
 }

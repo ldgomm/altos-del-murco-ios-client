@@ -9,7 +9,7 @@ import SwiftUI
 
 struct ServiceDetailView: View {
     let service: AdventureService
-    let adventureModuleFactory: AdventureModuleFactory
+    @ObservedObject var comboBuilderViewModel: AdventureComboBuilderViewModel
     
     var body: some View {
         ScrollView {
@@ -100,13 +100,12 @@ struct ServiceDetailView: View {
     
     private var actionSection: some View {
         NavigationLink {
-            AdventureComboBuilderView(
-                viewModel: adventureModuleFactory.makeBuilderViewModel(
-                    prefilledItems: [service.defaultDraft]
-                )
-            )
+            AdventureComboBuilderView(viewModel: comboBuilderViewModel)
+                .onAppear {
+                    comboBuilderViewModel.replaceItems(with: [service.defaultDraft])
+                }
         } label: {
-            Text("Book Now")
+            Text("Reservar ahora")
                 .font(.headline)
                 .frame(maxWidth: .infinity)
                 .padding()

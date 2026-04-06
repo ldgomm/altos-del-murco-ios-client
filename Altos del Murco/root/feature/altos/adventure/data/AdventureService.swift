@@ -49,63 +49,63 @@ extension AdventureService {
     static let mockServices: [AdventureService] = [
         AdventureService(
             activityType: .offRoad,
-            title: "Off-Road",
+            title: "Off-road 4x4",
             systemImage: "car.fill",
-            shortDescription: "Book 1, 2, or 3 hours by vehicle.",
-            fullDescription: "One off-road vehicle supports 1 or 2 riders. Pricing is per vehicle per hour.",
-            priceText: "$20 / hour / vehicle",
-            durationText: "1 - 3 hours",
-            includes: ["Vehicle", "Guide", "Safety briefing"]
+            shortDescription: "Reserva 1, 2 o 3 horas por vehículo.",
+            fullDescription: "Un vehículo off-road admite 1 o 2 personas. El precio es por vehículo por hora.",
+            priceText: "$20 / hora / vehículo",
+            durationText: "1 - 3 horas",
+            includes: ["Vehículo", "Guía", "Charla de seguridad"]
         ),
         AdventureService(
             activityType: .paintball,
             title: "Paintball",
             systemImage: "shield.lefthalf.filled",
-            shortDescription: "Flexible sessions for groups.",
-            fullDescription: "Reserve paintball by 30-minute blocks for as many people as you want.",
-            priceText: "$5 / 30 min / person",
+            shortDescription: "Sesiones flexibles para grupos.",
+            fullDescription: "Reserva paintball en bloques de 30 minutos para tantas personas como desees.",
+            priceText: "$5 / 30 min / persona",
             durationText: "30 - 120 min",
-            includes: ["Marker", "Mask", "Basic ammo"]
+            includes: ["Marcadora", "Máscara", "Munición básica"]
         ),
         AdventureService(
             activityType: .goKarts,
-            title: "Go Karts",
+            title: "Go karts",
             systemImage: "flag.checkered",
-            shortDescription: "Fast laps with flexible duration.",
-            fullDescription: "Reserve go karts by 30-minute blocks for small or large groups.",
-            priceText: "$5 / 30 min / person",
+            shortDescription: "Vueltas rápidas con duración flexible.",
+            fullDescription: "Reserva go karts en bloques de 30 minutos para grupos pequeños o grandes.",
+            priceText: "$5 / 30 min / persona",
             durationText: "30 - 120 min",
-            includes: ["Kart", "Helmet", "Track access"]
+            includes: ["Kart", "Casco", "Acceso a la pista"]
         ),
         AdventureService(
             activityType: .shootingRange,
-            title: "Shooting Range",
+            title: "Campo de tiro",
             systemImage: "target",
-            shortDescription: "Precision sessions by time and headcount.",
-            fullDescription: "Reserve the shooting range alone or inside a combo.",
-            priceText: "$5 / 30 min / person",
+            shortDescription: "Sesiones de precisión por tiempo y número de personas.",
+            fullDescription: "Reserva el campo de tiro de forma individual o dentro de un combo.",
+            priceText: "$5 / 30 min / persona",
             durationText: "30 - 120 min",
-            includes: ["Equipment", "Safety briefing"]
+            includes: ["Equipo", "Charla de seguridad"]
         ),
         AdventureService(
             activityType: .camping,
             title: "Camping",
             systemImage: "tent.fill",
-            shortDescription: "Night stay with food and included off-road experience.",
-            fullDescription: "Camping is booked per person per night and works as an overnight add-on.",
-            priceText: "$30 / person / night",
-            durationText: "1+ nights",
-            includes: ["Food", "Sleeping area", "Included off-road experience"]
+            shortDescription: "Estadía nocturna con comida y experiencia off-road incluida.",
+            fullDescription: "El camping se reserva por persona por noche y funciona como complemento nocturno.",
+            priceText: "$30 / persona / noche",
+            durationText: "1+ noches",
+            includes: ["Comida", "Área para dormir", "Experiencia off-road incluida"]
         ),
         AdventureService(
             activityType: .extremeSlide,
-            title: "Extreme Slide",
+            title: "Columpio extremo",
             systemImage: "figure.fall",
-            shortDescription: "Slide experience with included off-road transportation.",
-            fullDescription: "A fixed session that reserves transport and the slide itself.",
-            priceText: "$15 / person",
-            durationText: "30 min + transport",
-            includes: ["Slide session", "Included off-road transportation"]
+            shortDescription: "Experiencia en el columpio con transporte off-road incluido.",
+            fullDescription: "Una sesión fija que incluye el transporte y el columpio.",
+            priceText: "$15 / persona",
+            durationText: "30 min + transporte",
+            includes: ["Sesión en el columpio", "Transporte off-road incluido"]
         )
     ]
 }

@@ -9,8 +9,8 @@ import SwiftUI
 
 struct BookingsView: View {
     @ObservedObject var ordersViewModel: OrdersViewModel
-    let adventureModuleFactory: AdventureModuleFactory
-    
+    @ObservedObject var adventureBookingsViewModel: AdventureBookingsViewModel
+
     var body: some View {
         NavigationStack {
             ScrollView {
@@ -28,7 +28,7 @@ struct BookingsView: View {
                     
                     NavigationLink {
                         AdventureReservationsView(
-                            viewModel: adventureModuleFactory.makeBookingsViewModel()
+                            viewModel: adventureBookingsViewModel
                         )
                     } label: {
                         bookingCard(

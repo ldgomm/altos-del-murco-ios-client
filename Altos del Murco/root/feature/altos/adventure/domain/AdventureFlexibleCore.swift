@@ -19,12 +19,12 @@ enum AdventureActivityType: String, Codable, CaseIterable, Identifiable, Hashabl
     
     var title: String {
         switch self {
-        case .offRoad: return "Off-Road"
+        case .offRoad: return "Off-road 4x4"
         case .paintball: return "Paintball"
-        case .goKarts: return "Go Karts"
-        case .shootingRange: return "Shooting Range"
+        case .goKarts: return "Go karts"
+        case .shootingRange: return "Campo de tiro"
         case .camping: return "Camping"
-        case .extremeSlide: return "Extreme Slide"
+        case .extremeSlide: return "Columpio extremo"
         }
     }
     
@@ -128,9 +128,9 @@ enum AdventureBookingStatus: String, Codable, CaseIterable, Hashable {
     
     var title: String {
         switch self {
-        case .pending: return "Pending"
-        case .confirmed: return "Confirmed"
-        case .canceled: return "Canceled"
+        case .pending: return "Pendiente"
+        case .confirmed: return "Confirmada"
+        case .canceled: return "Cancelada"
         }
     }
 }
@@ -167,13 +167,13 @@ struct AdventureReservationItemDraft: Identifiable, Codable, Hashable {
     var summaryText: String {
         switch activity {
         case .offRoad:
-            return "\(durationMinutes / 60)h • \(vehicleCount) vehicle(s) • \(offRoadRiderCount) rider(s)"
+            return "\(durationMinutes / 60)h • \(vehicleCount) vehículo(s) • \(offRoadRiderCount) persona(s)"
         case .paintball, .goKarts, .shootingRange:
-            return "\(durationMinutes)m • \(peopleCount) people"
+            return "\(durationMinutes) min • \(peopleCount) persona(s)"
         case .camping:
-            return "\(nights) night(s) • \(peopleCount) people"
+            return "\(nights) noche(s) • \(peopleCount) persona(s)"
         case .extremeSlide:
-            return "1 session • \(peopleCount) people • transport included"
+            return "1 sesión • \(peopleCount) persona(s) • transporte incluido"
         }
     }
 }
@@ -252,9 +252,9 @@ struct AdventureTemplate: Identifiable, Hashable {
 
 enum AdventureSchedule {
     static let slotMinutes = 30
-    static let daytimeStartHour = 8
+    static let daytimeStartHour = 7
     static let daytimeEndHour = 22
-    static let nightPremiumStartHour = 18
+    static let nightPremiumStartHour = 17
     static let offRoadPeoplePerVehicle = 2
     
     static func capacity(for resource: AdventureResourceType) -> Int {
@@ -300,17 +300,8 @@ enum AdventureDateHelper {
         timeFormatter.string(from: date)
     }
     
-    static func date(
-        on day: Date,
-        hour: Int,
-        minute: Int
-    ) -> Date {
-        calendar.date(
-            bySettingHour: hour,
-            minute: minute,
-            second: 0,
-            of: day
-        ) ?? day
+    static func date(on day: Date, hour: Int, minute: Int) -> Date {
+        calendar.date(bySettingHour: hour, minute: minute, second: 0, of: day) ?? day
     }
     
     static func addMinutes(_ value: Int, to date: Date) -> Date {
@@ -335,8 +326,8 @@ enum AdventureDateHelper {
         let startHour = calendar.component(.hour, from: startAt)
         let endHour = calendar.component(.hour, from: endAt)
         return startHour >= AdventureSchedule.nightPremiumStartHour
-            || endHour >= AdventureSchedule.nightPremiumStartHour
-            || startHour < AdventureSchedule.daytimeStartHour
+        || endHour >= AdventureSchedule.nightPremiumStartHour
+        || startHour < AdventureSchedule.daytimeStartHour
     }
 }
 
@@ -369,11 +360,11 @@ enum AdventurePricingEngine {
         let completeTenDollarSteps = Int(subtotal / 10)
         return Double(completeTenDollarSteps) * 0.5
     }
-
+    
     static func discountedSubtotal(for subtotal: Double) -> Double {
         max(0, subtotal - discount(for: subtotal))
     }
-
+    
     static func estimatedDiscountedSubtotal(items: [AdventureReservationItemDraft]) -> Double {
         let subtotal = estimatedSubtotal(items: items)
         return subtotal
@@ -421,7 +412,7 @@ enum AdventurePlanner {
                 blocks.append(
                     AdventureBookingBlock(
                         id: UUID().uuidString,
-                        title: "Off-Road",
+                        title: "Off-Road 4x4",
                         activity: .offRoad,
                         resourceType: .offRoadVehicles,
                         startAt: cursor,
@@ -484,7 +475,7 @@ enum AdventurePlanner {
                 blocks.append(
                     AdventureBookingBlock(
                         id: UUID().uuidString,
-                        title: "Shooting Range",
+                        title: "Campo de tiro",
                         activity: .shootingRange,
                         resourceType: .shootingPeople,
                         startAt: cursor,
@@ -508,7 +499,7 @@ enum AdventurePlanner {
                 blocks.append(
                     AdventureBookingBlock(
                         id: UUID().uuidString,
-                        title: "Extreme Slide Transport",
+                        title: "Transporte al columpio extremo",
                         activity: .extremeSlide,
                         resourceType: .offRoadVehicles,
                         startAt: cursor,
@@ -567,7 +558,7 @@ enum AdventurePlanner {
             $0.activity == .offRoad &&
             AdventureDateHelper.calendar.component(.minute, from: $0.startAt) != 0
         }
-
+        
         guard !hasMisalignedOffRoadBlock else { return nil }
         
         guard let last = blocks.last else { return nil }
@@ -576,13 +567,13 @@ enum AdventurePlanner {
             $0.activity == .camping
             || AdventureDateHelper.isNightPremiumTime($0.startAt, $0.endAt)
         }
-
+        
         let discountAmount = AdventurePricingEngine.discount(for: subtotal)
         let discountedSubtotal = AdventurePricingEngine.discountedSubtotal(for: subtotal)
         let premium = hasNightPremium
-            ? discountedSubtotal * AdventurePricingEngine.nightPremiumRate
-            : 0
-
+        ? discountedSubtotal * AdventurePricingEngine.nightPremiumRate
+        : 0
+        
         return AdventureBuildPlan(
             startAt: startAt,
             endAt: last.endAt,
@@ -657,8 +648,8 @@ enum AdventureCatalogTemplates {
     static let featured: [AdventureTemplate] = [
         AdventureTemplate(
             id: "off-road-duo",
-            title: "Off-Road Duo",
-            subtitle: "1 hour off-road for 2 riders",
+            title: "Off-road dúo",
+            subtitle: "1 hora de off-road para 2 personas",
             badge: "Popular",
             items: [
                 AdventureReservationItemDraft(
@@ -673,9 +664,9 @@ enum AdventureCatalogTemplates {
         ),
         AdventureTemplate(
             id: "adrenaline-mix",
-            title: "Adrenaline Mix",
-            subtitle: "1 hour off-road + 30 min karts + 30 min paintball",
-            badge: "Featured",
+            title: "Mix de adrenalina",
+            subtitle: "1 hora de off-road + 30 min de karts + 30 min de paintball",
+            badge: "Destacado",
             items: [
                 AdventureReservationItemDraft(
                     activity: .offRoad,
@@ -691,9 +682,9 @@ enum AdventureCatalogTemplates {
         ),
         AdventureTemplate(
             id: "full-adventure",
-            title: "Full Adventure",
-            subtitle: "2h off-road + 1h karts + 30m paintball + 30m shooting",
-            badge: "Best Seller",
+            title: "Aventura completa",
+            subtitle: "2h off-road + 1h karts + 30m paintball + 30m tiro",
+            badge: "Más vendido",
             items: [
                 AdventureReservationItemDraft(
                     activity: .offRoad,
@@ -717,9 +708,9 @@ enum AdventureCatalogTemplates {
         ),
         AdventureTemplate(
             id: "camp-night",
-            title: "Camp Night",
-            subtitle: "Day activities + camping night",
-            badge: "Night Fun",
+            title: "Noche de camping",
+            subtitle: "Actividades del día + noche de camping",
+            badge: "Diversión nocturna",
             items: [
                 AdventureReservationItemDraft(
                     activity: .offRoad,

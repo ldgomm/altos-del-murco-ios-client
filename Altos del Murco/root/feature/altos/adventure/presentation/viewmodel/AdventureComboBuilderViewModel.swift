@@ -43,15 +43,32 @@ final class AdventureComboBuilderViewModel: ObservableObject {
         )
         self.getAvailabilityUseCase = getAvailabilityUseCase
         self.createBookingUseCase = createBookingUseCase
+        
+        keepCampingAtEnd()
     }
     
     func onAppear() {
         Task { await loadAvailability() }
     }
     
+    func canAddItem(_ activity: AdventureActivityType) -> Bool {
+        !state.items.contains(where: { $0.activity == activity })
+    }
+
+    var availableActivitiesToAdd: [AdventureActivityType] {
+        AdventureActivityType.allCases.filter { activity in
+            canAddItem(activity)
+        }
+    }
+    
     func addItem(_ activity: AdventureActivityType) {
-        state.items.append(.init(activity: activity, durationMinutes: 0, peopleCount: 0, vehicleCount: 0, offRoadRiderCount: 0, nights: 0))
-        state.items[state.items.count - 1] = AdventureActivityType.defaultDraft(for: activity)
+        guard canAddItem(activity) else {
+            state.errorMessage = "\(activity.title) ya fue agregada a esta reserva."
+            return
+        }
+        
+        state.items.append(AdventureActivityType.defaultDraft(for: activity))
+        keepCampingAtEnd()
         state.selectedSlot = nil
         Task { await loadAvailability() }
     }
@@ -59,18 +76,21 @@ final class AdventureComboBuilderViewModel: ObservableObject {
     func updateItem(_ item: AdventureReservationItemDraft) {
         guard let index = state.items.firstIndex(where: { $0.id == item.id }) else { return }
         state.items[index] = item
+        keepCampingAtEnd()
         state.selectedSlot = nil
         Task { await loadAvailability() }
     }
     
     func removeItem(at offsets: IndexSet) {
         state.items.remove(atOffsets: offsets)
+        keepCampingAtEnd()
         state.selectedSlot = nil
         Task { await loadAvailability() }
     }
     
     func moveItems(from source: IndexSet, to destination: Int) {
         state.items.move(fromOffsets: source, toOffset: destination)
+        keepCampingAtEnd()
         state.selectedSlot = nil
         Task { await loadAvailability() }
     }
@@ -101,6 +121,31 @@ final class AdventureComboBuilderViewModel: ObservableObject {
     
     var estimatedSubtotal: Double {
         AdventurePricingEngine.estimatedSubtotal(items: state.items)
+    }
+    
+    func reset() {
+        state = AdventureComboBuilderState(
+            items: [AdventureActivityType.defaultDraft(for: .offRoad)]
+        )
+        keepCampingAtEnd()
+        Task { await loadAvailability() }
+    }
+
+    func replaceItems(with items: [AdventureReservationItemDraft]) {
+        let uniqueItems = items.reduce(into: [AdventureReservationItemDraft]()) { result, item in
+            guard !result.contains(where: { $0.activity == item.activity }) else { return }
+            result.append(item)
+        }
+        
+        state.items = uniqueItems.isEmpty
+            ? [AdventureActivityType.defaultDraft(for: .offRoad)]
+            : uniqueItems
+        
+        keepCampingAtEnd()
+        state.selectedSlot = nil
+        state.errorMessage = nil
+        state.successMessage = nil
+        Task { await loadAvailability() }
     }
     
     private func loadAvailability() async {
@@ -178,5 +223,11 @@ final class AdventureComboBuilderViewModel: ObservableObject {
         }
         
         state.isSubmitting = false
+    }
+    
+    private func keepCampingAtEnd() {
+        let campingItems = state.items.filter { $0.activity == .camping }
+        let otherItems = state.items.filter { $0.activity != .camping }
+        state.items = otherItems + campingItems
     }
 }

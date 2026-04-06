@@ -9,7 +9,7 @@ import SwiftUI
 
 @MainActor
 struct AdventureCatalogView: View {
-    let adventureModuleFactory: AdventureModuleFactory
+    @ObservedObject var comboBuilderViewModel: AdventureComboBuilderViewModel
     
     private let singles = AdventureActivityType.allCases.map(AdventureActivityType.defaultDraft(for:))
     
@@ -38,7 +38,7 @@ struct AdventureCatalogView: View {
             
             NavigationLink {
                 AdventureComboBuilderView(
-                    viewModel: adventureModuleFactory.makeBuilderViewModel()
+                    viewModel: comboBuilderViewModel
                 )
             } label: {
                 Text("Iniciar combo personalizado")
@@ -64,11 +64,10 @@ struct AdventureCatalogView: View {
             
             ForEach(AdventureCatalogTemplates.featured) { template in
                 NavigationLink {
-                    AdventureComboBuilderView(
-                        viewModel: adventureModuleFactory.makeBuilderViewModel(
-                            prefilledItems: template.items
-                        )
-                    )
+                    AdventureComboBuilderView(viewModel: comboBuilderViewModel)
+                        .onAppear {
+                            comboBuilderViewModel.replaceItems(with: template.items)
+                        }
                 } label: {
                     TemplateCard(template: template)
                 }
@@ -84,11 +83,10 @@ struct AdventureCatalogView: View {
             
             ForEach(singles, id: \.id) { item in
                 NavigationLink {
-                    AdventureComboBuilderView(
-                        viewModel: adventureModuleFactory.makeBuilderViewModel(
-                            prefilledItems: [item]
-                        )
-                    )
+                    AdventureComboBuilderView(viewModel: comboBuilderViewModel)
+                        .onAppear {
+                            comboBuilderViewModel.replaceItems(with: [item])
+                        }
                 } label: {
                     SingleActivityCard(item: item)
                 }
@@ -106,15 +104,17 @@ struct AdventureCatalogView: View {
                 .foregroundStyle(.secondary)
             
             NavigationLink {
-                AdventureComboBuilderView(
-                    viewModel: adventureModuleFactory.makeBuilderViewModel()
-                )
+                AdventureComboBuilderView(viewModel: comboBuilderViewModel)
+                    .onAppear {
+                        comboBuilderViewModel.reset()
+                    }
             } label: {
-                Text("Abrir creador de combos")
+                Text("Iniciar combo personalizado")
                     .font(.headline)
                     .frame(maxWidth: .infinity)
                     .padding()
-                    .background(Color(.systemGray6))
+                    .background(Color.primary)
+                    .foregroundStyle(Color(.systemBackground))
                     .clipShape(RoundedRectangle(cornerRadius: 18))
             }
         }
@@ -177,7 +177,8 @@ private struct SingleActivityCard: View {
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                 let base = AdventurePricingEngine.subtotal(for: item)
-                Text("Desde $\(AdventurePricingEngine.discountedSubtotal(for: base), specifier: "%.2f")")                    .font(.caption.weight(.semibold))
+                Text("Desde $\(base, specifier: "%.2f")")
+                    .font(.caption.weight(.semibold))
             }
             
             Spacer()
@@ -194,4 +195,3 @@ private struct SingleActivityCard: View {
         )
     }
 }
-

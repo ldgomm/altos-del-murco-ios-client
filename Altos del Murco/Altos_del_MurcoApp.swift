@@ -14,7 +14,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         _ application: UIApplication,
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
     ) -> Bool {
-        true
+        return true
     }
 }
 
@@ -26,13 +26,17 @@ struct AltosDelMurcoApp: App {
 
     @StateObject private var cartManager: CartManager
     @StateObject private var router = AppRouter()
+    @StateObject private var appPreferences = AppPreferences()
 
     @StateObject private var ordersViewModel: OrdersViewModel
     @StateObject private var checkoutViewModel: CheckoutViewModel
+    @StateObject private var sessionViewModel: AppSessionViewModel
+
     private let adventureModuleFactory: AdventureModuleFactory
 
     init() {
         FirebaseApp.configure()
+        ThemeAppearance.configure()
 
         do {
             let schema = Schema([
@@ -73,6 +77,33 @@ struct AltosDelMurcoApp: App {
             let adventureService = FirestoreAdventureBookingsService()
             self.adventureModuleFactory = AdventureModuleFactory(service: adventureService)
 
+            let authRepository: AuthenticationRepositoriable = FirebaseAuthenticationRepository()
+            let clientProfileRepository: ClientProfileRepositoriable = FirestoreClientProfileRepository()
+
+            let signInWithAppleUseCase = SignInWithAppleUseCase(repository: authRepository)
+            let resolveSessionUseCase = ResolveSessionUseCase(
+                authRepository: authRepository,
+                clientProfileRepository: clientProfileRepository
+            )
+            let completeClientProfileUseCase = CompleteClientProfileUseCase(
+                repository: clientProfileRepository
+            )
+            let deleteCurrentAccountUseCase = DeleteCurrentAccountUseCase(
+                authRepository: authRepository,
+                clientProfileRepository: clientProfileRepository
+            )
+            let signOutUseCase = SignOutUseCase(repository: authRepository)
+
+            let sessionVM = AppSessionViewModel(
+                signInWithAppleUseCase: signInWithAppleUseCase,
+                resolveSessionUseCase: resolveSessionUseCase,
+                completeClientProfileUseCase: completeClientProfileUseCase,
+                deleteCurrentAccountUseCase: deleteCurrentAccountUseCase,
+                signOutUseCase: signOutUseCase
+            )
+
+            _sessionViewModel = StateObject(wrappedValue: sessionVM)
+
         } catch {
             fatalError("Failed to create SwiftData container: \(error)")
         }
@@ -80,13 +111,18 @@ struct AltosDelMurcoApp: App {
 
     var body: some Scene {
         WindowGroup {
-            MainTabView(
-                ordersViewModel: ordersViewModel,
-                checkoutViewModel: checkoutViewModel,
-                adventureModuleFactory: adventureModuleFactory
-            )
+            RootView(viewModel: sessionViewModel) {
+                MainTabView(
+                    ordersViewModel: ordersViewModel,
+                    checkoutViewModel: checkoutViewModel,
+                    adventureModuleFactory: adventureModuleFactory
+                )
+            }
             .environmentObject(cartManager)
             .environmentObject(router)
+            .environmentObject(sessionViewModel)
+            .environmentObject(appPreferences)
+            .preferredColorScheme(appPreferences.preferredColorScheme)
         }
         .modelContainer(sharedModelContainer)
     }

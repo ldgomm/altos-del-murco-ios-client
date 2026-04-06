@@ -1,0 +1,61 @@
+//
+//  ClientProfileDocument.swift
+//  Altos del Murco
+//
+//  Created by José Ruiz on 3/4/26.
+//
+
+import Foundation
+
+struct ClientProfileDocument: Codable {
+    let id: String
+    let email: String
+    let appleUserIdentifier: String
+    let fullName: String
+    let nationalId: String
+    let phoneNumber: String
+    let birthday: Date
+    let address: String
+    let emergencyContactName: String
+    let emergencyContactPhone: String
+    let isProfileComplete: Bool
+    let createdAt: Date
+    let updatedAt: Date
+    let profileCompletedAt: Date?
+
+    init(profile: ClientProfile) {
+        self.id = profile.id
+        self.email = profile.email
+        self.appleUserIdentifier = profile.appleUserIdentifier
+        self.fullName = profile.fullName
+        self.nationalId = profile.nationalId
+        self.phoneNumber = profile.phoneNumber
+        self.birthday = profile.birthday
+        self.address = profile.address
+        self.emergencyContactName = profile.emergencyContactName
+        self.emergencyContactPhone = profile.emergencyContactPhone
+        self.isProfileComplete = profile.isProfileComplete
+        self.createdAt = profile.createdAt
+        self.updatedAt = profile.updatedAt
+        self.profileCompletedAt = profile.profileCompletedAt
+    }
+
+    func toDomain() -> ClientProfile {
+        ClientProfile(
+            id: id,
+            email: email,
+            appleUserIdentifier: appleUserIdentifier,
+            fullName: fullName,
+            nationalId: nationalId,
+            phoneNumber: phoneNumber,
+            birthday: birthday,
+            address: address,
+            emergencyContactName: emergencyContactName,
+            emergencyContactPhone: emergencyContactPhone,
+            isProfileComplete: isProfileComplete,
+            createdAt: createdAt,
+            updatedAt: updatedAt,
+            profileCompletedAt: profileCompletedAt
+        )
+    }
+}

@@ -8,12 +8,8 @@
 import SwiftUI
 
 struct AdventureComboBuilderView: View {
-    @StateObject private var viewModel: AdventureComboBuilderViewModel
+    @ObservedObject var viewModel: AdventureComboBuilderViewModel
     @State private var editingItem: AdventureReservationItemDraft?
-    
-    init(viewModel: AdventureComboBuilderViewModel) {
-        _viewModel = StateObject(wrappedValue: viewModel)
-    }
     
     var body: some View {
         List {
@@ -38,7 +34,7 @@ struct AdventureComboBuilderView: View {
             }
         }
         .alert(
-            "Error",
+            "Mensaje",
             isPresented: Binding(
                 get: { viewModel.state.errorMessage != nil || viewModel.state.successMessage != nil },
                 set: { if !$0 { viewModel.dismissMessage() } }
@@ -56,7 +52,7 @@ struct AdventureComboBuilderView: View {
                 Text("Tu combo")
                     .font(.title3.bold())
                 
-                Text("Puedes combinar cualquier actividad, establecer diferentes duraciones y número de personas, y arrastrar para cambiar el orden.")
+                Text("Puedes combinar distintas actividades, establecer diferentes duraciones y número de personas, y arrastrar para cambiar el orden. Cada actividad solo puede agregarse una vez por reserva.")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                 
@@ -82,9 +78,14 @@ struct AdventureComboBuilderView: View {
             .onMove(perform: viewModel.moveItems)
             
             Menu {
-                ForEach(AdventureActivityType.allCases) { activity in
-                    Button(activity.title) {
-                        viewModel.addItem(activity)
+                if viewModel.availableActivitiesToAdd.isEmpty {
+                    Button("Todas las actividades ya fueron agregadas") { }
+                        .disabled(true)
+                } else {
+                    ForEach(viewModel.availableActivitiesToAdd) { activity in
+                        Button(activity.title) {
+                            viewModel.addItem(activity)
+                        }
                     }
                 }
             } label: {
@@ -354,7 +355,7 @@ private struct AdventureItemEditorView: View {
                         Stepper("Vehículos: \(item.vehicleCount)", value: $item.vehicleCount, in: 1...10)
                         Stepper("Personas: \(item.offRoadRiderCount)", value: $item.offRoadRiderCount, in: 1...20)
                         
-                        Text("Cada vehículo admite 1 o 2 personas. Ejemplo: 8 personas pueden usar 4 vehículos.")
+                        Text("Cada vehículo admite 1 o 2 personas. Ejemplo: 6 personas pueden usar 4 vehículos.")
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                     }
