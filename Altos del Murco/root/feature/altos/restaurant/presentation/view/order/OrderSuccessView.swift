@@ -10,7 +10,7 @@ import SwiftUI
 struct OrderSuccessView: View {
     let order: Order
     
-    @EnvironmentObject private var router: AppRouter
+    @Binding var path: NavigationPath
     @Environment(\.colorScheme) private var colorScheme
     
     private let theme: AppSectionTheme = .restaurant
@@ -26,7 +26,7 @@ struct OrderSuccessView: View {
                 orderDetailsCard
                 
                 Button {
-                    router.goToRoot()
+                    path = NavigationPath()
                 } label: {
                     Text("Done")
                 }

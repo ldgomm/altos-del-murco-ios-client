@@ -97,9 +97,9 @@ struct MenuListView: View {
             case .cart:
                 CartView()
             case .checkout:
-                CheckoutView(viewModel: checkoutViewModel)
+                CheckoutView(viewModel: checkoutViewModel, path: $path)
             case let .orderSuccess(order):
-                OrderSuccessView(order: order)
+                OrderSuccessView(order: order, path: $path)
             }
         }
     }

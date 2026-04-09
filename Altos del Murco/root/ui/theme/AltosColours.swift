@@ -316,51 +316,51 @@ enum AppTheme {
             
         case .restaurant:
             let primary = Color.adaptive(
-                light: UIColor(hex: 0x6B3A1E),
-                dark: UIColor(hex: 0xC5854A)
+                light: UIColor(hex: 0x3E4347),   // charcoal
+                dark: UIColor(hex: 0xC2C8CE)     // soft silver
             )
             let secondary = Color.adaptive(
-                light: UIColor(hex: 0x8E4D23),
-                dark: UIColor(hex: 0xE0A361)
+                light: UIColor(hex: 0x5A6066),   // graphite
+                dark: UIColor(hex: 0x9BA3AB)     // muted steel
             )
             let accent = Color.adaptive(
-                light: UIColor(hex: 0xE96B26),
-                dark: UIColor(hex: 0xFF9551)
+                light: UIColor(hex: 0x8B7D67),   // aged brass / vintage taupe
+                dark: UIColor(hex: 0xC5B79E)     // soft antique metal
             )
             let onPrimary = Color.white
             
             let background = Color.adaptive(
-                light: UIColor(hex: 0xFBF6F0),
-                dark: UIColor(hex: 0x120C08)
+                light: UIColor(hex: 0xF3F2F0),   // warm stone
+                dark: UIColor(hex: 0x0D0F11)     // deep charcoal black
             )
             let surface = Color.adaptive(
-                light: UIColor(hex: 0xFFFDFC),
-                dark: UIColor(hex: 0x1A130F)
+                light: UIColor(hex: 0xFCFBFA),   // soft neutral
+                dark: UIColor(hex: 0x14171A)     // dark graphite
             )
             let card = Color.adaptive(
-                light: UIColor(hex: 0xFCF8F4),
-                dark: UIColor(hex: 0x211812)
+                light: UIColor(hex: 0xF7F5F3),   // vintage paper-stone
+                dark: UIColor(hex: 0x1A1E22)     // lifted dark card
             )
             let elevatedCard = Color.adaptive(
                 light: UIColor(hex: 0xFFFFFF),
-                dark: UIColor(hex: 0x271B14)
+                dark: UIColor(hex: 0x20252A)
             )
             let stroke = Color.adaptive(
-                light: UIColor(hex: 0xE8D9CB),
-                dark: UIColor(hex: 0x433227)
+                light: UIColor(hex: 0xD8D4CE),   // soft border
+                dark: UIColor(hex: 0x333940)     // subtle dark divider
             )
             
             let textPrimary = Color.adaptive(
-                light: UIColor(hex: 0x24170F),
-                dark: UIColor(hex: 0xF9F0E8)
+                light: UIColor(hex: 0x1C1F22),
+                dark: UIColor(hex: 0xF3F5F7)
             )
             let textSecondary = Color.adaptive(
-                light: UIColor(hex: 0x7A6657),
-                dark: UIColor(hex: 0xC9B6A5)
+                light: UIColor(hex: 0x666D74),
+                dark: UIColor(hex: 0xB1B8BF)
             )
             let textTertiary = Color.adaptive(
-                light: UIColor(hex: 0x9C8A7C),
-                dark: UIColor(hex: 0x857463)
+                light: UIColor(hex: 0x8A9096),
+                dark: UIColor(hex: 0x7A838C)
             )
             
             let success = Color.adaptive(
@@ -368,18 +368,18 @@ enum AppTheme {
                 dark: UIColor(hex: 0x68D391)
             )
             let warning = Color.adaptive(
-                light: UIColor(hex: 0xC27B20),
-                dark: UIColor(hex: 0xF6C15A)
+                light: UIColor(hex: 0x9C7B3D),   // muted vintage gold
+                dark: UIColor(hex: 0xD6B56E)
             )
             let destructive = Color.adaptive(
-                light: UIColor(hex: 0xD64545),
+                light: UIColor(hex: 0xC94C4C),
                 dark: UIColor(hex: 0xFC8181)
             )
             
             let shadow = Color.black
             let glow = Color.adaptive(
-                light: UIColor(hex: 0xF28B34),
-                dark: UIColor(hex: 0xFF7A1A)
+                light: UIColor(hex: 0xA79A84),   // subtle warm smoke
+                dark: UIColor(hex: 0x7B7468)
             )
             
             return ThemePalette(
@@ -408,8 +408,8 @@ enum AppTheme {
                 softGradient: LinearGradient(
                     colors: [
                         background,
-                        primary.opacity(scheme == .dark ? 0.18 : 0.06),
-                        accent.opacity(scheme == .dark ? 0.14 : 0.06)
+                        primary.opacity(scheme == .dark ? 0.16 : 0.05),
+                        accent.opacity(scheme == .dark ? 0.10 : 0.04)
                     ],
                     startPoint: .topLeading,
                     endPoint: .bottomTrailing
@@ -418,15 +418,15 @@ enum AppTheme {
                     colors: [
                         elevatedCard,
                         card,
-                        accent.opacity(scheme == .dark ? 0.05 : 0.03)
+                        accent.opacity(scheme == .dark ? 0.035 : 0.02)
                     ],
                     startPoint: .topLeading,
                     endPoint: .bottomTrailing
                 ),
                 chipGradient: LinearGradient(
                     colors: [
-                        primary.opacity(scheme == .dark ? 0.30 : 0.14),
-                        accent.opacity(scheme == .dark ? 0.20 : 0.10)
+                        primary.opacity(scheme == .dark ? 0.28 : 0.12),
+                        accent.opacity(scheme == .dark ? 0.14 : 0.08)
                     ],
                     startPoint: .topLeading,
                     endPoint: .bottomTrailing

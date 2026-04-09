@@ -10,7 +10,7 @@ import SwiftUI
 struct CheckoutView: View {
     @ObservedObject var viewModel: CheckoutViewModel
     @EnvironmentObject private var cartManager: CartManager
-    @EnvironmentObject private var router: AppRouter
+    @Binding var path: NavigationPath
     @Environment(\.colorScheme) private var colorScheme
     
     private var palette: ThemePalette {
@@ -44,7 +44,7 @@ struct CheckoutView: View {
         )
         .onChange(of: viewModel.state.createdOrder) { _, order in
             guard let order else { return }
-            router.path.append(Route.orderSuccess(order))
+            path.append(Route.orderSuccess(order))
         }
     }
     
