@@ -15,15 +15,34 @@ struct ProfileContainerView: View {
         Group {
             if let factory = sessionViewModel.makeProfileViewModelFactory(appPreferences: appPreferences) {
                 ProfileView(viewModelFactory: factory)
+                    .appScreenStyle(.neutral)
             } else {
                 NavigationStack {
-                    VStack(spacing: 16) {
-                        ProgressView()
-                        Text("Loading profile...")
-                            .foregroundStyle(.secondary)
+                    ZStack {
+                        BrandScreenBackground(theme: .neutral)
+                        
+                        VStack(spacing: 18) {
+                            ProgressView()
+                                .scaleEffect(1.1)
+                            
+                            VStack(spacing: 6) {
+                                Text("Loading profile...")
+                                    .font(.headline)
+                                
+                                Text("Preparing your account and preferences.")
+                                    .font(.subheadline)
+                                    .foregroundStyle(.secondary)
+                                    .multilineTextAlignment(.center)
+                            }
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(24)
+                        .appCardStyle(.neutral, emphasized: true)
+                        .padding()
                     }
                     .navigationTitle("Profile")
                 }
+                .appScreenStyle(.neutral)
             }
         }
     }

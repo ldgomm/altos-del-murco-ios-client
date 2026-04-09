@@ -9,6 +9,13 @@ import SwiftUI
 
 struct OrderDetailItemRow: View {
     let item: OrderItem
+    
+    @Environment(\.colorScheme) private var colorScheme
+    private let theme: AppSectionTheme = .restaurant
+    
+    private var palette: ThemePalette {
+        AppTheme.palette(for: theme, scheme: colorScheme)
+    }
 
     private var statusText: String {
         if item.isCompleted { return "Ready" }
@@ -20,60 +27,87 @@ struct OrderDetailItemRow: View {
         guard item.quantity > 0 else { return 0 }
         return Double(item.preparedQuantity) / Double(item.quantity)
     }
+    
+    private var progressColor: Color {
+        if item.isCompleted { return palette.success }
+        if item.isStarted { return palette.warning }
+        return palette.textTertiary
+    }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .top, spacing: 12) {
+                BrandIconBubble(
+                    theme: theme,
+                    systemImage: "fork.knife",
+                    size: 42
+                )
+
+                VStack(alignment: .leading, spacing: 6) {
                     Text(item.name)
-                        .font(.headline)
+                        .font(.headline.weight(.semibold))
+                        .foregroundStyle(palette.textPrimary)
 
                     Text("\(item.quantity) × \(item.unitPrice.priceText)")
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(palette.textSecondary)
                 }
 
                 Spacer()
 
-                VStack(alignment: .trailing, spacing: 4) {
+                VStack(alignment: .trailing, spacing: 6) {
                     Text(item.totalPrice.priceText)
-                        .font(.subheadline)
-                        .fontWeight(.semibold)
+                        .font(.subheadline.weight(.bold))
+                        .foregroundStyle(palette.textPrimary)
 
-                    ItemStatusBadge(isCompleted: item.isCompleted, isStarted: item.isStarted)
+                    ItemStatusBadge(
+                        isCompleted: item.isCompleted,
+                        isStarted: item.isStarted
+                    )
                 }
             }
 
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: 8) {
                 HStack {
                     Text("Prepared: \(item.preparedQuantity)/\(item.quantity)")
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(palette.textSecondary)
 
                     Spacer()
 
                     Text(statusText)
-                        .font(.caption)
-                        .fontWeight(.medium)
-                        .foregroundStyle(item.isCompleted ? .green : item.isStarted ? .orange : .secondary)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(progressColor)
                 }
 
                 ProgressView(value: progressValue)
+                    .tint(progressColor)
             }
 
             if let notes = item.notes, !notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                HStack(alignment: .top, spacing: 8) {
+                HStack(alignment: .top, spacing: 10) {
                     Image(systemName: "note.text")
-                        .foregroundStyle(.secondary)
+                        .font(.subheadline)
+                        .foregroundStyle(palette.accent)
+                        .padding(.top, 1)
 
                     Text(notes)
                         .font(.subheadline)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(palette.textSecondary)
+                        .multilineTextAlignment(.leading)
                 }
-                .padding(10)
-                .background(Color(.tertiarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 12))
+                .padding(12)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .fill(palette.surface)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .stroke(palette.stroke, lineWidth: 1)
+                )
             }
         }
-        .padding(.vertical, 6)
+        .appCardStyle(.restaurant)
     }
 }

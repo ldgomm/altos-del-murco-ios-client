@@ -9,7 +9,14 @@ import SwiftUI
 
 struct ProfileView: View {
     @Environment(\.openURL) private var openURL
+    @Environment(\.colorScheme) private var colorScheme
     @StateObject private var viewModel: ProfileViewModel
+
+    private let theme: AppSectionTheme = .neutral
+
+    private var palette: ThemePalette {
+        AppTheme.palette(for: theme, scheme: colorScheme)
+    }
 
     init(viewModelFactory: @escaping () -> ProfileViewModel) {
         _viewModel = StateObject(wrappedValue: viewModelFactory())
@@ -28,8 +35,11 @@ struct ProfileView: View {
                     dangerSection
                     aboutSection
                 }
-                .padding()
+                .padding(.horizontal, 16)
+                .padding(.top, 12)
+                .padding(.bottom, 28)
             }
+            .scrollIndicators(.hidden)
             .navigationTitle("Profile")
             .sheet(isPresented: $viewModel.isShowingEditProfile) {
                 EditProfileView(
@@ -47,37 +57,45 @@ struct ProfileView: View {
                 )
             }
         }
+        .appScreenStyle(theme)
     }
 
     private var headerSection: some View {
-        VStack(spacing: 14) {
-            ZStack {
-                Circle()
-                    .fill(
-                        LinearGradient(
-                            colors: [Color(hex: "#8C4B16"), Color(hex: "#C67A30")],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(alignment: .center, spacing: 16) {
+                ZStack {
+                    Circle()
+                        .fill(palette.heroGradient)
+                        .frame(width: 84, height: 84)
+                        .overlay(
+                            Circle()
+                                .stroke(Color.white.opacity(colorScheme == .dark ? 0.10 : 0.35), lineWidth: 1)
                         )
-                    )
-                    .frame(width: 84, height: 84)
+                        .shadow(
+                            color: palette.shadow.opacity(colorScheme == .dark ? 0.28 : 0.12),
+                            radius: 14,
+                            x: 0,
+                            y: 8
+                        )
 
-                Text(viewModel.displayName.initials)
-                    .font(.title.bold())
-                    .foregroundStyle(.white)
-            }
+                    Text(viewModel.displayName.initials)
+                        .font(.title.bold())
+                        .foregroundStyle(palette.onPrimary)
+                }
 
-            Text(viewModel.displayName)
-                .font(.title2.bold())
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(viewModel.displayName)
+                        .font(.title2.bold())
+                        .foregroundStyle(palette.textPrimary)
 
-            Text(viewModel.emailText)
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
+                    Text(viewModel.emailText)
+                        .font(.subheadline)
+                        .foregroundStyle(palette.textSecondary)
 
-            HStack(spacing: 10) {
-                Label("Member since \(viewModel.memberSinceText)", systemImage: "calendar")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    Label("Member since \(viewModel.memberSinceText)", systemImage: "calendar")
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(palette.textSecondary)
+                }
 
                 Spacer()
             }
@@ -87,34 +105,33 @@ struct ProfileView: View {
                 infoPill(title: "Birthday", value: viewModel.birthdayText)
                 infoPill(title: "Address", value: viewModel.addressText)
             }
-            .padding(.top, 4)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding()
-        .background(
-            RoundedRectangle(cornerRadius: 28)
-                .fill(Color(.secondarySystemBackground))
-        )
+        .appCardStyle(theme, emphasized: false)
     }
 
     private func infoPill(title: String, value: String) -> some View {
-        HStack {
+        HStack(spacing: 12) {
             Text(title)
                 .font(.caption.bold())
-                .foregroundStyle(.secondary)
+                .foregroundStyle(palette.textSecondary)
 
             Spacer()
 
             Text(value)
                 .font(.caption)
-                .foregroundStyle(.primary)
+                .foregroundStyle(palette.textPrimary)
                 .multilineTextAlignment(.trailing)
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
         .background(
-            RoundedRectangle(cornerRadius: 14)
-                .fill(Color(.systemBackground))
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(palette.elevatedCard)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(palette.stroke, lineWidth: 1)
         )
     }
 
@@ -130,17 +147,14 @@ struct ProfileView: View {
         VStack(spacing: 8) {
             Text(value)
                 .font(.title2.bold())
+                .foregroundStyle(palette.textPrimary)
 
             Text(title)
-                .font(.caption)
-                .foregroundStyle(.secondary)
+                .font(.caption.weight(.medium))
+                .foregroundStyle(palette.textSecondary)
         }
         .frame(maxWidth: .infinity)
-        .padding()
-        .background(
-            RoundedRectangle(cornerRadius: 18)
-                .fill(Color(.secondarySystemBackground))
-        )
+        .appCardStyle(theme)
     }
 
     private var accountSection: some View {
@@ -312,20 +326,18 @@ struct ProfileView: View {
         VStack(spacing: 8) {
             Text("Altos del Murco")
                 .font(.footnote.bold())
+                .foregroundStyle(palette.textPrimary)
 
             Text(Bundle.main.appVersionDescription)
                 .font(.caption)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(palette.textSecondary)
         }
         .padding(.top, 8)
+        .padding(.bottom, 8)
     }
 
     private func sectionHeader(_ title: String) -> some View {
-        HStack {
-            Text(title)
-                .font(.headline.bold())
-            Spacer()
-        }
+        BrandSectionHeader(theme: theme, title: title)
     }
 
     private func actionRow(
@@ -369,34 +381,35 @@ struct ProfileView: View {
         HStack(spacing: 16) {
             ZStack {
                 Circle()
-                    .fill(tint.opacity(0.14))
-                    .frame(width: 42, height: 42)
+                    .fill(tint.opacity(colorScheme == .dark ? 0.22 : 0.14))
+                    .frame(width: 44, height: 44)
 
                 Image(systemName: systemImage)
+                    .font(.system(size: 16, weight: .semibold))
                     .foregroundStyle(tint)
             }
+            .overlay(
+                Circle()
+                    .stroke(palette.stroke, lineWidth: 1)
+            )
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(title)
                     .font(.body.weight(.semibold))
-                    .foregroundStyle(.primary)
+                    .foregroundStyle(palette.textPrimary)
 
                 Text(subtitle)
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(palette.textSecondary)
                     .multilineTextAlignment(.leading)
             }
 
             Spacer()
 
             Image(systemName: "chevron.right")
-                .foregroundStyle(.tertiary)
+                .font(.footnote.weight(.semibold))
+                .foregroundStyle(palette.textTertiary)
         }
-        .padding()
-        .background(
-            RoundedRectangle(cornerRadius: 18)
-                .fill(Color(.systemBackground))
-                .shadow(color: .black.opacity(0.04), radius: 6, x: 0, y: 3)
-        )
+        .appListRowStyle(theme)
     }
 }

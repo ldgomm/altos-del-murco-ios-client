@@ -8,6 +8,27 @@
 import SwiftUI
 
 struct OrderRowView: View {
+    @Environment(\.colorScheme) private var colorScheme
+
+    private var palette: ThemePalette {
+        AppTheme.palette(for: .restaurant, scheme: colorScheme)
+    }
+
+    private var progressColor: Color {
+        switch effectiveStatus {
+        case .pending:
+            return palette.warning
+        case .confirmed:
+            return palette.secondary
+        case .preparing:
+            return palette.accent
+        case .completed:
+            return palette.success
+        case .canceled:
+            return palette.destructive
+        }
+    }
+    
     let order: Order
 
     private var effectiveStatus: OrderStatus {
@@ -25,17 +46,18 @@ struct OrderRowView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .top) {
+            HStack(alignment: .top, spacing: 12) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(order.clientName.isEmpty ? "Walk-in customer" : order.clientName)
                         .font(.headline)
+                        .foregroundStyle(palette.textPrimary)
 
                     HStack(spacing: 8) {
                         Label("Table \(order.tableNumber)", systemImage: "tablecells")
                         Label(order.createdAt.relativeTimeString, systemImage: "clock")
                     }
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(palette.textSecondary)
                 }
 
                 Spacer()
@@ -48,25 +70,28 @@ struct OrderRowView: View {
                     Text(progressText)
                         .font(.subheadline)
                         .fontWeight(.medium)
+                        .foregroundStyle(palette.textPrimary)
 
                     Spacer()
 
                     Text(order.totalAmount.priceText)
                         .font(.subheadline)
                         .fontWeight(.semibold)
+                        .foregroundStyle(palette.primary)
                 }
 
                 ProgressView(value: progressValue)
+                    .tint(progressColor)
             }
 
             if order.requiresReconfirmation {
                 Label("Edited after confirmation", systemImage: "exclamationmark.arrow.trianglehead.2.clockwise")
                     .font(.caption)
-                    .foregroundStyle(.orange)
+                    .foregroundStyle(palette.warning)
             } else if order.wasEditedAfterConfirmation {
                 Label("Updated order", systemImage: "pencil.circle")
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(palette.textSecondary)
             }
 
             HStack(spacing: 8) {
@@ -77,14 +102,6 @@ struct OrderRowView: View {
                 }
             }
         }
-        .padding(14)
-        .background(
-            RoundedRectangle(cornerRadius: 18)
-                .fill(Color(.secondarySystemGroupedBackground))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 18)
-                .strokeBorder(Color.primary.opacity(0.05))
-        )
+        .appCardStyle(.restaurant, emphasized: effectiveStatus == .preparing || order.requiresReconfirmation)
     }
 }

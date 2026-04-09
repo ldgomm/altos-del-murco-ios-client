@@ -9,6 +9,7 @@ import SwiftUI
 
 struct OrdersSummaryView: View {
     let orders: [Order]
+    var theme: AppSectionTheme = .restaurant
 
     private var pendingCount: Int {
         orders.filter { $0.recalculatedStatus() == .pending }.count
@@ -28,44 +29,119 @@ struct OrdersSummaryView: View {
             .reduce(0) { $0 + $1.totalAmount }
     }
 
-    var body: some View {
-        VStack(spacing: 12) {
-            HStack(spacing: 12) {
-                SummaryMetricCard(title: "Pending", value: "\(pendingCount)", systemImage: "clock")
-                SummaryMetricCard(title: "Preparing", value: "\(preparingCount)", systemImage: "flame")
-            }
+    private let columns = [
+        GridItem(.flexible(), spacing: 12),
+        GridItem(.flexible(), spacing: 12)
+    ]
 
-            HStack(spacing: 12) {
-                SummaryMetricCard(title: "Completed", value: "\(completedCount)", systemImage: "checkmark.circle")
-                SummaryMetricCard(title: "Revenue", value: totalRevenue.priceText, systemImage: "dollarsign.circle")
-            }
+    var body: some View {
+        LazyVGrid(columns: columns, spacing: 12) {
+            SummaryMetricCard(
+                theme: theme,
+                title: "Pending",
+                value: "\(pendingCount)",
+                systemImage: "clock",
+                tone: .warning
+            )
+
+            SummaryMetricCard(
+                theme: theme,
+                title: "Preparing",
+                value: "\(preparingCount)",
+                systemImage: "flame.fill",
+                tone: .accent
+            )
+
+            SummaryMetricCard(
+                theme: theme,
+                title: "Completed",
+                value: "\(completedCount)",
+                systemImage: "checkmark.circle.fill",
+                tone: .success
+            )
+
+            SummaryMetricCard(
+                theme: theme,
+                title: "Revenue",
+                value: totalRevenue.priceText,
+                systemImage: "dollarsign.circle.fill",
+                tone: .primary,
+                emphasized: true
+            )
         }
     }
 }
 
+enum SummaryMetricTone {
+    case primary
+    case accent
+    case success
+    case warning
+}
+
 struct SummaryMetricCard: View {
+    let theme: AppSectionTheme
     let title: String
     let value: String
     let systemImage: String
+    let tone: SummaryMetricTone
+    var emphasized: Bool = false
+
+    @Environment(\.colorScheme) private var colorScheme
+
+    private var palette: ThemePalette {
+        AppTheme.palette(for: theme, scheme: colorScheme)
+    }
+
+    private var valueColor: Color {
+        switch tone {
+        case .primary:
+            return palette.primary
+        case .accent:
+            return palette.accent
+        case .success:
+            return palette.success
+        case .warning:
+            return palette.warning
+        }
+    }
 
     var body: some View {
-        HStack(spacing: 12) {
-            Image(systemName: systemImage)
-                .font(.title3)
+        HStack(alignment: .center, spacing: 12) {
+            iconView
 
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: 6) {
                 Text(title)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(palette.textSecondary)
 
                 Text(value)
-                    .font(.headline)
-                    .fontWeight(.semibold)
+                    .font(.title3.bold())
+                    .foregroundStyle(valueColor)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
             }
 
-            Spacer()
+            Spacer(minLength: 0)
         }
-        .padding()
-        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 16))
+        .frame(maxWidth: .infinity, minHeight: 92, alignment: .leading)
+        .appCardStyle(theme, emphasized: emphasized)
+    }
+
+    @ViewBuilder
+    private var iconView: some View {
+        ZStack {
+            Circle()
+                .fill(palette.chipGradient)
+                .frame(width: 46, height: 46)
+
+            Image(systemName: systemImage)
+                .font(.system(size: 18, weight: .semibold))
+                .foregroundStyle(valueColor)
+        }
+        .overlay(
+            Circle()
+                .stroke(palette.stroke, lineWidth: 1)
+        )
     }
 }

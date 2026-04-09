@@ -10,28 +10,39 @@ import SwiftUI
 struct BookingsView: View {
     @ObservedObject var ordersViewModel: OrdersViewModel
     @ObservedObject var adventureBookingsViewModel: AdventureBookingsViewModel
+    @Environment(\.colorScheme) private var colorScheme
+
+    private var neutralPalette: ThemePalette {
+        AppTheme.palette(for: .neutral, scheme: colorScheme)
+    }
 
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(spacing: 16) {
+                VStack(alignment: .leading, spacing: 20) {
+                    headerSection
+
                     NavigationLink {
                         OrdersView(viewModel: ordersViewModel)
                     } label: {
                         bookingCard(
+                            theme: .restaurant,
+                            badge: "Restaurante",
                             title: "Pedidos del restaurante",
                             subtitle: "Revisa tus pedidos actuales y anteriores de comida.",
                             systemImage: "fork.knife"
                         )
                     }
                     .buttonStyle(.plain)
-                    
+
                     NavigationLink {
                         AdventureReservationsView(
                             viewModel: adventureBookingsViewModel
                         )
                     } label: {
                         bookingCard(
+                            theme: .adventure,
+                            badge: "Aventura",
                             title: "Reservas de aventura",
                             subtitle: "Mira combos, actividades individuales, camping y reservas nocturnas.",
                             systemImage: "calendar.badge.clock"
@@ -39,43 +50,64 @@ struct BookingsView: View {
                     }
                     .buttonStyle(.plain)
                 }
-                .padding()
+                .padding(.horizontal, 20)
+                .padding(.vertical, 16)
             }
             .navigationTitle("Reservas")
         }
+        .appScreenStyle(.neutral)
     }
-    
+
+    private var headerSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            BrandSectionHeader(
+                theme: .neutral,
+                title: "Gestiona tus reservas",
+                subtitle: "Accede rápidamente a tus pedidos del restaurante y a tus reservas de aventura."
+            )
+
+            Text("Todo en un solo lugar, con acceso claro para cada experiencia.")
+                .font(.subheadline)
+                .foregroundStyle(neutralPalette.textSecondary)
+        }
+        .appCardStyle(.neutral, emphasized: false)
+    }
+
     private func bookingCard(
+        theme: AppSectionTheme,
+        badge: String,
         title: String,
         subtitle: String,
         systemImage: String
     ) -> some View {
-        HStack(spacing: 16) {
-            Image(systemName: systemImage)
-                .font(.title2)
-                .frame(width: 44, height: 44)
-                .background(Color(.systemGray6))
-                .clipShape(RoundedRectangle(cornerRadius: 12))
-            
-            VStack(alignment: .leading, spacing: 6) {
+        let palette = AppTheme.palette(for: theme, scheme: colorScheme)
+
+        return HStack(spacing: 16) {
+            BrandIconBubble(
+                theme: theme,
+                systemImage: systemImage,
+                size: 54
+            )
+
+            VStack(alignment: .leading, spacing: 8) {
+                BrandBadge(theme: theme, title: badge)
+
                 Text(title)
                     .font(.headline)
-                
+                    .foregroundStyle(palette.textPrimary)
+
                 Text(subtitle)
                     .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(palette.textSecondary)
+                    .multilineTextAlignment(.leading)
             }
-            
-            Spacer()
-            
+
+            Spacer(minLength: 12)
+
             Image(systemName: "chevron.right")
-                .foregroundStyle(.tertiary)
+                .font(.headline.weight(.semibold))
+                .foregroundStyle(palette.textTertiary)
         }
-        .padding()
-        .background(
-            RoundedRectangle(cornerRadius: 20)
-                .fill(Color(.systemBackground))
-                .shadow(color: .black.opacity(0.05), radius: 8, x: 0, y: 4)
-        )
+        .appCardStyle(theme, emphasized: false)
     }
 }

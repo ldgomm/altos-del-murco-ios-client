@@ -21,6 +21,8 @@ struct AdventureComboBuilderView: View {
             confirmSection
         }
         .listStyle(.plain)
+        .scrollContentBackground(.hidden)
+        .appScreenStyle(.adventure)
         .navigationTitle("Crear aventura")
         .toolbar {
             EditButton()
@@ -48,21 +50,27 @@ struct AdventureComboBuilderView: View {
     
     private var comboSection: some View {
         Section {
-            VStack(alignment: .leading, spacing: 12) {
-                Text("Tu combo")
-                    .font(.title3.bold())
-                
-                Text("Puedes combinar distintas actividades, establecer diferentes duraciones y número de personas, y arrastrar para cambiar el orden. Cada actividad solo puede agregarse una vez por reserva.")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 16) {
+                BrandSectionHeader(
+                    theme: .adventure,
+                    title: "Tu aventura",
+                    subtitle: "Combina distintas actividades, ajusta duración y personas, y cambia el orden arrastrando. Cada actividad solo puede agregarse una vez por reserva."
+                )
                 
                 if viewModel.state.items.contains(where: { $0.activity == .offRoad }) {
-                    Label("Cada vehículo off-road admite 1 o 2 personas. El precio es por vehículo, no por persona.", systemImage: "info.circle")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
+                    HStack(alignment: .top, spacing: 12) {
+                        BrandIconBubble(theme: .adventure, systemImage: "info.circle", size: 34)
+                        
+                        Text("Cada vehículo off-road admite 1 o 2 personas. El precio es por vehículo, no por persona.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+                    .appCardStyle(.adventure)
                 }
             }
+            .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
             .listRowBackground(Color.clear)
+            .listRowSeparator(.hidden)
             
             ForEach(viewModel.state.items) { item in
                 Button {
@@ -71,8 +79,9 @@ struct AdventureComboBuilderView: View {
                     ComboItemCard(item: item)
                 }
                 .buttonStyle(.plain)
-                .listRowInsets(EdgeInsets(top: 6, leading: 8, bottom: 6, trailing: 8))
+                .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
                 .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
             }
             .onDelete(perform: viewModel.removeItem)
             .onMove(perform: viewModel.moveItems)
@@ -89,17 +98,40 @@ struct AdventureComboBuilderView: View {
                     }
                 }
             } label: {
-                Label("Agregar actividad", systemImage: "plus.circle.fill")
-                    .frame(maxWidth: .infinity)
+                HStack(spacing: 12) {
+                    BrandIconBubble(theme: .adventure, systemImage: "plus")
+                    
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Agregar actividad")
+                            .font(.headline)
+                        Text("Añade una experiencia distinta a esta reserva.")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                    
+                    Spacer()
+                    
+                    Image(systemName: "chevron.down.circle.fill")
+                        .font(.title3)
+                        .foregroundStyle(.secondary)
+                }
+                .appCardStyle(.adventure, emphasized: false)
             }
+            .buttonStyle(.plain)
+            .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+            .listRowBackground(Color.clear)
+            .listRowSeparator(.hidden)
         }
     }
     
     private var schedulingSection: some View {
         Section {
-            VStack(alignment: .leading, spacing: 14) {
-                Text("Fecha")
-                    .font(.headline)
+            VStack(alignment: .leading, spacing: 16) {
+                BrandSectionHeader(
+                    theme: .adventure,
+                    title: "Fecha",
+                    subtitle: "Elige el día y luego revisa los horarios disponibles."
+                )
                 
                 DatePicker(
                     "Día de la reserva",
@@ -112,22 +144,30 @@ struct AdventureComboBuilderView: View {
                 )
                 .datePickerStyle(.graphical)
                 
-                Text("Las actividades regulares funcionan de 7:00 AM a 7:00 PM. El recargo nocturno aplica desde las 6:00 PM en adelante.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
+                HStack(alignment: .top, spacing: 12) {
+                    BrandIconBubble(theme: .adventure, systemImage: "clock")
+                    
+                    Text("Las actividades regulares funcionan de 7:00 AM a 7:00 PM. El recargo nocturno aplica desde las 6:00 PM en adelante.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
             }
-            .padding(.vertical, 6)
-            .listRowBackground(
-                RoundedRectangle(cornerRadius: 20)
-                    .fill(Color(.systemGray6))
-                    .padding(.vertical, 4)
-            )
+            .appCardStyle(.adventure, emphasized: false)
+            .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+            .listRowBackground(Color.clear)
+            .listRowSeparator(.hidden)
         }
     }
     
     private var contactSection: some View {
         Section {
-            VStack(spacing: 14) {
+            VStack(alignment: .leading, spacing: 16) {
+                BrandSectionHeader(
+                    theme: .adventure,
+                    title: "Contacto",
+                    subtitle: "Necesitamos tus datos para confirmar y gestionar la reserva."
+                )
+                
                 TextField(
                     "Nombre del cliente",
                     text: Binding(
@@ -136,6 +176,7 @@ struct AdventureComboBuilderView: View {
                     )
                 )
                 .textInputAutocapitalization(.words)
+                .appTextFieldStyle(.adventure)
                 
                 TextField(
                     "Número de WhatsApp",
@@ -145,6 +186,7 @@ struct AdventureComboBuilderView: View {
                     )
                 )
                 .keyboardType(.phonePad)
+                .appTextFieldStyle(.adventure)
                 
                 TextField(
                     "Cédula",
@@ -154,6 +196,7 @@ struct AdventureComboBuilderView: View {
                     )
                 )
                 .keyboardType(.numberPad)
+                .appTextFieldStyle(.adventure)
                 
                 TextField(
                     "Notas (opcional)",
@@ -164,85 +207,82 @@ struct AdventureComboBuilderView: View {
                     axis: .vertical
                 )
                 .lineLimit(3...5)
+                .appTextFieldStyle(.adventure)
             }
-            .padding(.vertical, 6)
-            .listRowBackground(
-                RoundedRectangle(cornerRadius: 20)
-                    .fill(Color(.systemGray6))
-                    .padding(.vertical, 4)
-            )
-        } header: {
-            Text("Contacto")
+            .appCardStyle(.adventure)
+            .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+            .listRowBackground(Color.clear)
+            .listRowSeparator(.hidden)
         }
     }
     
     private var availabilitySection: some View {
         Section {
-            if viewModel.state.isLoadingAvailability {
-                ProgressView("Verificando disponibilidad...")
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 12)
-            } else if viewModel.state.availableSlots.isEmpty {
-                ContentUnavailableView(
-                    "Sin horarios disponibles",
-                    systemImage: "calendar.badge.exclamationmark",
-                    description: Text("Intenta otra fecha, otro orden o reduce algunas cantidades.")
+            VStack(alignment: .leading, spacing: 16) {
+                BrandSectionHeader(
+                    theme: .adventure,
+                    title: "Horarios disponibles",
+                    subtitle: "Selecciona el mejor horario de inicio para tu reserva."
                 )
-            } else {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 12) {
-                        ForEach(viewModel.state.availableSlots) { slot in
-                            Button {
-                                viewModel.selectSlot(slot)
-                            } label: {
-                                VStack(alignment: .leading, spacing: 8) {
-                                    Text(AdventureDateHelper.timeText(slot.startAt))
-                                        .font(.headline)
-                                    Text("Termina \(AdventureDateHelper.timeText(slot.endAt))")
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                    Text("$\(slot.totalAmount, specifier: "%.2f")")
-                                        .font(.subheadline.weight(.semibold))
+                
+                if viewModel.state.isLoadingAvailability {
+                    ProgressView("Verificando disponibilidad...")
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 24)
+                } else if viewModel.state.availableSlots.isEmpty {
+                    ContentUnavailableView(
+                        "Sin horarios disponibles",
+                        systemImage: "calendar.badge.exclamationmark",
+                        description: Text("Intenta otra fecha, otro orden o reduce algunas cantidades.")
+                    )
+                } else {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 14) {
+                            ForEach(viewModel.state.availableSlots) { slot in
+                                Button {
+                                    viewModel.selectSlot(slot)
+                                } label: {
+                                    AdventureSlotCard(
+                                        slot: slot,
+                                        isSelected: viewModel.state.selectedSlot?.id == slot.id
+                                    )
                                 }
-                                .padding()
-                                .frame(width: 160, alignment: .leading)
-                                .background(
-                                    RoundedRectangle(cornerRadius: 18)
-                                        .fill(
-                                            viewModel.state.selectedSlot?.id == slot.id
-                                            ? Color.primary.opacity(0.15)
-                                            : Color(.systemGray6)
-                                        )
-                                )
+                                .buttonStyle(.plain)
                             }
-                            .buttonStyle(.plain)
                         }
+                        .padding(.vertical, 4)
                     }
-                    .padding(.vertical, 4)
                 }
             }
-        } header: {
-            Text("Horarios disponibles de inicio")
+            .appCardStyle(.adventure, emphasized: false)
+            .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+            .listRowBackground(Color.clear)
+            .listRowSeparator(.hidden)
         }
     }
     
     private var summarySection: some View {
         Section {
-            VStack(alignment: .leading, spacing: 10) {
-                Text("Resumen")
-                    .font(.headline)
+            VStack(alignment: .leading, spacing: 16) {
+                BrandSectionHeader(
+                    theme: .adventure,
+                    title: "Resumen",
+                    subtitle: "Revisa el total antes de confirmar."
+                )
                 
                 if let slot = viewModel.state.selectedSlot {
-                    summaryRow("Subtotal", "$\(slot.subtotal, default: "%.2f")")
-                    summaryRow("Descuento", "-$\(slot.discountAmount, default: "%.2f")")
-                    summaryRow("Recargo nocturno", "$\(slot.nightPremium, default: "%.2f")")
-                    summaryRow("Total", "$\(slot.totalAmount, default: "%.2f")", bold: true)
+                    summaryRow("Subtotal", "$\(slot.subtotal.priceText)")
+                    summaryRow("Descuento", "-$\(slot.discountAmount.priceText)")
+                    summaryRow("Recargo nocturno", "$\(slot.nightPremium.priceText)")
+                    Divider()
+                    summaryRow("Total", "$\(slot.totalAmount.priceText)", bold: true)
                 } else {
-                    summaryRow("Subtotal estimado", "$\(viewModel.estimatedSubtotal, default: "%.2f")")
+                    summaryRow("Subtotal estimado", "$\(viewModel.estimatedSubtotal.priceText)")
                     summaryRow(
                         "Descuento estimado",
                         "-$\(AdventurePricingEngine.discount(for: viewModel.estimatedSubtotal), default: "%.2f")"
                     )
+                    Divider()
                     summaryRow(
                         "Total estimado",
                         "$\(AdventurePricingEngine.discountedSubtotal(for: viewModel.estimatedSubtotal), default: "%.2f")",
@@ -250,12 +290,10 @@ struct AdventureComboBuilderView: View {
                     )
                 }
             }
-            .padding(.vertical, 6)
-            .listRowBackground(
-                RoundedRectangle(cornerRadius: 20)
-                    .fill(Color(.systemGray6))
-                    .padding(.vertical, 4)
-            )
+            .appCardStyle(.adventure)
+            .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+            .listRowBackground(Color.clear)
+            .listRowSeparator(.hidden)
         }
     }
     
@@ -268,22 +306,28 @@ struct AdventureComboBuilderView: View {
                     ProgressView()
                         .frame(maxWidth: .infinity)
                 } else {
-                    Text("Confirmar reserva")
+                    Label("Confirmar reserva", systemImage: "checkmark.circle.fill")
                         .frame(maxWidth: .infinity)
-                        .font(.headline)
                 }
             }
+            .buttonStyle(BrandPrimaryButtonStyle(theme: .adventure))
             .disabled(viewModel.state.isSubmitting || viewModel.state.selectedSlot == nil)
+            .listRowInsets(EdgeInsets(top: 10, leading: 16, bottom: 28, trailing: 16))
+            .listRowBackground(Color.clear)
+            .listRowSeparator(.hidden)
         }
     }
     
     private func summaryRow(_ title: String, _ value: String, bold: Bool = false) -> some View {
         HStack {
             Text(title)
+                .foregroundStyle(.secondary)
             Spacer()
             Text(value)
-                .fontWeight(bold ? .bold : .regular)
+                .fontWeight(bold ? .bold : .semibold)
+                .foregroundStyle(.primary)
         }
+        .font(bold ? .headline : .subheadline)
     }
 }
 
@@ -292,21 +336,17 @@ private struct ComboItemCard: View {
     
     var body: some View {
         HStack(spacing: 14) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 14)
-                    .fill(Color(.systemGray6))
-                    .frame(width: 52, height: 52)
-                Image(systemName: item.activity.systemImage)
-                    .font(.title3)
-            }
+            BrandIconBubble(theme: .adventure, systemImage: item.activity.systemImage, size: 52)
             
             VStack(alignment: .leading, spacing: 6) {
                 Text(item.title)
                     .font(.headline)
                     .foregroundStyle(.primary)
+                
                 Text(item.summaryText)
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
+                
                 Text("$\(AdventurePricingEngine.subtotal(for: item), specifier: "%.2f")")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
@@ -317,11 +357,57 @@ private struct ComboItemCard: View {
             Image(systemName: "line.3.horizontal")
                 .foregroundStyle(.tertiary)
         }
-        .padding()
+        .appCardStyle(.adventure)
+    }
+}
+
+private struct AdventureSlotCard: View {
+    let slot: AdventureAvailabilitySlot
+    let isSelected: Bool
+    
+    @Environment(\.colorScheme) private var colorScheme
+    
+    var body: some View {
+        let palette = AppTheme.palette(for: .adventure, scheme: colorScheme)
+        
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text(AdventureDateHelper.timeText(slot.startAt))
+                    .font(.headline)
+                
+                Spacer()
+                
+                if isSelected {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundStyle(palette.primary)
+                }
+            }
+            
+            Text("Termina \(AdventureDateHelper.timeText(slot.endAt))")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            
+            Divider()
+            
+            Text("$\(slot.totalAmount, specifier: "%.2f")")
+                .font(.headline.weight(.bold))
+                .foregroundStyle(isSelected ? palette.primary : .primary)
+        }
+        .padding(16)
+        .frame(width: 170, alignment: .leading)
         .background(
-            RoundedRectangle(cornerRadius: 20)
-                .fill(Color(.systemBackground))
-                .shadow(color: .black.opacity(0.05), radius: 8, x: 0, y: 3)
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .fill(isSelected ? AnyShapeStyle(palette.chipGradient) : AnyShapeStyle(palette.cardGradient))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .stroke(isSelected ? palette.primary : palette.stroke, lineWidth: isSelected ? 1.5 : 1)
+        )
+        .shadow(
+            color: palette.shadow.opacity(isSelected ? (colorScheme == .dark ? 0.28 : 0.14) : (colorScheme == .dark ? 0.14 : 0.06)),
+            radius: isSelected ? 14 : 8,
+            x: 0,
+            y: isSelected ? 8 : 4
         )
     }
 }
@@ -393,6 +479,8 @@ private struct AdventureItemEditorView: View {
                         .font(.headline)
                 }
             }
+            .scrollContentBackground(.hidden)
+            .appScreenStyle(.adventure)
             .navigationTitle("Editar actividad")
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
@@ -403,6 +491,7 @@ private struct AdventureItemEditorView: View {
                         onSave(item)
                         dismiss()
                     }
+                    .fontWeight(.semibold)
                 }
             }
         }

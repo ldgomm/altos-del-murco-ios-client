@@ -9,49 +9,47 @@ import SwiftUI
 
 struct CompleteProfileView: View {
     @StateObject private var viewModel: CompleteProfileViewModel
-
+    @Environment(\.colorScheme) private var colorScheme
+    
+    private let theme: AppSectionTheme = .neutral
+    
     init(viewModelFactory: @escaping () -> CompleteProfileViewModel) {
         _viewModel = StateObject(wrappedValue: viewModelFactory())
     }
+    
+    private var palette: ThemePalette {
+        AppTheme.palette(for: theme, scheme: colorScheme)
+    }
 
     var body: some View {
-        ZStack {
-            LinearGradient(
-                colors: [
-                    Color(hex: "#141414"),
-                    Color(hex: "#2A1A12"),
-                    Color(hex: "#55341E")
-                ],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-            .ignoresSafeArea()
+        ScrollView(showsIndicators: false) {
+            VStack(spacing: 20) {
+                header
+                personalInfoSection
+                addressSection
+                emergencySection
 
-            ScrollView(showsIndicators: false) {
-                VStack(spacing: 18) {
-                    header
-                    personalInfoSection
-                    addressSection
-                    emergencySection
-
-                    if let errorMessage = viewModel.errorMessage {
-                        Text(errorMessage)
-                            .font(.footnote)
-                            .foregroundStyle(.red.opacity(0.95))
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.horizontal)
-                    }
-
-                    Text("This step is required before entering the app.")
+                if let errorMessage = viewModel.errorMessage {
+                    Text(errorMessage)
                         .font(.footnote)
-                        .foregroundStyle(.white.opacity(0.72))
-                        .multilineTextAlignment(.center)
-                        .padding(.horizontal, 24)
-                        .padding(.bottom, 100)
+                        .foregroundStyle(palette.destructive)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .appCardStyle(theme)
                 }
-                .padding(.top, 16)
+
+                Text("This step is required before entering the app.")
+                    .font(.footnote)
+                    .foregroundStyle(palette.textSecondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 24)
+                    .padding(.bottom, 100)
             }
+            .padding(.horizontal, 16)
+            .padding(.top, 16)
+            .padding(.bottom, 12)
         }
+        .navigationBarTitleDisplayMode(.inline)
+        .appScreenStyle(theme)
         .safeAreaInset(edge: .bottom) {
             bottomBar
         }
@@ -59,52 +57,65 @@ struct CompleteProfileView: View {
 
     private var header: some View {
         VStack(spacing: 14) {
-            Image(systemName: "person.crop.circle.badge.checkmark")
-                .font(.system(size: 46))
-                .foregroundStyle(.white)
+            BrandIconBubble(
+                theme: theme,
+                systemImage: "person.crop.circle.badge.checkmark",
+                size: 62
+            )
 
             Text("Complete your profile")
                 .font(.system(size: 28, weight: .bold, design: .rounded))
-                .foregroundStyle(.white)
+                .foregroundStyle(palette.textPrimary)
 
             Text("We need a few details before you can continue to Altos del Murco.")
                 .font(.subheadline)
                 .multilineTextAlignment(.center)
-                .foregroundStyle(.white.opacity(0.82))
-                .padding(.horizontal, 24)
+                .foregroundStyle(palette.textSecondary)
+                .padding(.horizontal, 12)
         }
-        .padding(.top, 12)
+        .frame(maxWidth: .infinity)
+        .appCardStyle(theme, emphasized: true)
     }
 
     private var personalInfoSection: some View {
         VStack(spacing: 14) {
-            SectionTitle(title: "Personal information")
+            BrandSectionHeader(
+                theme: theme,
+                title: "Personal information",
+                subtitle: "Basic identity and contact details."
+            )
 
-            BrandInputField(
+            ProfileInputField(
+                theme: theme,
                 title: "Full name",
                 placeholder: "Enter your full name",
                 text: $viewModel.fullName,
-                keyboardType: .default
+                keyboardType: .default,
+                autocapitalization: .words
             )
 
-            BrandInputField(
+            ProfileInputField(
+                theme: theme,
                 title: "National unique number",
                 placeholder: "Example: 0501234567",
                 text: $viewModel.nationalId,
-                keyboardType: .numberPad
+                keyboardType: .numberPad,
+                autocapitalization: .never
             )
 
-            BrandInputField(
+            ProfileInputField(
+                theme: theme,
                 title: "Phone number",
                 placeholder: "Example: 0987654321",
                 text: $viewModel.phoneNumber,
-                keyboardType: .phonePad
+                keyboardType: .phonePad,
+                autocapitalization: .never
             )
 
             VStack(alignment: .leading, spacing: 8) {
                 Text("Birthday")
                     .font(.subheadline.bold())
-                    .foregroundStyle(.white.opacity(0.95))
+                    .foregroundStyle(palette.textPrimary)
 
                 DatePicker(
                     "",
@@ -114,56 +125,83 @@ struct CompleteProfileView: View {
                 )
                 .labelsHidden()
                 .datePickerStyle(.compact)
-                .tint(.white)
+                .tint(palette.primary)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding()
-                .background(.white.opacity(0.10))
-                .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                .padding(.horizontal, 16)
+                .frame(minHeight: AppTheme.Metrics.fieldHeight)
+                .background(
+                    RoundedRectangle(cornerRadius: AppTheme.Radius.large, style: .continuous)
+                        .fill(palette.elevatedCard)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: AppTheme.Radius.large, style: .continuous)
+                        .stroke(palette.stroke, lineWidth: 1)
+                )
             }
         }
-        .padding(.horizontal, 20)
+        .appCardStyle(theme)
     }
 
     private var addressSection: some View {
         VStack(spacing: 14) {
-            SectionTitle(title: "Address")
+            BrandSectionHeader(
+                theme: theme,
+                title: "Address",
+                subtitle: "Where you live or where we can identify your location."
+            )
 
             VStack(alignment: .leading, spacing: 8) {
                 Text("Address")
                     .font(.subheadline.bold())
-                    .foregroundStyle(.white.opacity(0.95))
+                    .foregroundStyle(palette.textPrimary)
 
                 TextField("Street, reference, sector...", text: $viewModel.address, axis: .vertical)
                     .textInputAutocapitalization(.words)
-                    .foregroundStyle(.white)
-                    .padding()
-                    .frame(minHeight: 100, alignment: .topLeading)
-                    .background(.white.opacity(0.10))
-                    .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                    .autocorrectionDisabled()
+                    .foregroundStyle(palette.textPrimary)
+                    .tint(palette.primary)
+                    .padding(16)
+                    .frame(minHeight: 110, alignment: .topLeading)
+                    .background(
+                        RoundedRectangle(cornerRadius: AppTheme.Radius.large, style: .continuous)
+                            .fill(palette.elevatedCard)
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: AppTheme.Radius.large, style: .continuous)
+                            .stroke(palette.stroke, lineWidth: 1)
+                    )
             }
         }
-        .padding(.horizontal, 20)
+        .appCardStyle(theme)
     }
 
     private var emergencySection: some View {
         VStack(spacing: 14) {
-            SectionTitle(title: "Emergency contact")
+            BrandSectionHeader(
+                theme: theme,
+                title: "Emergency contact",
+                subtitle: "Someone we can reach if needed."
+            )
 
-            BrandInputField(
+            ProfileInputField(
+                theme: theme,
                 title: "Emergency contact name",
                 placeholder: "Who should we contact if needed?",
                 text: $viewModel.emergencyContactName,
-                keyboardType: .default
+                keyboardType: .default,
+                autocapitalization: .words
             )
 
-            BrandInputField(
+            ProfileInputField(
+                theme: theme,
                 title: "Emergency contact phone",
                 placeholder: "Example: 0999999999",
                 text: $viewModel.emergencyContactPhone,
-                keyboardType: .phonePad
+                keyboardType: .phonePad,
+                autocapitalization: .never
             )
         }
-        .padding(.horizontal, 20)
+        .appCardStyle(theme)
     }
 
     private var bottomBar: some View {
@@ -172,7 +210,7 @@ struct CompleteProfileView: View {
                 HStack(spacing: 10) {
                     if viewModel.isSaving {
                         ProgressView()
-                            .tint(.white)
+                            .tint(palette.onPrimary)
                     } else {
                         Image(systemName: "checkmark.circle.fill")
                             .font(.headline)
@@ -181,56 +219,47 @@ struct CompleteProfileView: View {
                     Text(viewModel.isSaving ? "Saving profile..." : "Save and continue")
                         .font(.headline)
                 }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 16)
             }
-            .buttonStyle(PrimaryFilledButtonStyle())
+            .buttonStyle(BrandPrimaryButtonStyle(theme: theme))
             .disabled(!viewModel.canSubmit || viewModel.isSaving)
-            .padding(.horizontal, 20)
+            .padding(.horizontal, 16)
             .padding(.top, 10)
 
             Text("You cannot skip this step.")
                 .font(.caption)
-                .foregroundStyle(.white.opacity(0.7))
+                .foregroundStyle(palette.textSecondary)
                 .padding(.bottom, 6)
         }
+        .padding(.bottom, 8)
         .background(.ultraThinMaterial)
     }
 }
 
-private struct SectionTitle: View {
-    let title: String
-
-    var body: some View {
-        HStack {
-            Text(title)
-                .font(.headline.bold())
-                .foregroundStyle(.white)
-            Spacer()
-        }
-    }
-}
-
-private struct BrandInputField: View {
+private struct ProfileInputField: View {
+    let theme: AppSectionTheme
     let title: String
     let placeholder: String
     @Binding var text: String
     let keyboardType: UIKeyboardType
+    var autocapitalization: TextInputAutocapitalization = .words
+    
+    @Environment(\.colorScheme) private var colorScheme
+    
+    private var palette: ThemePalette {
+        AppTheme.palette(for: theme, scheme: colorScheme)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(title)
                 .font(.subheadline.bold())
-                .foregroundStyle(.white.opacity(0.95))
+                .foregroundStyle(palette.textPrimary)
 
             TextField(placeholder, text: $text)
                 .keyboardType(keyboardType)
-                .textInputAutocapitalization(.words)
+                .textInputAutocapitalization(autocapitalization)
                 .autocorrectionDisabled()
-                .foregroundStyle(.white)
-                .padding()
-                .background(.white.opacity(0.10))
-                .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                .appTextFieldStyle(theme)
         }
     }
 }

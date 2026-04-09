@@ -844,7 +844,7 @@ enum ThemeAppearance {
 
 // MARK: - Helpers
 
-private extension Color {
+extension Color {
     static func adaptive(light: UIColor, dark: UIColor) -> Color {
         Color(
             uiColor: UIColor { traits in
@@ -854,7 +854,7 @@ private extension Color {
     }
 }
 
-private extension UIColor {
+extension UIColor {
     convenience init(hex: UInt, alpha: CGFloat = 1.0) {
         self.init(
             red: CGFloat((hex >> 16) & 0xFF) / 255,

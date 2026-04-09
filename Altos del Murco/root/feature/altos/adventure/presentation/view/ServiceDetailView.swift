@@ -11,6 +11,14 @@ struct ServiceDetailView: View {
     let service: AdventureService
     @ObservedObject var comboBuilderViewModel: AdventureComboBuilderViewModel
     
+    @Environment(\.colorScheme) private var colorScheme
+    
+    private let theme: AppSectionTheme = .adventure
+    
+    private var palette: ThemePalette {
+        AppTheme.palette(for: theme, scheme: colorScheme)
+    }
+    
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
@@ -20,98 +28,195 @@ struct ServiceDetailView: View {
                 includesSection
                 actionSection
             }
-            .padding()
+            .padding(.horizontal)
+            .padding(.top, 8)
+            .padding(.bottom, 24)
         }
+        .appScreenStyle(theme)
         .navigationTitle(service.title)
         .navigationBarTitleDisplayMode(.inline)
     }
     
     private var headerSection: some View {
-        VStack(spacing: 16) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 24)
-                    .fill(Color(.systemGray6))
-                    .frame(height: 180)
+        VStack(alignment: .leading, spacing: 18) {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 10) {
+                    BrandBadge(theme: theme, title: "Aventura", selected: true)
+                    
+                    Text(service.title)
+                        .font(.system(.largeTitle, design: .rounded, weight: .bold))
+                        .foregroundStyle(palette.textPrimary)
+                    
+                    Text(service.shortDescription)
+                        .font(.body)
+                        .foregroundStyle(palette.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
                 
-                Image(systemName: service.systemImage)
-                    .font(.system(size: 52))
+                Spacer(minLength: 12)
+                
+                BrandIconBubble(
+                    theme: theme,
+                    systemImage: service.systemImage,
+                    size: 64
+                )
             }
             
-            VStack(alignment: .leading, spacing: 8) {
-                Text(service.title)
-                    .font(.largeTitle.bold())
+            ZStack {
+                RoundedRectangle(cornerRadius: AppTheme.Radius.xLarge, style: .continuous)
+                    .fill(palette.heroGradient)
+                    .frame(height: 190)
                 
-                Text(service.shortDescription)
-                    .font(.body)
-                    .foregroundStyle(.secondary)
+                RoundedRectangle(cornerRadius: AppTheme.Radius.xLarge, style: .continuous)
+                    .fill(.white.opacity(colorScheme == .dark ? 0.05 : 0.12))
+                
+                Circle()
+                    .fill(palette.glow.opacity(colorScheme == .dark ? 0.22 : 0.18))
+                    .frame(width: 150, height: 150)
+                    .blur(radius: 20)
+                    .offset(x: 85, y: -35)
+                
+                VStack(spacing: 12) {
+                    Image(systemName: service.systemImage)
+                        .font(.system(size: 58, weight: .medium))
+                        .foregroundStyle(.white)
+                    
+                    Text("Experiencia destacada")
+                        .font(.headline.weight(.semibold))
+                        .foregroundStyle(.white.opacity(0.95))
+                }
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .overlay(
+                RoundedRectangle(cornerRadius: AppTheme.Radius.xLarge, style: .continuous)
+                    .stroke(.white.opacity(colorScheme == .dark ? 0.10 : 0.20), lineWidth: 1)
+            )
+            .shadow(
+                color: palette.shadow.opacity(colorScheme == .dark ? 0.26 : 0.12),
+                radius: 18,
+                x: 0,
+                y: 10
+            )
         }
+        .appCardStyle(theme, emphasized: false)
     }
     
     private var descriptionSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("About")
-                .font(.title3.bold())
+        VStack(alignment: .leading, spacing: 14) {
+            BrandSectionHeader(
+                theme: theme,
+                title: "Sobre la experiencia",
+                subtitle: "Detalles generales de la actividad."
+            )
+            
             Text(service.fullDescription)
-                .foregroundStyle(.secondary)
+                .font(.body)
+                .foregroundStyle(palette.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
+        .appCardStyle(theme)
     }
     
     private var infoSection: some View {
-        HStack(spacing: 16) {
-            infoCard(title: "Precio", value: service.priceText, systemImage: "dollarsign.circle")
-            infoCard(title: "Duración", value: service.durationText, systemImage: "clock")
+        VStack(alignment: .leading, spacing: 14) {
+            BrandSectionHeader(
+                theme: theme,
+                title: "Información rápida"
+            )
+            
+            HStack(spacing: 14) {
+                infoCard(
+                    title: "Precio",
+                    value: service.priceText,
+                    systemImage: "dollarsign.circle.fill"
+                )
+                
+                infoCard(
+                    title: "Duración",
+                    value: service.durationText,
+                    systemImage: "clock.fill"
+                )
+            }
         }
     }
     
     private func infoCard(title: String, value: String, systemImage: String) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Image(systemName: systemImage)
-                .font(.title3)
+        VStack(alignment: .leading, spacing: 12) {
+            BrandIconBubble(
+                theme: theme,
+                systemImage: systemImage,
+                size: 42
+            )
+            
             Text(title)
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(palette.textSecondary)
+            
             Text(value)
                 .font(.headline)
+                .foregroundStyle(palette.textPrimary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding()
-        .background(
-            RoundedRectangle(cornerRadius: 18)
-                .fill(Color(.systemGray6))
-        )
+        .appCardStyle(theme)
     }
     
     private var includesSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Includes")
-                .font(.title3.bold())
+        VStack(alignment: .leading, spacing: 14) {
+            BrandSectionHeader(
+                theme: theme,
+                title: "Incluye",
+                subtitle: "Lo que forma parte de esta experiencia."
+            )
             
-            ForEach(service.includes, id: \.self) { item in
-                HStack(spacing: 10) {
-                    Image(systemName: "checkmark.circle.fill")
-                        .foregroundStyle(.green)
-                    Text(item)
+            VStack(spacing: 12) {
+                ForEach(service.includes, id: \.self) { item in
+                    HStack(alignment: .top, spacing: 12) {
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.body)
+                            .foregroundStyle(palette.primary)
+                            .padding(.top, 1)
+                        
+                        Text(item)
+                            .font(.body)
+                            .foregroundStyle(palette.textPrimary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 12)
+                    .background(
+                        RoundedRectangle(cornerRadius: AppTheme.Radius.medium, style: .continuous)
+                            .fill(palette.elevatedCard)
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: AppTheme.Radius.medium, style: .continuous)
+                            .stroke(palette.stroke, lineWidth: 1)
+                    )
                 }
             }
         }
+        .appCardStyle(theme)
     }
     
     private var actionSection: some View {
-        NavigationLink {
-            AdventureComboBuilderView(viewModel: comboBuilderViewModel)
-                .onAppear {
-                    comboBuilderViewModel.replaceItems(with: [service.defaultDraft])
+        VStack(spacing: 12) {
+            NavigationLink {
+                AdventureComboBuilderView(viewModel: comboBuilderViewModel)
+                    .onAppear {
+                        comboBuilderViewModel.replaceItems(with: [service.defaultDraft])
+                    }
+            } label: {
+                HStack(spacing: 10) {
+                    Image(systemName: "calendar.badge.plus")
+                    Text("Reservar ahora")
                 }
-        } label: {
-            Text("Reservar ahora")
-                .font(.headline)
+            }
+            .buttonStyle(BrandPrimaryButtonStyle(theme: theme))
+            
+            Text("Podrás elegir fecha, horario y completar tus datos antes de confirmar.")
+                .font(.footnote)
+                .foregroundStyle(palette.textSecondary)
+                .multilineTextAlignment(.center)
                 .frame(maxWidth: .infinity)
-                .padding()
-                .background(Color.primary)
-                .foregroundStyle(Color(.systemBackground))
-                .clipShape(RoundedRectangle(cornerRadius: 16))
         }
+        .padding(.top, 4)
     }
 }

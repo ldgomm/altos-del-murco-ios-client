@@ -12,8 +12,13 @@ struct MenuListView: View {
     @ObservedObject var checkoutViewModel: CheckoutViewModel
     @EnvironmentObject private var cartManager: CartManager
     @Binding var path: NavigationPath
-
+    
+    @Environment(\.colorScheme) private var colorScheme
     @State private var selectedCategoryId: String?
+    
+    private var palette: ThemePalette {
+        AppTheme.palette(for: .restaurant, scheme: colorScheme)
+    }
 
     private var categories: [MenuCategory] {
         sections.map(\.category)
@@ -32,7 +37,9 @@ struct MenuListView: View {
 
     var body: some View {
         ScrollView {
-            LazyVStack(alignment: .leading, spacing: 20) {
+            LazyVStack(alignment: .leading, spacing: 24) {
+                headerSection
+                
                 if !featuredItems.isEmpty {
                     featuredCarousel
                 }
@@ -43,9 +50,12 @@ struct MenuListView: View {
                     sectionContent(section)
                 }
             }
-            .padding(.vertical)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 20)
         }
         .navigationTitle("Restaurant")
+        .navigationBarTitleDisplayMode(.large)
+        .appScreenStyle(.restaurant)
         .task {
             if selectedCategoryId == nil {
                 selectedCategoryId = categories.first?.id
@@ -55,19 +65,26 @@ struct MenuListView: View {
             ToolbarItemGroup(placement: .topBarTrailing) {
                 NavigationLink(value: Route.cart) {
                     ZStack(alignment: .topTrailing) {
-                        Image(systemName: "cart")
-                            .font(.system(size: 17))
+                        ZStack {
+                            Circle()
+                                .fill(palette.chipGradient)
+                                .frame(width: 34, height: 34)
+                            
+                            Image(systemName: "cart.fill")
+                                .font(.system(size: 15, weight: .semibold))
+                                .foregroundStyle(palette.primary)
+                        }
 
                         if cartManager.totalItems > 0 {
                             Text("\(cartManager.totalItems)")
-                                .font(.system(size: 8, weight: .bold))
+                                .font(.system(size: 9, weight: .bold))
                                 .monospacedDigit()
                                 .foregroundStyle(.white)
-                                .frame(minWidth: 14, minHeight: 14)
-                                .padding(.horizontal, cartManager.totalItems > 9 ? 3 : 0)
-                                .background(Color.red)
+                                .frame(minWidth: 16, minHeight: 16)
+                                .padding(.horizontal, cartManager.totalItems > 9 ? 4 : 0)
+                                .background(palette.destructive)
                                 .clipShape(Capsule())
-                                .offset(x: 2, y: -4)
+                                .offset(x: 5, y: -4)
                         }
                     }
                 }
@@ -87,51 +104,77 @@ struct MenuListView: View {
         }
     }
     
+    private var headerSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Flavors from Altos del Murco")
+                .font(.title2.bold())
+                .foregroundStyle(palette.textPrimary)
+            
+            Text("Explore our charcoal-grilled dishes, house specials, drinks, and more.")
+                .font(.subheadline)
+                .foregroundStyle(palette.textSecondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .appCardStyle(.restaurant, emphasized: false)
+    }
+    
     private var featuredCarousel: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Popular")
-                .font(.title3.bold())
-                .padding(.horizontal)
+        VStack(alignment: .leading, spacing: 14) {
+            BrandSectionHeader(
+                theme: .restaurant,
+                title: "Popular",
+                subtitle: "Customer favorites and featured dishes"
+            )
 
             TabView {
                 ForEach(featuredItems) { item in
                     NavigationLink(value: Route.menuDetail(item, categoryTitle(for: item.categoryId))) {
                         FeaturedMenuCard(item: item)
-                            .padding(.horizontal)
                     }
                     .buttonStyle(.plain)
                 }
             }
-            .frame(height: 210)
+            .frame(height: 220)
             .tabViewStyle(.page(indexDisplayMode: .automatic))
         }
     }
     
     private var categorySelector: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("Browse by category")
-                .font(.headline)
-                .padding(.horizontal)
+        VStack(alignment: .leading, spacing: 12) {
+            BrandSectionHeader(
+                theme: .restaurant,
+                title: "Browse by category"
+            )
 
-            Picker("Category", selection: Binding(
-                get: { selectedCategoryId ?? "" },
-                set: { selectedCategoryId = $0 }
-            )) {
-                ForEach(categories) { category in
-                    Text(category.title).tag(category.id)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 10) {
+                    ForEach(categories) { category in
+                        Button {
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                selectedCategoryId = category.id
+                            }
+                        } label: {
+                            BrandBadge(
+                                theme: .restaurant,
+                                title: category.title,
+                                selected: selectedCategoryId == category.id
+                            )
+                        }
+                        .buttonStyle(.plain)
+                    }
                 }
+                .padding(.vertical, 2)
             }
-            .pickerStyle(.segmented)
-            .padding(.horizontal)
         }
     }
     
     @ViewBuilder
     private func sectionContent(_ section: MenuSection) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text(section.category.title)
-                .font(.title3.bold())
-                .padding(.horizontal)
+        VStack(alignment: .leading, spacing: 14) {
+            BrandSectionHeader(
+                theme: .restaurant,
+                title: section.category.title
+            )
 
             LazyVStack(spacing: 12) {
                 ForEach(section.items) { item in
@@ -141,7 +184,6 @@ struct MenuListView: View {
                     .buttonStyle(.plain)
                 }
             }
-            .padding(.horizontal)
         }
     }
     
@@ -152,59 +194,109 @@ struct MenuListView: View {
 
 struct FeaturedMenuCard: View {
     let item: MenuItem
+    
+    @Environment(\.colorScheme) private var colorScheme
+    
+    private var palette: ThemePalette {
+        AppTheme.palette(for: .restaurant, scheme: colorScheme)
+    }
 
     var body: some View {
         ZStack(alignment: .bottomLeading) {
-            RoundedRectangle(cornerRadius: 20)
-                .fill(Color(.secondarySystemBackground))
-                .frame(maxWidth: .infinity)
+            RoundedRectangle(cornerRadius: AppTheme.Radius.xLarge, style: .continuous)
+                .fill(palette.cardGradient)
+
+            RoundedRectangle(cornerRadius: AppTheme.Radius.xLarge, style: .continuous)
                 .overlay {
                     if let imageURL = item.imageURL,
                        let url = URL(string: imageURL) {
                         AsyncImage(url: url) { phase in
                             switch phase {
                             case .empty:
-                                ProgressView()
-                                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                                ZStack {
+                                    palette.card
+                                    ProgressView()
+                                        .tint(palette.primary)
+                                }
+                                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                                
                             case .success(let image):
                                 image
                                     .resizable()
                                     .scaledToFill()
+                                
                             case .failure:
-                                Image(systemName: "photo")
-                                    .font(.largeTitle)
-                                    .foregroundStyle(.secondary)
+                                ZStack {
+                                    palette.card
+                                    
+                                    VStack(spacing: 10) {
+                                        Image(systemName: "fork.knife.circle.fill")
+                                            .font(.system(size: 34))
+                                            .foregroundStyle(palette.primary)
+                                        
+                                        Text(item.name)
+                                            .font(.headline)
+                                            .foregroundStyle(palette.textSecondary)
+                                            .multilineTextAlignment(.center)
+                                            .padding(.horizontal)
+                                    }
+                                }
+                                
                             @unknown default:
                                 EmptyView()
                             }
                         }
-                        .clipShape(RoundedRectangle(cornerRadius: 20))
+                        .clipShape(
+                            RoundedRectangle(cornerRadius: AppTheme.Radius.xLarge, style: .continuous)
+                        )
                     }
                 }
 
             LinearGradient(
-                colors: [.clear, .black.opacity(0.7)],
+                colors: [
+                    .clear,
+                    .black.opacity(colorScheme == .dark ? 0.35 : 0.15),
+                    .black.opacity(0.72)
+                ],
                 startPoint: .top,
                 endPoint: .bottom
             )
-            .clipShape(RoundedRectangle(cornerRadius: 20))
+            .clipShape(
+                RoundedRectangle(cornerRadius: AppTheme.Radius.xLarge, style: .continuous)
+            )
 
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    BrandBadge(theme: .restaurant, title: "Featured", selected: true)
+                    Spacer()
+                }
+                
                 Text(item.name)
-                    .font(.headline)
+                    .font(.title3.bold())
                     .foregroundStyle(.white)
+                    .lineLimit(2)
 
                 Text(item.description)
                     .font(.subheadline)
-                    .foregroundStyle(.white.opacity(0.9))
+                    .foregroundStyle(.white.opacity(0.92))
                     .lineLimit(2)
 
                 Text(String(format: "$%.2f", item.finalPrice))
-                    .font(.subheadline.bold())
+                    .font(.headline.weight(.bold))
                     .foregroundStyle(.white)
             }
-            .padding()
+            .padding(18)
         }
-        .frame(height: 190)
+        .frame(height: 200)
+        .overlay(
+            RoundedRectangle(cornerRadius: AppTheme.Radius.xLarge, style: .continuous)
+                .stroke(palette.stroke.opacity(0.6), lineWidth: 1)
+        )
+        .shadow(
+            color: palette.shadow.opacity(colorScheme == .dark ? 0.22 : 0.12),
+            radius: 16,
+            x: 0,
+            y: 10
+        )
     }
 }

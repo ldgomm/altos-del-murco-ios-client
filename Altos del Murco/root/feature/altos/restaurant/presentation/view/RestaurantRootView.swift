@@ -17,7 +17,6 @@ struct RestaurantRootView: View {
         NavigationStack(path: $path) {
             MenuListView(
                 sections: MenuMockData.sections,
-//                ordersViewModel: ordersViewModel,
                 checkoutViewModel: checkoutViewModel,
                 path: $path
             )

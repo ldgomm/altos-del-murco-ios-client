@@ -9,6 +9,11 @@ import SwiftUI
 
 struct OrdersView: View {
     @ObservedObject var viewModel: OrdersViewModel
+    @Environment(\.colorScheme) private var colorScheme
+    
+    private var palette: ThemePalette {
+        AppTheme.palette(for: .restaurant, scheme: colorScheme)
+    }
 
     private var groupedOrders: [(status: OrderStatus, orders: [Order])] {
         let grouped = Dictionary(grouping: viewModel.state.orders) { $0.recalculatedStatus() }
@@ -28,33 +33,67 @@ struct OrdersView: View {
     }
 
     var body: some View {
-        content
-            .navigationTitle("Orders")
-            .onAppear {
-                viewModel.onEvent(.onAppear)
-            }
+        ZStack {
+            BrandScreenBackground(theme: .restaurant)
+            content
+        }
+        .navigationTitle("Orders")
+        .navigationBarTitleDisplayMode(.large)
+        .tint(palette.primary)
+        .onAppear {
+            viewModel.onEvent(.onAppear)
+        }
     }
 
     @ViewBuilder
     private var content: some View {
         if viewModel.state.isLoading && viewModel.state.orders.isEmpty {
-            ProgressView("Loading orders...")
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            loadingView
         } else if let error = viewModel.state.errorMessage, viewModel.state.orders.isEmpty {
-            ContentUnavailableView(
-                "Something went wrong",
+            stateCard(
+                title: "Something went wrong",
                 systemImage: "exclamationmark.triangle",
-                description: Text(error)
+                description: error
             )
         } else if viewModel.state.orders.isEmpty {
-            ContentUnavailableView(
-                "No orders yet",
+            stateCard(
+                title: "No orders yet",
                 systemImage: "tray",
-                description: Text("Orders will appear here once customers place them.")
+                description: "Orders will appear here once customers place them."
             )
         } else {
             ordersList
         }
+    }
+
+    private var loadingView: some View {
+        VStack {
+            ProgressView("Loading orders...")
+                .tint(palette.primary)
+                .foregroundStyle(palette.textPrimary)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding()
+    }
+
+    private func stateCard(
+        title: String,
+        systemImage: String,
+        description: String
+    ) -> some View {
+        VStack {
+            ContentUnavailableView(
+                title,
+                systemImage: systemImage,
+                description: Text(description)
+            )
+            .foregroundStyle(palette.textSecondary)
+            .padding(.top, 8)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding()
+        .appCardStyle(.restaurant, emphasized: true)
+        .padding()
     }
 
     private var ordersList: some View {
@@ -69,23 +108,20 @@ struct OrdersView: View {
                         } label: {
                             OrderRowView(order: order)
                                 .frame(maxWidth: .infinity, alignment: .leading)
+                                .appListRowStyle(.restaurant)
                         }
                         .buttonStyle(.plain)
                         .listRowInsets(EdgeInsets(top: 6, leading: 8, bottom: 6, trailing: 8))
                         .listRowBackground(Color.clear)
                     }
                 } header: {
-                    HStack {
-                        Text(group.status.title)
-                        Spacer()
-                        Text("\(group.orders.count)")
-                            .foregroundStyle(.secondary)
-                    }
-                    .textCase(nil)
+                    sectionHeader(for: group.status, count: group.orders.count)
                 }
             }
         }
         .listStyle(.plain)
+        .scrollContentBackground(.hidden)
+        .background(Color.clear)
         .refreshable {
             viewModel.onEvent(.refresh)
         }
@@ -95,8 +131,38 @@ struct OrdersView: View {
         Section {
             OrdersSummaryView(orders: viewModel.state.orders)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .listRowInsets(EdgeInsets(top: 8, leading: 8, bottom: 8, trailing: 8))
+                .appCardStyle(.restaurant, emphasized: false)
+                .listRowInsets(EdgeInsets(top: 8, leading: 8, bottom: 10, trailing: 8))
                 .listRowBackground(Color.clear)
+        } header: {
+            BrandSectionHeader(
+                theme: .restaurant,
+                title: "Overview",
+                subtitle: "Track today’s and recent restaurant orders."
+            )
+            .padding(.horizontal, 4)
+            .padding(.bottom, 6)
+            .textCase(nil)
         }
+    }
+
+    private func sectionHeader(for status: OrderStatus, count: Int) -> some View {
+        HStack(spacing: 10) {
+            Text(status.title)
+                .font(.headline)
+                .foregroundStyle(palette.textPrimary)
+
+            Spacer()
+
+            BrandBadge(
+                theme: .restaurant,
+                title: "\(count)",
+                selected: status == .pending || status == .preparing
+            )
+        }
+        .padding(.horizontal, 4)
+        .padding(.top, 10)
+        .padding(.bottom, 4)
+        .textCase(nil)
     }
 }

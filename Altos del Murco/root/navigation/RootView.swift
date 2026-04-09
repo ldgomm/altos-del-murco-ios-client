@@ -93,7 +93,7 @@ private struct SessionLoadingView: View {
                 }
             }
             .frame(maxWidth: 360)
-            .appCardStyle(.restaurant, emphasized: true)
+            .appCardStyle(.restaurant, emphasized: false)
             .padding(24)
         }
     }

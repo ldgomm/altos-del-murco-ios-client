@@ -9,46 +9,74 @@ import SwiftUI
 
 struct ServiceCardView: View {
     let service: AdventureService
+    var theme: AppSectionTheme = .adventure
+    
+    @Environment(\.colorScheme) private var colorScheme
     
     var body: some View {
-        HStack(spacing: 16) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 16)
-                    .fill(Color(.systemGray6))
-                    .frame(width: 60, height: 60)
-                
-                Image(systemName: service.systemImage)
-                    .font(.title2)
-            }
+        let palette = AppTheme.palette(for: theme, scheme: colorScheme)
+        
+        HStack(alignment: .top, spacing: 14) {
+            BrandIconBubble(
+                theme: theme,
+                systemImage: service.systemImage,
+                size: 60
+            )
             
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: 8) {
                 Text(service.title)
                     .font(.headline)
-                    .foregroundStyle(.primary)
+                    .foregroundStyle(palette.textPrimary)
                 
                 Text(service.shortDescription)
                     .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(palette.textSecondary)
                     .lineLimit(2)
                 
-                HStack(spacing: 12) {
-                    Label(service.priceText, systemImage: "dollarsign.circle")
-                    Label(service.durationText, systemImage: "clock")
+                HStack(spacing: 8) {
+                    metadataChip(
+                        title: service.priceText,
+                        systemImage: "dollarsign.circle"
+                    )
+                    
+                    metadataChip(
+                        title: service.durationText,
+                        systemImage: "clock"
+                    )
                 }
-                .font(.caption)
-                .foregroundStyle(.secondary)
+                .padding(.top, 2)
             }
             
-            Spacer()
+            Spacer(minLength: 8)
             
             Image(systemName: "chevron.right")
-                .foregroundStyle(.tertiary)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(palette.textTertiary)
+                .padding(.top, 4)
         }
-        .padding()
+//        .appCardStyle(theme, emphasized: false)
+    }
+    
+    private func metadataChip(title: String, systemImage: String) -> some View {
+        let palette = AppTheme.palette(for: theme, scheme: colorScheme)
+        
+        return HStack(spacing: 6) {
+            Image(systemName: systemImage)
+                .font(.caption.weight(.semibold))
+            
+            Text(title)
+                .font(.caption.weight(.semibold))
+        }
+        .foregroundStyle(palette.primary)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 7)
         .background(
-            RoundedRectangle(cornerRadius: 20)
-                .fill(Color(.systemBackground))
-                .shadow(color: .black.opacity(0.06), radius: 8, x: 0, y: 4)
+            Capsule()
+                .fill(palette.chipGradient)
+        )
+        .overlay(
+            Capsule()
+                .stroke(palette.stroke, lineWidth: 1)
         )
     }
 }
