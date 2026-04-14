@@ -9,11 +9,15 @@ import SwiftUI
 
 struct MenuListView: View {
     let sections: [MenuSection]
+    
     @ObservedObject var checkoutViewModel: CheckoutViewModel
-    @EnvironmentObject private var cartManager: CartManager
+    @ObservedObject var ordersViewModel: OrdersViewModel
+    
     @Binding var path: NavigationPath
     
+    @EnvironmentObject private var cartManager: CartManager
     @Environment(\.colorScheme) private var colorScheme
+    
     @State private var selectedCategoryId: String?
     
     private var palette: ThemePalette {
@@ -63,13 +67,27 @@ struct MenuListView: View {
         }
         .toolbar {
             ToolbarItemGroup(placement: .topBarTrailing) {
+                NavigationLink {
+                    OrdersView(viewModel: ordersViewModel)
+                } label: {
+                    ZStack {
+                        Circle()
+                            .fill(palette.chipGradient)
+                            .frame(width: 34, height: 34)
+
+                        Image(systemName: "list.bullet.clipboard.fill")
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundStyle(palette.primary)
+                    }
+                }
+
                 NavigationLink(value: Route.cart) {
                     ZStack(alignment: .topTrailing) {
                         ZStack {
                             Circle()
                                 .fill(palette.chipGradient)
                                 .frame(width: 34, height: 34)
-                            
+
                             Image(systemName: "cart.fill")
                                 .font(.system(size: 15, weight: .semibold))
                                 .foregroundStyle(palette.primary)

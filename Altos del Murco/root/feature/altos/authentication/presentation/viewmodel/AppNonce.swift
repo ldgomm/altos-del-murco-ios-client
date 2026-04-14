@@ -72,9 +72,9 @@ extension String {
         filter(\.isNumber)
     }
 
-    var nilIfEmpty: String? {
-        trimmed.isEmpty ? nil : trimmed
-    }
+//    var nilIfEmpty: String? {
+//        trimmed.isEmpty ? nil : trimmed
+//    }
 
     var initials: String {
         let parts = trimmed

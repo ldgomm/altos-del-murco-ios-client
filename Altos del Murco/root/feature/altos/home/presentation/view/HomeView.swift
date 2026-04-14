@@ -10,9 +10,9 @@ import SwiftUI
 struct HomeView: View {
     @Binding var selectedTab: MainTab
     @ObservedObject var comboBuilderViewModel: AdventureComboBuilderViewModel
-    
+
     private let featuredServices = AdventureService.mockServices
-    
+
     var body: some View {
         NavigationStack {
             ScrollView {
@@ -28,19 +28,19 @@ struct HomeView: View {
         }
         .appScreenStyle(.neutral)
     }
-    
+
     private var heroSection: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text("Bienvenido")
                 .font(.title2.bold())
-            
+
             Text("Restaurante y aventura en un solo lugar. Explora experiencias, revisa tus reservas y accede rápido a cada sección.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
         }
         .appCardStyle(.neutral, emphasized: false)
     }
-    
+
     private var quickAccessSection: some View {
         VStack(alignment: .leading, spacing: 16) {
             BrandSectionHeader(
@@ -48,7 +48,7 @@ struct HomeView: View {
                 title: "Acceso rápido",
                 subtitle: "Tus secciones principales, con identidad visual propia."
             )
-            
+
             HStack(spacing: 12) {
                 quickAccessCard(
                     title: "Restaurante",
@@ -56,7 +56,7 @@ struct HomeView: View {
                     theme: .restaurant,
                     action: { selectedTab = .restaurant }
                 )
-                
+
                 quickAccessCard(
                     title: "Experiencias",
                     systemImage: "figure",
@@ -64,7 +64,7 @@ struct HomeView: View {
                     action: { selectedTab = .experiences }
                 )
             }
-            
+
             HStack(spacing: 12) {
                 quickAccessCard(
                     title: "Reservas",
@@ -72,7 +72,7 @@ struct HomeView: View {
                     theme: .adventure,
                     action: { selectedTab = .bookings }
                 )
-                
+
                 quickAccessCard(
                     title: "Perfil",
                     systemImage: "person.crop.circle",
@@ -82,7 +82,7 @@ struct HomeView: View {
             }
         }
     }
-    
+
     private func quickAccessCard(
         title: String,
         systemImage: String,
@@ -92,17 +92,17 @@ struct HomeView: View {
         Button(action: action) {
             VStack(alignment: .leading, spacing: 14) {
                 BrandIconBubble(theme: theme, systemImage: systemImage, size: 50)
-                
+
                 Spacer(minLength: 0)
-                
+
                 Text(title)
                     .font(.headline)
                     .multilineTextAlignment(.leading)
-                
+
                 HStack(spacing: 6) {
                     Text("Abrir")
                         .font(.caption.weight(.semibold))
-                    
+
                     Image(systemName: "arrow.right")
                         .font(.caption.weight(.bold))
                 }
@@ -114,27 +114,8 @@ struct HomeView: View {
         }
         .buttonStyle(.plain)
     }
-    
+
     private var featuredSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            BrandSectionHeader(
-                theme: .adventure,
-                title: "Experiencias destacadas",
-                subtitle: "Descubre actividades para reservar rápidamente."
-            )
-            
-            ForEach(featuredServices) { service in
-                NavigationLink {
-                    ServiceDetailView(
-                        service: service,
-                        comboBuilderViewModel: comboBuilderViewModel
-                    )
-                } label: {
-                    ServiceCardView(service: service)
-                        .appCardStyle(.adventure)
-                }
-                .buttonStyle(.plain)
-            }
-        }
+        FeaturedPostsSectionView()
     }
 }

@@ -93,15 +93,6 @@ struct OrderRowView: View {
                     .font(.caption)
                     .foregroundStyle(palette.textSecondary)
             }
-
-            HStack(spacing: 8) {
-                InfoChip(text: "Rev \(order.revision)", systemImage: "number")
-                InfoChip(text: "\(order.items.count) lines", systemImage: "list.bullet")
-                if let clientId = order.clientId, !clientId.isEmpty {
-                    InfoChip(text: "Client linked", systemImage: "person.crop.circle.badge.checkmark")
-                }
-            }
         }
-        .appCardStyle(.restaurant, emphasized: effectiveStatus == .preparing || order.requiresReconfirmation)
     }
 }

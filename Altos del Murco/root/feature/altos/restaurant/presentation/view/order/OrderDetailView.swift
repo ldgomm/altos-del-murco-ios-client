@@ -62,20 +62,6 @@ struct OrderDetailView: View {
                 .padding(.top, 8)
                 .textCase(nil)
             }
-
-            Section {
-                metadataCard
-                    .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 24, trailing: 16))
-                    .listRowBackground(Color.clear)
-            } header: {
-                BrandSectionHeader(
-                    theme: .restaurant,
-                    title: "Order metadata"
-                )
-                .padding(.horizontal, 16)
-                .padding(.top, 8)
-                .textCase(nil)
-            }
         }
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
@@ -155,7 +141,7 @@ struct OrderDetailView: View {
                     .padding(.top, 2)
             }
         }
-        .appCardStyle(.restaurant, emphasized: true)
+        .appCardStyle(.restaurant, emphasized: false)
     }
     
     private var amountsCard: some View {
@@ -163,19 +149,6 @@ struct OrderDetailView: View {
             detailLine(title: "Subtotal", value: order.subtotal.priceText)
             Divider().overlay(palette.stroke)
             detailLine(title: "Total", value: order.totalAmount.priceText, emphasized: true)
-        }
-        .appCardStyle(.restaurant)
-    }
-    
-    private var metadataCard: some View {
-        VStack(spacing: 0) {
-            detailLine(title: "Revision", value: "\(order.revision)")
-            Divider().overlay(palette.stroke)
-            detailLine(title: "Last confirmed revision", value: order.lastConfirmedRevision.map(String.init) ?? "—")
-            Divider().overlay(palette.stroke)
-            detailLine(title: "Client ID", value: order.clientId ?? "—")
-            Divider().overlay(palette.stroke)
-            detailLine(title: "Lines", value: "\(order.items.count)")
         }
         .appCardStyle(.restaurant)
     }

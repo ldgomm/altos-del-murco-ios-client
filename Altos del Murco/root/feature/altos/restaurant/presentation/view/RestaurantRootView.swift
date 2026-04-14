@@ -8,16 +8,17 @@
 import SwiftUI
 
 struct RestaurantRootView: View {
-    @State private var path = NavigationPath()
-    
     @ObservedObject var ordersViewModel: OrdersViewModel
     @ObservedObject var checkoutViewModel: CheckoutViewModel
     
+    @State private var path = NavigationPath()
+
     var body: some View {
         NavigationStack(path: $path) {
             MenuListView(
                 sections: MenuMockData.sections,
                 checkoutViewModel: checkoutViewModel,
+                ordersViewModel: ordersViewModel,
                 path: $path
             )
         }
