@@ -10,12 +10,16 @@ import SwiftUI
 struct CheckoutView: View {
     @ObservedObject var viewModel: CheckoutViewModel
     @EnvironmentObject private var cartManager: CartManager
-    
+    @EnvironmentObject private var sessionViewModel: AppSessionViewModel
     @Binding var path: NavigationPath
     @Environment(\.colorScheme) private var colorScheme
     
     private var palette: ThemePalette {
         AppTheme.palette(for: .restaurant, scheme: colorScheme)
+    }
+    
+    private var authenticatedProfile: ClientProfile? {
+        sessionViewModel.authenticatedProfile
     }
     
     var body: some View {
@@ -43,6 +47,9 @@ struct CheckoutView: View {
                 Text(viewModel.state.errorMessage ?? "")
             }
         )
+        .onAppear {
+            syncProfileFieldsFromSession()
+        }
         .onChange(of: viewModel.state.createdOrder) { _, order in
             guard let order else { return }
             path.append(Route.orderSuccess(order))
@@ -54,25 +61,27 @@ struct CheckoutView: View {
             BrandSectionHeader(
                 theme: .restaurant,
                 title: "Client Details",
-                subtitle: "Confirm who the order belongs to before sending it to the kitchen."
+                subtitle: "Your profile information is used automatically for this order."
             )
             
             VStack(spacing: 14) {
                 themedField(
                     title: "Cédula",
                     text: Binding(
-                        get: { cartManager.clientId ?? "" },
-                        set: { cartManager.updateClientId($0) }
+                        get: { authenticatedProfile?.nationalId ?? cartManager.clientId ?? "" },
+                        set: { _ in }
                     )
                 )
+                .disabled(true)
                 
                 themedField(
                     title: "Nombre",
                     text: Binding(
-                        get: { cartManager.clientName },
-                        set: { cartManager.updateClientName($0) }
+                        get: { authenticatedProfile?.fullName ?? cartManager.clientName },
+                        set: { _ in }
                     )
                 )
+                .disabled(true)
                 
                 themedField(
                     title: "Table number",
@@ -82,6 +91,31 @@ struct CheckoutView: View {
                     )
                 )
                 .keyboardType(.numberPad)
+                
+                HStack(alignment: .top, spacing: 12) {
+                    BrandIconBubble(theme: .restaurant, systemImage: "person.crop.circle.badge.checkmark", size: 38)
+                    
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Need to update your information?")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(palette.textPrimary)
+                        
+                        Text("Please change your name or cédula from the Edit Profile page.")
+                            .font(.subheadline)
+                            .foregroundStyle(palette.textSecondary)
+                    }
+                    
+                    Spacer()
+                }
+                .padding(14)
+                .background(
+                    RoundedRectangle(cornerRadius: AppTheme.Radius.large, style: .continuous)
+                        .fill(palette.elevatedCard)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: AppTheme.Radius.large, style: .continuous)
+                        .stroke(palette.stroke, lineWidth: 1)
+                )
                 
                 HStack(spacing: 12) {
                     BrandIconBubble(theme: .restaurant, systemImage: "clock.fill", size: 38)
@@ -207,5 +241,17 @@ struct CheckoutView: View {
             RoundedRectangle(cornerRadius: AppTheme.Radius.large, style: .continuous)
                 .stroke(palette.stroke, lineWidth: 1)
         )
+    }
+    
+    private func syncProfileFieldsFromSession() {
+        guard let profile = authenticatedProfile else { return }
+        
+        if cartManager.clientId != profile.nationalId {
+            cartManager.updateClientId(profile.nationalId)
+        }
+        
+        if cartManager.clientName != profile.fullName {
+            cartManager.updateClientName(profile.fullName)
+        }
     }
 }

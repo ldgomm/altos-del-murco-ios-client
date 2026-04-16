@@ -8,10 +8,16 @@
 import SwiftUI
 
 struct AdventureComboBuilderView: View {
+    @EnvironmentObject private var sessionViewModel: AppSessionViewModel
+    
     @ObservedObject var viewModel: AdventureComboBuilderViewModel
+    
     @State private var editingItem: AdventureReservationItemDraft?
     
     private let menuSections = MenuMockData.sections
+    private var authenticatedProfile: ClientProfile? {
+        sessionViewModel.authenticatedProfile
+    }
     
     var body: some View {
         List {
@@ -32,6 +38,7 @@ struct AdventureComboBuilderView: View {
             EditButton()
         }
         .onAppear {
+            syncProfileFieldsFromSession()
             viewModel.onAppear()
         }
         .sheet(item: $editingItem) { item in
@@ -50,6 +57,14 @@ struct AdventureComboBuilderView: View {
         } message: {
             Text(viewModel.state.errorMessage ?? viewModel.state.successMessage ?? "")
         }
+    }
+    
+    private func syncProfileFieldsFromSession() {
+        guard let profile = authenticatedProfile else { return }
+        
+        viewModel.setClientName(profile.fullName)
+        viewModel.setWhatsapp(profile.phoneNumber)
+        viewModel.setNationalId(profile.nationalId)
     }
     
     private var comboSection: some View {
@@ -336,38 +351,59 @@ struct AdventureComboBuilderView: View {
                 BrandSectionHeader(
                     theme: .adventure,
                     title: "Contacto",
-                    subtitle: "Necesitamos tus datos para confirmar y gestionar la reserva."
+                    subtitle: "Your profile information is used automatically for this reservation."
                 )
                 
                 TextField(
-                    "Nombre del cliente",
+                    "",
                     text: Binding(
-                        get: { viewModel.state.clientName },
-                        set: { viewModel.setClientName($0) }
-                    )
+                        get: { authenticatedProfile?.nationalId ?? viewModel.state.nationalId },
+                        set: { _ in }
+                    ),
+                    prompt: Text("Cédula")
                 )
-                .textInputAutocapitalization(.words)
+                .disabled(true)
+                .keyboardType(.numberPad)
                 .appTextFieldStyle(.adventure)
                 
                 TextField(
-                    "Número de WhatsApp",
+                    "",
                     text: Binding(
-                        get: { viewModel.state.whatsappNumber },
-                        set: { viewModel.setWhatsapp($0) }
-                    )
+                        get: { authenticatedProfile?.fullName ?? viewModel.state.clientName },
+                        set: { _ in }
+                    ),
+                    prompt: Text("Nombre")
                 )
+                .disabled(true)
+                .appTextFieldStyle(.adventure)
+                
+                TextField(
+                    "",
+                    text: Binding(
+                        get: { authenticatedProfile?.phoneNumber ?? viewModel.state.whatsappNumber },
+                        set: { _ in }
+                    ),
+                    prompt: Text("WhatsApp")
+                )
+                .disabled(true)
                 .keyboardType(.phonePad)
                 .appTextFieldStyle(.adventure)
                 
-                TextField(
-                    "Cédula",
-                    text: Binding(
-                        get: { viewModel.state.nationalId },
-                        set: { viewModel.setNationalId($0) }
-                    )
-                )
-                .keyboardType(.numberPad)
-                .appTextFieldStyle(.adventure)
+                HStack(alignment: .top, spacing: 12) {
+                    BrandIconBubble(theme: .adventure, systemImage: "person.crop.circle.badge.checkmark", size: 38)
+                    
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Need to update your information?")
+                            .font(.subheadline.weight(.semibold))
+                        
+                        Text("Please change your personal details from the Edit Profile page.")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                    
+                    Spacer()
+                }
+                .appCardStyle(.adventure)
                 
                 TextField(
                     "Notas generales (opcional)",
@@ -474,7 +510,7 @@ struct AdventureComboBuilderView: View {
     private var confirmSection: some View {
         Section {
             Button {
-                viewModel.submit(clientId: nil)
+                viewModel.submit(clientId: authenticatedProfile?.id)
             } label: {
                 if viewModel.state.isSubmitting {
                     ProgressView()
