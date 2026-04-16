@@ -11,9 +11,13 @@ struct AdventureComboBuilderView: View {
     @ObservedObject var viewModel: AdventureComboBuilderViewModel
     @State private var editingItem: AdventureReservationItemDraft?
     
+    private let menuSections = MenuMockData.sections
+    
     var body: some View {
         List {
             comboSection
+            foodSection
+            eventSection
             schedulingSection
             contactSection
             availabilitySection
@@ -23,7 +27,7 @@ struct AdventureComboBuilderView: View {
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
         .appScreenStyle(.adventure)
-        .navigationTitle("Crear aventura")
+        .navigationTitle("Crear reserva")
         .toolbar {
             EditButton()
         }
@@ -53,9 +57,16 @@ struct AdventureComboBuilderView: View {
             VStack(alignment: .leading, spacing: 16) {
                 BrandSectionHeader(
                     theme: .adventure,
-                    title: "Tu aventura",
-                    subtitle: "Combina distintas actividades, ajusta duración y personas, y cambia el orden arrastrando. Cada actividad solo puede agregarse una vez por reserva."
+                    title: "Actividades",
+                    subtitle: "Opcionales. Puedes reservar aventura, comida o ambas. Cada actividad solo puede agregarse una vez por reserva."
                 )
+                
+                if viewModel.state.items.isEmpty {
+                    Text("No hay actividades agregadas. Eso está bien si quieres una reserva solo de comida o evento.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .padding(.top, 2)
+                }
                 
                 if viewModel.state.items.contains(where: { $0.activity == .offRoad }) {
                     HStack(alignment: .top, spacing: 12) {
@@ -124,13 +135,173 @@ struct AdventureComboBuilderView: View {
         }
     }
     
+    private var foodSection: some View {
+        Section {
+            VStack(alignment: .leading, spacing: 16) {
+                BrandSectionHeader(
+                    theme: .adventure,
+                    title: "Comida",
+                    subtitle: "También puedes hacer una reserva solo de comida para cumpleaños, reuniones o visitas futuras."
+                )
+                
+                if viewModel.state.foodItems.isEmpty {
+                    Text("No hay platos agregados todavía.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                } else {
+                    VStack(spacing: 12) {
+                        ForEach(viewModel.state.foodItems) { item in
+                            ReservationFoodRow(
+                                item: item,
+                                onIncrease: { viewModel.increaseFoodQuantity(item.id) },
+                                onDecrease: { viewModel.decreaseFoodQuantity(item.id) },
+                                onRemove: { viewModel.removeFoodItem(item.id) }
+                            )
+                        }
+                    }
+                }
+                
+                Menu {
+                    ForEach(menuSections) { section in
+                        Menu(section.category.title) {
+                            ForEach(section.items.filter(\.isAvailable)) { item in
+                                Button("\(item.name) • \(item.finalPrice.priceText)") {
+                                    viewModel.addFoodItem(item)
+                                }
+                            }
+                        }
+                    }
+                } label: {
+                    HStack(spacing: 12) {
+                        BrandIconBubble(theme: .adventure, systemImage: "fork.knife")
+                        
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Agregar comida")
+                                .font(.headline)
+                            Text("Usa el menú del restaurante para planificar la reserva.")
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                        }
+                        
+                        Spacer()
+                        
+                        Image(systemName: "chevron.down.circle.fill")
+                            .font(.title3)
+                            .foregroundStyle(.secondary)
+                    }
+                    .appCardStyle(.adventure, emphasized: false)
+                }
+                .buttonStyle(.plain)
+                
+                if !viewModel.state.foodItems.isEmpty {
+                    Picker(
+                        "Momento de servicio",
+                        selection: Binding(
+                            get: { viewModel.state.foodServingMoment },
+                            set: { viewModel.setFoodServingMoment($0) }
+                        )
+                    ) {
+                        ForEach(ReservationServingMoment.allCases) { option in
+                            Text(option.title).tag(option)
+                        }
+                    }
+                    
+                    if viewModel.state.foodServingMoment == .specificTime {
+                        DatePicker(
+                            "Hora de servicio",
+                            selection: Binding(
+                                get: { viewModel.state.foodServingTime },
+                                set: { viewModel.setFoodServingTime($0) }
+                            ),
+                            displayedComponents: .hourAndMinute
+                        )
+                    }
+                    
+                    TextField(
+                        "Notas de comida (opcional)",
+                        text: Binding(
+                            get: { viewModel.state.foodNotes },
+                            set: { viewModel.setFoodNotes($0) }
+                        ),
+                        axis: .vertical
+                    )
+                    .lineLimit(2...4)
+                    .appTextFieldStyle(.adventure)
+                }
+            }
+            .appCardStyle(.adventure)
+            .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+            .listRowBackground(Color.clear)
+            .listRowSeparator(.hidden)
+        }
+    }
+    
+    private var eventSection: some View {
+        Section {
+            VStack(alignment: .leading, spacing: 16) {
+                BrandSectionHeader(
+                    theme: .adventure,
+                    title: "Evento",
+                    subtitle: "Añade el tipo de evento, número de invitados y notas especiales."
+                )
+                
+                Stepper(
+                    "Invitados: \(viewModel.state.guestCount)",
+                    value: Binding(
+                        get: { viewModel.state.guestCount },
+                        set: { viewModel.setGuestCount($0) }
+                    ),
+                    in: 1...300
+                )
+                
+                Picker(
+                    "Tipo de evento",
+                    selection: Binding(
+                        get: { viewModel.state.eventType },
+                        set: { viewModel.setEventType($0) }
+                    )
+                ) {
+                    ForEach(ReservationEventType.allCases) { type in
+                        Text(type.title).tag(type)
+                    }
+                }
+                
+                if viewModel.state.eventType == .custom {
+                    TextField(
+                        "Nombre del evento",
+                        text: Binding(
+                            get: { viewModel.state.customEventTitle },
+                            set: { viewModel.setCustomEventTitle($0) }
+                        )
+                    )
+                    .appTextFieldStyle(.adventure)
+                }
+                
+                TextField(
+                    "Notas del evento (decoración, pastel, sorpresa, niños, etc.)",
+                    text: Binding(
+                        get: { viewModel.state.eventNotes },
+                        set: { viewModel.setEventNotes($0) }
+                    ),
+                    axis: .vertical
+                )
+                .lineLimit(3...5)
+                .appTextFieldStyle(.adventure)
+            }
+            .appCardStyle(.adventure)
+            .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+            .listRowBackground(Color.clear)
+            .listRowSeparator(.hidden)
+        }
+    }
+    
     private var schedulingSection: some View {
         Section {
             VStack(alignment: .leading, spacing: 16) {
                 BrandSectionHeader(
                     theme: .adventure,
                     title: "Fecha",
-                    subtitle: "Elige el día y luego revisa los horarios disponibles."
+                    subtitle: "Elige el día de la visita y luego revisa horarios disponibles."
                 )
                 
                 DatePicker(
@@ -147,7 +318,7 @@ struct AdventureComboBuilderView: View {
                 HStack(alignment: .top, spacing: 12) {
                     BrandIconBubble(theme: .adventure, systemImage: "clock")
                     
-                    Text("Las actividades regulares funcionan de 7:00 AM a 7:00 PM. El recargo nocturno aplica desde las 6:00 PM en adelante.")
+                    Text("Si reservas solo comida, estos horarios se usan como hora preferida de llegada. Si agregas actividades, representan el inicio del combo.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
@@ -199,7 +370,7 @@ struct AdventureComboBuilderView: View {
                 .appTextFieldStyle(.adventure)
                 
                 TextField(
-                    "Notas (opcional)",
+                    "Notas generales (opcional)",
                     text: Binding(
                         get: { viewModel.state.notes },
                         set: { viewModel.setNotes($0) }
@@ -222,7 +393,7 @@ struct AdventureComboBuilderView: View {
                 BrandSectionHeader(
                     theme: .adventure,
                     title: "Horarios disponibles",
-                    subtitle: "Selecciona el mejor horario de inicio para tu reserva."
+                    subtitle: "Selecciona el mejor horario de inicio o llegada para tu reserva."
                 )
                 
                 if viewModel.state.isLoadingAvailability {
@@ -233,7 +404,7 @@ struct AdventureComboBuilderView: View {
                     ContentUnavailableView(
                         "Sin horarios disponibles",
                         systemImage: "calendar.badge.exclamationmark",
-                        description: Text("Intenta otra fecha, otro orden o reduce algunas cantidades.")
+                        description: Text("Agrega una actividad o comida, o prueba otra fecha.")
                     )
                 } else {
                     ScrollView(.horizontal, showsIndicators: false) {
@@ -270,24 +441,27 @@ struct AdventureComboBuilderView: View {
                     subtitle: "Revisa el total antes de confirmar."
                 )
                 
+                //Later
                 if let slot = viewModel.state.selectedSlot {
+                    summaryRow("Aventura", "$\(slot.adventureSubtotal.priceText)")
+                    summaryRow("Comida", "$\(slot.foodSubtotal.priceText)")
                     summaryRow("Subtotal", "$\(slot.subtotal.priceText)")
-                    summaryRow("Descuento", "-$\(slot.discountAmount.priceText)")
-                    summaryRow("Recargo nocturno", "$\(slot.nightPremium.priceText)")
+                    summaryRow("Descuento aventura", "-$\(slot.discountAmount.priceText)")
+//                    summaryRow("Recargo nocturno", "$\(slot.nightPremium.priceText)")
                     Divider()
                     summaryRow("Total", "$\(slot.totalAmount.priceText)", bold: true)
                 } else {
-                    summaryRow("Subtotal estimado", "$\(viewModel.estimatedSubtotal.priceText)")
-                    summaryRow(
-                        "Descuento estimado",
-                        "-$\(AdventurePricingEngine.discount(for: viewModel.estimatedSubtotal), default: "%.2f")"
-                    )
+                    let estimatedSubtotal = AdventurePricingEngine.estimatedSubtotal(items: viewModel.state.items)
+                    let estimatedDiscount = AdventurePricingEngine.discount(for: estimatedSubtotal)
+//                    let estimatedNightPremium = AdventurePricingEngine.estimatedNightPremium(items: viewModel.state.items)
+                    let estimatedTotal =
+                        AdventurePricingEngine.discountedSubtotal(for: estimatedSubtotal) //+ estimatedNightPremium
+
+                    summaryRow("Subtotal estimado", "$\(estimatedSubtotal.priceText)")
+                    summaryRow("Descuento estimado", "-$\(estimatedDiscount.priceText)")
+//                    summaryRow("Recargo nocturno estimado", "$\(estimatedNightPremium.priceText)")
                     Divider()
-                    summaryRow(
-                        "Total estimado",
-                        "$\(AdventurePricingEngine.discountedSubtotal(for: viewModel.estimatedSubtotal), default: "%.2f")",
-                        bold: true
-                    )
+                    summaryRow("Total estimado", "$\(estimatedTotal.priceText)", bold: true)
                 }
             }
             .appCardStyle(.adventure)
@@ -361,6 +535,54 @@ private struct ComboItemCard: View {
     }
 }
 
+private struct ReservationFoodRow: View {
+    let item: ReservationFoodItemDraft
+    let onIncrease: () -> Void
+    let onDecrease: () -> Void
+    let onRemove: () -> Void
+    
+    var body: some View {
+        HStack(spacing: 12) {
+            BrandIconBubble(theme: .adventure, systemImage: "fork.knife", size: 46)
+            
+            VStack(alignment: .leading, spacing: 4) {
+                Text(item.name)
+                    .font(.headline)
+                Text("Unitario: \(item.unitPrice.priceText)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Text("Subtotal: \(item.subtotal.priceText)")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+            }
+            
+            Spacer()
+            
+            VStack(spacing: 8) {
+                HStack(spacing: 10) {
+                    Button(action: onDecrease) {
+                        Image(systemName: "minus.circle.fill")
+                    }
+                    .buttonStyle(.plain)
+                    
+                    Text("\(item.quantity)")
+                        .font(.headline)
+                        .frame(minWidth: 20)
+                    
+                    Button(action: onIncrease) {
+                        Image(systemName: "plus.circle.fill")
+                    }
+                    .buttonStyle(.plain)
+                }
+                
+                Button("Quitar", role: .destructive, action: onRemove)
+                    .font(.caption.bold())
+            }
+        }
+        .appCardStyle(.adventure)
+    }
+}
+
 private struct AdventureSlotCard: View {
     let slot: AdventureAvailabilitySlot
     let isSelected: Bool
@@ -387,6 +609,16 @@ private struct AdventureSlotCard: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
             
+            if slot.adventureSubtotal == 0 && slot.foodSubtotal > 0 {
+                Text("Reserva de comida")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(palette.primary)
+            } else if slot.foodSubtotal > 0 {
+                Text("Aventura + comida")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(palette.primary)
+            }
+            
             Divider()
             
             Text("$\(slot.totalAmount, specifier: "%.2f")")
@@ -394,7 +626,7 @@ private struct AdventureSlotCard: View {
                 .foregroundStyle(isSelected ? palette.primary : .primary)
         }
         .padding(16)
-        .frame(width: 170, alignment: .leading)
+        .frame(width: 180, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: 20, style: .continuous)
                 .fill(isSelected ? AnyShapeStyle(palette.chipGradient) : AnyShapeStyle(palette.cardGradient))
@@ -466,9 +698,9 @@ private struct AdventureItemEditorView: View {
                     }
                     
                 case .extremeSlide:
-                    Section("Columpio extremo") {
+                    Section("Resbaladera extrema") {
                         Stepper("Personas: \(item.peopleCount)", value: $item.peopleCount, in: 1...20)
-                        Text("Incluye 30 minutos de transporte off-road más la sesión del columpio.")
+                        Text("Incluye 30 minutos de transporte off-road más la sesión de la resbaladera.")
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                     }

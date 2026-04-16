@@ -53,7 +53,8 @@ struct MainTabView: View {
             
             RestaurantRootView(
                 ordersViewModel: ordersViewModel,
-                checkoutViewModel: checkoutViewModel
+                checkoutViewModel: checkoutViewModel,
+                comboBuilderViewModel: comboBuilderViewModel
             )
             .tabItem {
                 Label(MainTab.restaurant.title, systemImage: MainTab.restaurant.systemImage)
@@ -97,11 +98,11 @@ enum MainTab: Hashable {
     
     var title: String {
         switch self {
-        case .home: return "Home"
-        case .restaurant: return "Restaurant"
-        case .experiences: return "Experiences"
-        case .bookings: return "Bookings"
-        case .profile: return "Profile"
+        case .home: return "Inicio"
+        case .restaurant: return "Restaurante"
+        case .experiences: return "Aventura"
+        case .bookings: return "Reservas"
+        case .profile: return "Perfil"
         }
     }
     

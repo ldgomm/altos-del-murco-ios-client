@@ -10,6 +10,7 @@ import SwiftUI
 struct CheckoutView: View {
     @ObservedObject var viewModel: CheckoutViewModel
     @EnvironmentObject private var cartManager: CartManager
+    
     @Binding var path: NavigationPath
     @Environment(\.colorScheme) private var colorScheme
     
@@ -58,7 +59,7 @@ struct CheckoutView: View {
             
             VStack(spacing: 14) {
                 themedField(
-                    title: "Client id",
+                    title: "Cédula",
                     text: Binding(
                         get: { cartManager.clientId ?? "" },
                         set: { cartManager.updateClientId($0) }
@@ -66,7 +67,7 @@ struct CheckoutView: View {
                 )
                 
                 themedField(
-                    title: "Client name",
+                    title: "Nombre",
                     text: Binding(
                         get: { cartManager.clientName },
                         set: { cartManager.updateClientName($0) }

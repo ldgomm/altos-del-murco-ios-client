@@ -99,13 +99,13 @@ extension AdventureService {
         ),
         AdventureService(
             activityType: .extremeSlide,
-            title: "Columpio extremo",
+            title: "Resvaladera extrema",
             systemImage: "figure.fall",
-            shortDescription: "Experiencia en el columpio con transporte off-road incluido.",
-            fullDescription: "Una sesión fija que incluye el transporte y el columpio.",
+            shortDescription: "Experiencia en la resbaladera extrema con transporte off-road incluido.",
+            fullDescription: "Una sesión fija que incluye el transporte y la resbaladera extrema.",
             priceText: "$15 / persona",
             durationText: "30 min + transporte",
-            includes: ["Sesión en el columpio", "Transporte off-road incluido"]
+            includes: ["Sesión en la resbaladera", "Transporte off-road incluido"]
         )
     ]
 }

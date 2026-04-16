@@ -12,6 +12,16 @@ struct AdventureComboBuilderState {
     var selectedDate: Date = Date()
     var items: [AdventureReservationItemDraft]
     
+    var guestCount: Int = 2
+    var eventType: ReservationEventType = .regularVisit
+    var customEventTitle: String = ""
+    var eventNotes: String = ""
+    
+    var foodItems: [ReservationFoodItemDraft] = []
+    var foodServingMoment: ReservationServingMoment = .afterActivities
+    var foodServingTime: Date = Date()
+    var foodNotes: String = ""
+    
     var clientName: String = ""
     var whatsappNumber: String = ""
     var nationalId: String = ""
@@ -32,6 +42,10 @@ final class AdventureComboBuilderViewModel: ObservableObject {
     
     private let getAvailabilityUseCase: GetAdventureAvailabilityUseCase
     private let createBookingUseCase: CreateAdventureBookingUseCase
+    
+    var estimatedNightPremium: Double {
+        AdventurePricingEngine.estimatedNightPremium(items: state.items)
+    }
     
     init(
         prefilledItems: [AdventureReservationItemDraft],
@@ -54,7 +68,7 @@ final class AdventureComboBuilderViewModel: ObservableObject {
     func canAddItem(_ activity: AdventureActivityType) -> Bool {
         !state.items.contains(where: { $0.activity == activity })
     }
-
+    
     var availableActivitiesToAdd: [AdventureActivityType] {
         AdventureActivityType.allCases.filter { activity in
             canAddItem(activity)
@@ -95,12 +109,79 @@ final class AdventureComboBuilderViewModel: ObservableObject {
         Task { await loadAvailability() }
     }
     
+    func addFoodItem(_ menuItem: MenuItem) {
+        guard menuItem.isAvailable else { return }
+        
+        if let index = state.foodItems.firstIndex(where: { $0.menuItemId == menuItem.id }) {
+            state.foodItems[index].quantity += 1
+        } else {
+            state.foodItems.append(ReservationFoodItemDraft(from: menuItem))
+        }
+        
+        state.selectedSlot = nil
+        Task { await loadAvailability() }
+    }
+    
+    func increaseFoodQuantity(_ id: String) {
+        guard let index = state.foodItems.firstIndex(where: { $0.id == id }) else { return }
+        state.foodItems[index].quantity += 1
+        state.selectedSlot = nil
+        Task { await loadAvailability() }
+    }
+    
+    func decreaseFoodQuantity(_ id: String) {
+        guard let index = state.foodItems.firstIndex(where: { $0.id == id }) else { return }
+        
+        let nextValue = state.foodItems[index].quantity - 1
+        if nextValue <= 0 {
+            state.foodItems.remove(at: index)
+        } else {
+            state.foodItems[index].quantity = nextValue
+        }
+        
+        state.selectedSlot = nil
+        Task { await loadAvailability() }
+    }
+    
+    func removeFoodItem(_ id: String) {
+        state.foodItems.removeAll { $0.id == id }
+        state.selectedSlot = nil
+        Task { await loadAvailability() }
+    }
+    
     func setDate(_ date: Date) {
         state.selectedDate = date
         state.selectedSlot = nil
         Task { await loadAvailability() }
     }
     
+    func setGuestCount(_ value: Int) {
+        state.guestCount = max(1, value)
+    }
+    
+    func setEventType(_ value: ReservationEventType) {
+        state.eventType = value
+        if value != .custom {
+            state.customEventTitle = ""
+        }
+    }
+    
+    func setCustomEventTitle(_ value: String) { state.customEventTitle = value }
+    func setEventNotes(_ value: String) { state.eventNotes = value }
+    
+    func setFoodServingMoment(_ value: ReservationServingMoment) {
+        state.foodServingMoment = value
+        state.selectedSlot = nil
+        Task { await loadAvailability() }
+    }
+    
+    func setFoodServingTime(_ value: Date) {
+        state.foodServingTime = value
+        state.selectedSlot = nil
+        Task { await loadAvailability() }
+    }
+    
+    func setFoodNotes(_ value: String) { state.foodNotes = value }
     func setClientName(_ value: String) { state.clientName = value }
     func setWhatsapp(_ value: String) { state.whatsappNumber = value }
     func setNationalId(_ value: String) { state.nationalId = value }
@@ -119,8 +200,12 @@ final class AdventureComboBuilderViewModel: ObservableObject {
         Task { await submitReservation(clientId: clientId) }
     }
     
-    var estimatedSubtotal: Double {
+    var estimatedAdventureSubtotal: Double {
         AdventurePricingEngine.estimatedSubtotal(items: state.items)
+    }
+    
+    var estimatedFoodSubtotal: Double {
+        state.foodItems.reduce(0) { $0 + $1.subtotal }
     }
     
     func reset() {
@@ -130,17 +215,19 @@ final class AdventureComboBuilderViewModel: ObservableObject {
         keepCampingAtEnd()
         Task { await loadAvailability() }
     }
-
+    
+    func resetForFoodOnly() {
+        state = AdventureComboBuilderState(items: [])
+        Task { await loadAvailability() }
+    }
+    
     func replaceItems(with items: [AdventureReservationItemDraft]) {
         let uniqueItems = items.reduce(into: [AdventureReservationItemDraft]()) { result, item in
             guard !result.contains(where: { $0.activity == item.activity }) else { return }
             result.append(item)
         }
         
-        state.items = uniqueItems.isEmpty
-            ? [AdventureActivityType.defaultDraft(for: .offRoad)]
-            : uniqueItems
-        
+        state.items = uniqueItems.isEmpty ? [] : uniqueItems
         keepCampingAtEnd()
         state.selectedSlot = nil
         state.errorMessage = nil
@@ -152,10 +239,22 @@ final class AdventureComboBuilderViewModel: ObservableObject {
         state.isLoadingAvailability = true
         state.errorMessage = nil
         
+        let foodDraft = buildFoodDraft()
+        let hasFood = !(foodDraft?.isEmpty ?? true)
+        let hasActivities = !state.items.isEmpty
+        
+        guard hasActivities || hasFood else {
+            state.availableSlots = []
+            state.selectedSlot = nil
+            state.isLoadingAvailability = false
+            return
+        }
+        
         do {
             let slots = try await getAvailabilityUseCase.execute(
                 date: state.selectedDate,
-                items: state.items
+                items: state.items,
+                foodReservation: foodDraft
             )
             state.availableSlots = slots
             if let selected = state.selectedSlot {
@@ -173,8 +272,12 @@ final class AdventureComboBuilderViewModel: ObservableObject {
     }
     
     private func submitReservation(clientId: String?) async {
-        guard !state.items.isEmpty else {
-            state.errorMessage = "Add at least one activity."
+        let foodDraft = buildFoodDraft()
+        let hasFood = !(foodDraft?.isEmpty ?? true)
+        let hasActivities = !state.items.isEmpty
+        
+        guard hasActivities || hasFood else {
+            state.errorMessage = "Add at least one activity or one food item."
             return
         }
         
@@ -195,6 +298,17 @@ final class AdventureComboBuilderViewModel: ObservableObject {
             return
         }
         
+        guard state.guestCount > 0 else {
+            state.errorMessage = "Please enter at least one guest."
+            return
+        }
+        
+        if state.eventType == .custom,
+           state.customEventTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            state.errorMessage = "Please enter the custom event title."
+            return
+        }
+        
         guard let slot = state.selectedSlot else {
             state.errorMessage = "Please choose an available start time."
             return
@@ -203,6 +317,10 @@ final class AdventureComboBuilderViewModel: ObservableObject {
         state.isSubmitting = true
         state.errorMessage = nil
         
+        let cleanNotes = state.notes.trimmingCharacters(in: .whitespacesAndNewlines)
+        let cleanEventNotes = state.eventNotes.trimmingCharacters(in: .whitespacesAndNewlines)
+        let cleanCustomEventTitle = state.customEventTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        
         let request = AdventureBookingRequest(
             clientId: clientId,
             clientName: state.clientName.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -210,8 +328,13 @@ final class AdventureComboBuilderViewModel: ObservableObject {
             nationalId: nationalIdDigits,
             date: state.selectedDate,
             selectedStartAt: slot.startAt,
+            guestCount: state.guestCount,
+            eventType: state.eventType,
+            customEventTitle: state.eventType == .custom && !cleanCustomEventTitle.isEmpty ? cleanCustomEventTitle : nil,
+            eventNotes: cleanEventNotes.isEmpty ? nil : cleanEventNotes,
             items: state.items,
-            notes: state.notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : state.notes
+            foodReservation: foodDraft,
+            notes: cleanNotes.isEmpty ? nil : cleanNotes
         )
         
         do {
@@ -229,5 +352,30 @@ final class AdventureComboBuilderViewModel: ObservableObject {
         let campingItems = state.items.filter { $0.activity == .camping }
         let otherItems = state.items.filter { $0.activity != .camping }
         state.items = otherItems + campingItems
+    }
+    
+    private func buildFoodDraft() -> ReservationFoodDraft? {
+        guard !state.foodItems.isEmpty else { return nil }
+        
+        let trimmedNotes = state.foodNotes.trimmingCharacters(in: .whitespacesAndNewlines)
+        return ReservationFoodDraft(
+            items: state.foodItems,
+            servingMoment: state.foodServingMoment,
+            servingTime: combinedServingTime(),
+            notes: trimmedNotes.isEmpty ? nil : trimmedNotes
+        )
+    }
+    
+    private func combinedServingTime() -> Date? {
+        guard state.foodServingMoment == .specificTime else { return nil }
+        
+        let calendar = AdventureDateHelper.calendar
+        let timeComponents = calendar.dateComponents([.hour, .minute], from: state.foodServingTime)
+        return calendar.date(
+            bySettingHour: timeComponents.hour ?? 12,
+            minute: timeComponents.minute ?? 0,
+            second: 0,
+            of: state.selectedDate
+        )
     }
 }

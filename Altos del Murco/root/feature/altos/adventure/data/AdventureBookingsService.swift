@@ -17,60 +17,65 @@ final class AdventureBookingsService: AdventureBookingsServiceable {
     }
     
     func observeBookings(
-            for day: Date,
-            nationalId: String,
-            onChange: @escaping (Result<[AdventureBooking], Error>) -> Void
-        ) -> AdventureListenerToken {
-            let dayKey = AdventureDateHelper.dayKey(from: day)
-            let nationalId = nationalId.trimmingCharacters(in: .whitespacesAndNewlines)
-            
-            let registration = db.collection(bookingsCollection)
-                .whereField("nationalId", isEqualTo: nationalId)
-                .whereField("startDayKey", isEqualTo: dayKey)
-                .order(by: "startAt")
-                .addSnapshotListener { snapshot, error in
-                    if let error {
-                        onChange(.failure(error))
-                        return
-                    }
-                    
-                    guard let snapshot else {
-                        onChange(.success([]))
-                        return
-                    }
-                    
-                    do {
-                        let bookings = try snapshot.documents.map { document in
-                            let dto = try document.data(as: AdventureBookingDTO.self)
-                            return dto.toDomain(documentId: document.documentID)
-                        }
-                        onChange(.success(bookings))
-                    } catch {
-                        onChange(.failure(error))
-                    }
+        for day: Date,
+        nationalId: String,
+        onChange: @escaping (Result<[AdventureBooking], Error>) -> Void
+    ) -> AdventureListenerToken {
+        let dayKey = AdventureDateHelper.dayKey(from: day)
+        let nationalId = nationalId.trimmingCharacters(in: .whitespacesAndNewlines)
+        
+        let registration = db.collection(bookingsCollection)
+            .whereField("nationalId", isEqualTo: nationalId)
+            .whereField("startDayKey", isEqualTo: dayKey)
+            .order(by: "startAt")
+            .addSnapshotListener { snapshot, error in
+                if let error {
+                    onChange(.failure(error))
+                    return
                 }
-            
-            return FirestoreAdventureListenerToken(registration: registration)
-        }
+                
+                guard let snapshot else {
+                    onChange(.success([]))
+                    return
+                }
+                
+                do {
+                    let bookings = try snapshot.documents.map { document in
+                        let dto = try document.data(as: AdventureBookingDTO.self)
+                        return dto.toDomain(documentId: document.documentID)
+                    }
+                    onChange(.success(bookings))
+                } catch {
+                    onChange(.failure(error))
+                }
+            }
+        
+        return FirestoreAdventureListenerToken(registration: registration)
+    }
     
     func fetchAvailability(
         for date: Date,
-        items: [AdventureReservationItemDraft]
+        items: [AdventureReservationItemDraft],
+        foodReservation: ReservationFoodDraft?
     ) async throws -> [AdventureAvailabilitySlot] {
-        AdventurePlanner.buildAvailability(day: date, items: items)
+        AdventurePlanner.buildAvailability(
+            day: date,
+            items: items,
+            foodReservation: foodReservation
+        )
     }
     
     func createBooking(_ request: AdventureBookingRequest) async throws -> AdventureBooking {
         guard let plan = AdventurePlanner.buildPlan(
             day: request.date,
             startAt: request.selectedStartAt,
-            items: request.items
+            items: request.items,
+            foodReservation: request.foodReservation
         ) else {
             throw makeError("Invalid reservation configuration.")
         }
         
         let createdAt = Date()
-        
         let bookingRef = db.collection(bookingsCollection).document()
         let dto = AdventureBookingDTO.from(
             bookingId: bookingRef.documentID,
@@ -80,7 +85,8 @@ final class AdventureBookingsService: AdventureBookingsServiceable {
         )
         
         let encodedBooking = try Firestore.Encoder().encode(dto)
-        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in            bookingRef.setData(encodedBooking) { error in
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            bookingRef.setData(encodedBooking) { error in
                 if let error {
                     continuation.resume(throwing: error)
                 } else {
@@ -113,21 +119,6 @@ final class AdventureBookingsService: AdventureBookingsServiceable {
                     continuation.resume(throwing: error)
                 } else {
                     continuation.resume(returning: ())
-                }
-            }
-        }
-    }
-    
-    // MARK: - Helpers
-    private func getDocuments(query: Query) async throws -> QuerySnapshot {
-        try await withCheckedThrowingContinuation { continuation in
-            query.getDocuments { snapshot, error in
-                if let error {
-                    continuation.resume(throwing: error)
-                } else if let snapshot {
-                    continuation.resume(returning: snapshot)
-                } else {
-                    continuation.resume(throwing: self.makeError("Failed to fetch inventory."))
                 }
             }
         }

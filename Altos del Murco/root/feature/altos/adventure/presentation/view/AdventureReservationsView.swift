@@ -41,7 +41,7 @@ struct AdventureReservationsView: View {
                 .appScreenStyle(.adventure)
             }
         }
-        .navigationTitle("Reservas de aventura")
+        .navigationTitle("Reservas y eventos")
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(.hidden, for: .navigationBar)
         .onAppear { viewModel.onAppear() }
@@ -59,7 +59,7 @@ struct AdventureReservationsView: View {
                             .font(.title3.bold())
                             .foregroundStyle(palette.textPrimary)
                         
-                        Text("Consulta reservas por fecha y cancela las que aún estén activas.")
+                        Text("Consulta reservas de aventura, comida, cumpleaños y otros eventos.")
                             .font(.subheadline)
                             .foregroundStyle(palette.textSecondary)
                     }
@@ -177,21 +177,53 @@ private struct AdventureReservationRow: View {
                 statusBadge
             }
             
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Actividades")
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(palette.textPrimary)
-                
-                ForEach(booking.items, id: \.id) { item in
-                    HStack(alignment: .top, spacing: 8) {
-                        Circle()
-                            .fill(palette.primary)
-                            .frame(width: 6, height: 6)
-                            .padding(.top, 6)
-                        
-                        Text("\(item.title) — \(item.summaryText)")
-                            .font(.caption)
-                            .foregroundStyle(palette.textSecondary)
+            HStack(spacing: 8) {
+                BrandBadge(theme: .adventure, title: booking.visitTypeTitle)
+                BrandBadge(theme: .adventure, title: booking.eventDisplayTitle, selected: booking.eventType != .regularVisit)
+            }
+            
+            Text("Invitados: \(booking.guestCount)")
+                .font(.subheadline)
+                .foregroundStyle(palette.textSecondary)
+            
+            if booking.hasActivities {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Actividades")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(palette.textPrimary)
+                    
+                    ForEach(booking.items, id: \.id) { item in
+                        HStack(alignment: .top, spacing: 8) {
+                            Circle()
+                                .fill(palette.primary)
+                                .frame(width: 6, height: 6)
+                                .padding(.top, 6)
+                            
+                            Text("\(item.title) — \(item.summaryText)")
+                                .font(.caption)
+                                .foregroundStyle(palette.textSecondary)
+                        }
+                    }
+                }
+            }
+            
+            if let food = booking.foodReservation, !food.items.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Comida reservada")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(palette.textPrimary)
+                    
+                    ForEach(food.items, id: \.id) { item in
+                        HStack(alignment: .top, spacing: 8) {
+                            Circle()
+                                .fill(palette.accent)
+                                .frame(width: 6, height: 6)
+                                .padding(.top, 6)
+                            
+                            Text("\(item.quantity)x \(item.name)")
+                                .font(.caption)
+                                .foregroundStyle(palette.textSecondary)
+                        }
                     }
                 }
             }
@@ -199,19 +231,27 @@ private struct AdventureReservationRow: View {
             Divider()
                 .overlay(palette.stroke)
             
-            HStack {
-                Text("Total")
-                    .font(.subheadline)
-                    .foregroundStyle(palette.textSecondary)
-                
-                Spacer()
-                
-                Text("$\(booking.totalAmount, specifier: "%.2f")")
-                    .font(.headline)
-                    .foregroundStyle(palette.primary)
+            VStack(spacing: 8) {
+                amountRow("Aventura", booking.adventureSubtotal)
+                amountRow("Comida", booking.foodSubtotal)
+                amountRow("Descuento", -booking.discountAmount)
+//                amountRow("Recargo nocturno", booking.nightPremium)
+                amountRow("Total", booking.totalAmount, isPrimary: true)
             }
         }
         .appCardStyle(.adventure)
+    }
+    
+    private func amountRow(_ title: String, _ amount: Double, isPrimary: Bool = false) -> some View {
+        HStack {
+            Text(title)
+                .font(isPrimary ? .headline : .subheadline)
+                .foregroundStyle(isPrimary ? palette.textPrimary : palette.textSecondary)
+            Spacer()
+            Text(amount.priceText)
+                .font(isPrimary ? .headline.bold() : .subheadline.weight(.semibold))
+                .foregroundStyle(isPrimary ? palette.primary : palette.textPrimary)
+        }
     }
     
     private var statusBadge: some View {

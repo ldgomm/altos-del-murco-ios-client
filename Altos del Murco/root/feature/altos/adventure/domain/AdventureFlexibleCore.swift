@@ -24,7 +24,7 @@ enum AdventureActivityType: String, Codable, CaseIterable, Identifiable, Hashabl
         case .goKarts: return "Go karts"
         case .shootingRange: return "Campo de tiro"
         case .camping: return "Camping"
-        case .extremeSlide: return "Columpio extremo"
+        case .extremeSlide: return "Resbaladera extrema"
         }
     }
     
@@ -135,6 +135,44 @@ enum AdventureBookingStatus: String, Codable, CaseIterable, Hashable {
     }
 }
 
+enum ReservationEventType: String, Codable, CaseIterable, Identifiable, Hashable {
+    case regularVisit
+    case birthday
+    case anniversary
+    case corporate
+    case familyGathering
+    case custom
+    
+    var id: String { rawValue }
+    
+    var title: String {
+        switch self {
+        case .regularVisit: return "Visita regular"
+        case .birthday: return "Cumpleaños"
+        case .anniversary: return "Aniversario"
+        case .corporate: return "Evento corporativo"
+        case .familyGathering: return "Reunión familiar"
+        case .custom: return "Otro"
+        }
+    }
+}
+
+enum ReservationServingMoment: String, Codable, CaseIterable, Identifiable, Hashable {
+    case onArrival
+    case afterActivities
+    case specificTime
+    
+    var id: String { rawValue }
+    
+    var title: String {
+        switch self {
+        case .onArrival: return "Al llegar"
+        case .afterActivities: return "Después de actividades"
+        case .specificTime: return "Hora específica"
+        }
+    }
+}
+
 struct AdventureReservationItemDraft: Identifiable, Codable, Hashable {
     let id: String
     var activity: AdventureActivityType
@@ -178,6 +216,60 @@ struct AdventureReservationItemDraft: Identifiable, Codable, Hashable {
     }
 }
 
+struct ReservationFoodItemDraft: Identifiable, Codable, Hashable {
+    let id: String
+    let menuItemId: String
+    let name: String
+    let unitPrice: Double
+    var quantity: Int
+    var notes: String?
+    
+    init(
+        id: String = UUID().uuidString,
+        menuItemId: String,
+        name: String,
+        unitPrice: Double,
+        quantity: Int,
+        notes: String? = nil
+    ) {
+        self.id = id
+        self.menuItemId = menuItemId
+        self.name = name
+        self.unitPrice = unitPrice
+        self.quantity = max(1, quantity)
+        self.notes = notes
+    }
+    
+    init(from menuItem: MenuItem, quantity: Int = 1, notes: String? = nil) {
+        self.init(
+            menuItemId: menuItem.id,
+            name: menuItem.name,
+            unitPrice: menuItem.finalPrice,
+            quantity: quantity,
+            notes: notes
+        )
+    }
+    
+    var subtotal: Double {
+        Double(quantity) * unitPrice
+    }
+}
+
+struct ReservationFoodDraft: Codable, Hashable {
+    var items: [ReservationFoodItemDraft]
+    var servingMoment: ReservationServingMoment
+    var servingTime: Date?
+    var notes: String?
+    
+    var subtotal: Double {
+        items.reduce(0) { $0 + $1.subtotal }
+    }
+    
+    var isEmpty: Bool {
+        items.isEmpty
+    }
+}
+
 struct AdventureBookingBlock: Identifiable, Hashable, Codable {
     let id: String
     let title: String
@@ -193,6 +285,8 @@ struct AdventureBuildPlan: Hashable {
     let startAt: Date
     let endAt: Date
     let blocks: [AdventureBookingBlock]
+    let adventureSubtotal: Double
+    let foodSubtotal: Double
     let subtotal: Double
     let discountAmount: Double
     let nightPremium: Double
@@ -205,6 +299,8 @@ struct AdventureAvailabilitySlot: Identifiable, Hashable {
     let startAt: Date
     let endAt: Date
     let blocks: [AdventureBookingBlock]
+    let adventureSubtotal: Double
+    let foodSubtotal: Double
     let subtotal: Double
     let discountAmount: Double
     let nightPremium: Double
@@ -218,8 +314,16 @@ struct AdventureBookingRequest: Hashable {
     let nationalId: String
     let date: Date
     let selectedStartAt: Date
+    let guestCount: Int
+    let eventType: ReservationEventType
+    let customEventTitle: String?
+    let eventNotes: String?
     let items: [AdventureReservationItemDraft]
+    let foodReservation: ReservationFoodDraft?
     let notes: String?
+    
+    var hasActivities: Bool { !items.isEmpty }
+    var hasFoodReservation: Bool { !(foodReservation?.isEmpty ?? true) }
 }
 
 struct AdventureBooking: Identifiable, Hashable {
@@ -231,8 +335,15 @@ struct AdventureBooking: Identifiable, Hashable {
     let startDayKey: String
     let startAt: Date
     let endAt: Date
+    let guestCount: Int
+    let eventType: ReservationEventType
+    let customEventTitle: String?
+    let eventNotes: String?
     let items: [AdventureReservationItemDraft]
+    let foodReservation: ReservationFoodDraft?
     let blocks: [AdventureBookingBlock]
+    let adventureSubtotal: Double
+    let foodSubtotal: Double
     let subtotal: Double
     let discountAmount: Double
     let nightPremium: Double
@@ -240,6 +351,26 @@ struct AdventureBooking: Identifiable, Hashable {
     let status: AdventureBookingStatus
     let createdAt: Date
     let notes: String?
+    
+    var hasActivities: Bool { !items.isEmpty }
+    var hasFoodReservation: Bool { !(foodReservation?.isEmpty ?? true) }
+    
+    var eventDisplayTitle: String {
+        if eventType == .custom {
+            let clean = customEventTitle?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            return clean.isEmpty ? "Evento personalizado" : clean
+        }
+        return eventType.title
+    }
+    
+    var visitTypeTitle: String {
+        switch (hasActivities, hasFoodReservation) {
+        case (true, true): return "Aventura + comida"
+        case (true, false): return "Solo aventura"
+        case (false, true): return "Solo comida"
+        case (false, false): return "Reserva"
+        }
+    }
 }
 
 struct AdventureTemplate: Identifiable, Hashable {
@@ -253,9 +384,10 @@ struct AdventureTemplate: Identifiable, Hashable {
 enum AdventureSchedule {
     static let slotMinutes = 30
     static let daytimeStartHour = 7
-    static let daytimeEndHour = 22
-    static let nightPremiumStartHour = 17
+    static let daytimeEndHour = 20
+    static let nightPremiumStartHour = 18
     static let offRoadPeoplePerVehicle = 2
+    static let foodOnlyDefaultDurationMinutes = 90
     
     static func capacity(for resource: AdventureResourceType) -> Int {
         switch resource {
@@ -326,14 +458,14 @@ enum AdventureDateHelper {
         let startHour = calendar.component(.hour, from: startAt)
         let endHour = calendar.component(.hour, from: endAt)
         return startHour >= AdventureSchedule.nightPremiumStartHour
-        || endHour >= AdventureSchedule.nightPremiumStartHour
-        || startHour < AdventureSchedule.daytimeStartHour
+            || endHour >= AdventureSchedule.nightPremiumStartHour
+            || startHour < AdventureSchedule.daytimeStartHour
     }
 }
 
 enum AdventurePricingEngine {
     static let nightPremiumRate = 0.25
-    
+
     static func subtotal(for item: AdventureReservationItemDraft) -> Double {
         switch item.activity {
         case .offRoad:
@@ -351,23 +483,34 @@ enum AdventurePricingEngine {
             return 15 * Double(item.peopleCount)
         }
     }
-    
+
     static func estimatedSubtotal(items: [AdventureReservationItemDraft]) -> Double {
         items.reduce(0) { $0 + subtotal(for: $1) }
     }
-    
+
     static func discount(for subtotal: Double) -> Double {
         let completeTenDollarSteps = Int(subtotal / 10)
         return Double(completeTenDollarSteps) * 0.5
+    }
+
+    static func foodSubtotal(for foodReservation: ReservationFoodDraft?) -> Double {
+        foodReservation?.subtotal ?? 0
     }
     
     static func discountedSubtotal(for subtotal: Double) -> Double {
         max(0, subtotal - discount(for: subtotal))
     }
-    
+
     static func estimatedDiscountedSubtotal(items: [AdventureReservationItemDraft]) -> Double {
-        let subtotal = estimatedSubtotal(items: items)
-        return subtotal
+        discountedSubtotal(for: estimatedSubtotal(items: items))
+    }
+
+    static func estimatedNightPremium(items: [AdventureReservationItemDraft]) -> Double {
+        let hasCamping = items.contains { $0.activity == .camping }
+        guard hasCamping else { return 0 }
+
+        let discounted = estimatedDiscountedSubtotal(items: items)
+        return discounted * nightPremiumRate
     }
 }
 
@@ -375,10 +518,13 @@ enum AdventurePlanner {
     static func buildPlan(
         day: Date,
         startAt: Date,
-        items: [AdventureReservationItemDraft]
+        items: [AdventureReservationItemDraft],
+        foodReservation: ReservationFoodDraft?
     ) -> AdventureBuildPlan? {
-        guard !items.isEmpty else { return nil }
+        let hasFood = !(foodReservation?.isEmpty ?? true)
+        guard !items.isEmpty || hasFood else { return nil }
         
+        let foodSubtotal = AdventurePricingEngine.foodSubtotal(for: foodReservation)
         let dayStart = AdventureDateHelper.date(
             on: day,
             hour: AdventureSchedule.daytimeStartHour,
@@ -392,9 +538,27 @@ enum AdventurePlanner {
         
         guard startAt >= dayStart else { return nil }
         
+        if items.isEmpty {
+            let end = AdventureDateHelper.addMinutes(AdventureSchedule.foodOnlyDefaultDurationMinutes, to: startAt)
+            guard end <= dayEnd else { return nil }
+            
+            return AdventureBuildPlan(
+                startAt: startAt,
+                endAt: end,
+                blocks: [],
+                adventureSubtotal: 0,
+                foodSubtotal: foodSubtotal,
+                subtotal: foodSubtotal,
+                discountAmount: 0,
+                nightPremium: 0,
+                totalAmount: foodSubtotal,
+                hasNightPremium: false
+            )
+        }
+        
         var cursor = startAt
         var blocks: [AdventureBookingBlock] = []
-        var subtotal = 0.0
+        var adventureSubtotal = 0.0
         
         for (index, item) in items.enumerated() {
             switch item.activity {
@@ -407,7 +571,7 @@ enum AdventurePlanner {
                 guard end <= dayEnd else { return nil }
                 
                 let lineSubtotal = AdventurePricingEngine.subtotal(for: item)
-                subtotal += lineSubtotal
+                adventureSubtotal += lineSubtotal
                 
                 blocks.append(
                     AdventureBookingBlock(
@@ -428,7 +592,7 @@ enum AdventurePlanner {
                 guard end <= dayEnd else { return nil }
                 
                 let lineSubtotal = AdventurePricingEngine.subtotal(for: item)
-                subtotal += lineSubtotal
+                adventureSubtotal += lineSubtotal
                 
                 blocks.append(
                     AdventureBookingBlock(
@@ -449,7 +613,7 @@ enum AdventurePlanner {
                 guard end <= dayEnd else { return nil }
                 
                 let lineSubtotal = AdventurePricingEngine.subtotal(for: item)
-                subtotal += lineSubtotal
+                adventureSubtotal += lineSubtotal
                 
                 blocks.append(
                     AdventureBookingBlock(
@@ -470,7 +634,7 @@ enum AdventurePlanner {
                 guard end <= dayEnd else { return nil }
                 
                 let lineSubtotal = AdventurePricingEngine.subtotal(for: item)
-                subtotal += lineSubtotal
+                adventureSubtotal += lineSubtotal
                 
                 blocks.append(
                     AdventureBookingBlock(
@@ -510,7 +674,7 @@ enum AdventurePlanner {
                 )
                 
                 let lineSubtotal = AdventurePricingEngine.subtotal(for: item)
-                subtotal += lineSubtotal
+                adventureSubtotal += lineSubtotal
                 
                 blocks.append(
                     AdventureBookingBlock(
@@ -535,7 +699,7 @@ enum AdventurePlanner {
                     let start = AdventureDateHelper.addDays(night, to: campingStart)
                     let end = AdventureDateHelper.addMinutes(12 * 60, to: start)
                     let nightSubtotal = 30 * Double(item.peopleCount)
-                    subtotal += nightSubtotal
+                    adventureSubtotal += nightSubtotal
                     
                     blocks.append(
                         AdventureBookingBlock(
@@ -554,34 +718,38 @@ enum AdventurePlanner {
             }
         }
         
-        let hasMisalignedOffRoadBlock = blocks.contains {
-            $0.activity == .offRoad &&
-            AdventureDateHelper.calendar.component(.minute, from: $0.startAt) != 0
-        }
+        //Later off-road
+//        let hasMisalignedOffRoadBlock = blocks.contains {
+//            $0.activity == .offRoad &&
+//            AdventureDateHelper.calendar.component(.minute, from: $0.startAt) != 0
+//        }
         
-        guard !hasMisalignedOffRoadBlock else { return nil }
-        
+//        guard !hasMisalignedOffRoadBlock else { return nil }
         guard let last = blocks.last else { return nil }
         
-        let hasNightPremium = blocks.contains {
-            $0.activity == .camping
-            || AdventureDateHelper.isNightPremiumTime($0.startAt, $0.endAt)
-        }
+        let hasNightPremium =
+            items.contains(where: { $0.activity == .camping }) ||
+            blocks.contains { AdventureDateHelper.isNightPremiumTime($0.startAt, $0.endAt) }
         
-        let discountAmount = AdventurePricingEngine.discount(for: subtotal)
-        let discountedSubtotal = AdventurePricingEngine.discountedSubtotal(for: subtotal)
-        let premium = hasNightPremium
-        ? discountedSubtotal * AdventurePricingEngine.nightPremiumRate
-        : 0
+        let discountAmount = AdventurePricingEngine.discount(for: adventureSubtotal)
+        let discountedAdventureSubtotal = AdventurePricingEngine.discountedSubtotal(for: adventureSubtotal)
+        
+        //Later premium
+//        let premium = hasNightPremium ? discountedAdventureSubtotal * AdventurePricingEngine.nightPremiumRate : 0
+        
+        let totalSubtotal = adventureSubtotal + foodSubtotal
+        let totalAmount = discountedAdventureSubtotal + foodSubtotal// + premium
         
         return AdventureBuildPlan(
             startAt: startAt,
             endAt: last.endAt,
             blocks: blocks,
-            subtotal: subtotal,
+            adventureSubtotal: adventureSubtotal,
+            foodSubtotal: foodSubtotal,
+            subtotal: totalSubtotal,
             discountAmount: discountAmount,
-            nightPremium: premium,
-            totalAmount: discountedSubtotal + premium,
+            nightPremium: 0,
+            totalAmount: totalAmount,
             hasNightPremium: hasNightPremium
         )
     }
@@ -599,9 +767,11 @@ enum AdventurePlanner {
     
     static func buildAvailability(
         day: Date,
-        items: [AdventureReservationItemDraft]
+        items: [AdventureReservationItemDraft],
+        foodReservation: ReservationFoodDraft?
     ) -> [AdventureAvailabilitySlot] {
-        guard !items.isEmpty else { return [] }
+        let hasFood = !(foodReservation?.isEmpty ?? true)
+        guard !items.isEmpty || hasFood else { return [] }
         
         let startWindow = AdventureDateHelper.date(
             on: day,
@@ -622,13 +792,20 @@ enum AdventurePlanner {
         
         while current <= endWindow {
             if !(isToday && current < now),
-               let plan = buildPlan(day: day, startAt: current, items: items) {
+               let plan = buildPlan(
+                    day: day,
+                    startAt: current,
+                    items: items,
+                    foodReservation: foodReservation
+               ) {
                 slots.append(
                     AdventureAvailabilitySlot(
                         id: UUID().uuidString,
                         startAt: plan.startAt,
                         endAt: plan.endAt,
                         blocks: plan.blocks,
+                        adventureSubtotal: plan.adventureSubtotal,
+                        foodSubtotal: plan.foodSubtotal,
                         subtotal: plan.subtotal,
                         discountAmount: plan.discountAmount,
                         nightPremium: plan.nightPremium,

@@ -126,7 +126,7 @@ struct MenuItemDetailView: View {
                 .foregroundStyle(palette.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
-        .appCardStyle(.restaurant, emphasized: true)
+        .appCardStyle(.restaurant, emphasized: false)
     }
     
     private var ingredientsCard: some View {

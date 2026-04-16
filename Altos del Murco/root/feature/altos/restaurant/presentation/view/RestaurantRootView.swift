@@ -10,6 +10,7 @@ import SwiftUI
 struct RestaurantRootView: View {
     @ObservedObject var ordersViewModel: OrdersViewModel
     @ObservedObject var checkoutViewModel: CheckoutViewModel
+    @ObservedObject var comboBuilderViewModel: AdventureComboBuilderViewModel
     
     @State private var path = NavigationPath()
 
@@ -19,6 +20,7 @@ struct RestaurantRootView: View {
                 sections: MenuMockData.sections,
                 checkoutViewModel: checkoutViewModel,
                 ordersViewModel: ordersViewModel,
+                comboBuilderViewModel: comboBuilderViewModel,
                 path: $path
             )
         }

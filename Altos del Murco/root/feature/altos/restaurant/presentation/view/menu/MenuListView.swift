@@ -12,6 +12,7 @@ struct MenuListView: View {
     
     @ObservedObject var checkoutViewModel: CheckoutViewModel
     @ObservedObject var ordersViewModel: OrdersViewModel
+    @ObservedObject var comboBuilderViewModel: AdventureComboBuilderViewModel
     
     @Binding var path: NavigationPath
     
@@ -116,6 +117,11 @@ struct MenuListView: View {
                 CartView()
             case .checkout:
                 CheckoutView(viewModel: checkoutViewModel, path: $path)
+            case .reservationBuilder:
+                AdventureComboBuilderView(viewModel: comboBuilderViewModel)
+                    .onAppear {
+                        comboBuilderViewModel.resetForFoodOnly()
+                    }
             case let .orderSuccess(order):
                 OrderSuccessView(order: order, path: $path)
             }
@@ -123,14 +129,38 @@ struct MenuListView: View {
     }
     
     private var headerSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("Flavors from Altos del Murco")
-                .font(.title2.bold())
-                .foregroundStyle(palette.textPrimary)
+        VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Flavors from Altos del Murco")
+                    .font(.title2.bold())
+                    .foregroundStyle(palette.textPrimary)
+                
+                Text("Explore our charcoal-grilled dishes, house specials, drinks, and more.")
+                    .font(.subheadline)
+                    .foregroundStyle(palette.textSecondary)
+            }
             
-            Text("Explore our charcoal-grilled dishes, house specials, drinks, and more.")
-                .font(.subheadline)
-                .foregroundStyle(palette.textSecondary)
+            NavigationLink(value: Route.reservationBuilder) {
+                HStack(spacing: 12) {
+                    BrandIconBubble(theme: .restaurant, systemImage: "calendar.badge.plus")
+                    
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Reservar comida o evento")
+                            .font(.headline)
+                            .foregroundStyle(palette.textPrimary)
+                        Text("Cumpleaños, reuniones y comida para una visita futura.")
+                            .font(.subheadline)
+                            .foregroundStyle(palette.textSecondary)
+                    }
+                    
+                    Spacer()
+                    
+                    Image(systemName: "chevron.right")
+                        .foregroundStyle(palette.textTertiary)
+                }
+                .appCardStyle(.restaurant)
+            }
+            .buttonStyle(.plain)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .appCardStyle(.restaurant, emphasized: false)
@@ -207,114 +237,5 @@ struct MenuListView: View {
     
     private func categoryTitle(for categoryId: String) -> String {
         categories.first(where: { $0.id == categoryId })?.title ?? ""
-    }
-}
-
-struct FeaturedMenuCard: View {
-    let item: MenuItem
-    
-    @Environment(\.colorScheme) private var colorScheme
-    
-    private var palette: ThemePalette {
-        AppTheme.palette(for: .restaurant, scheme: colorScheme)
-    }
-
-    var body: some View {
-        ZStack(alignment: .bottomLeading) {
-            RoundedRectangle(cornerRadius: AppTheme.Radius.xLarge, style: .continuous)
-                .fill(palette.cardGradient)
-
-            RoundedRectangle(cornerRadius: AppTheme.Radius.xLarge, style: .continuous)
-                .overlay {
-                    if let imageURL = item.imageURL,
-                       let url = URL(string: imageURL) {
-                        AsyncImage(url: url) { phase in
-                            switch phase {
-                            case .empty:
-                                ZStack {
-                                    palette.card
-                                    ProgressView()
-                                        .tint(palette.primary)
-                                }
-                                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                                
-                            case .success(let image):
-                                image
-                                    .resizable()
-                                    .scaledToFill()
-                                
-                            case .failure:
-                                ZStack {
-                                    palette.card
-                                    
-                                    VStack(spacing: 10) {
-                                        Image(systemName: "fork.knife.circle.fill")
-                                            .font(.system(size: 34))
-                                            .foregroundStyle(palette.primary)
-                                        
-                                        Text(item.name)
-                                            .font(.headline)
-                                            .foregroundStyle(palette.textSecondary)
-                                            .multilineTextAlignment(.center)
-                                            .padding(.horizontal)
-                                    }
-                                }
-                                
-                            @unknown default:
-                                EmptyView()
-                            }
-                        }
-                        .clipShape(
-                            RoundedRectangle(cornerRadius: AppTheme.Radius.xLarge, style: .continuous)
-                        )
-                    }
-                }
-
-            LinearGradient(
-                colors: [
-                    .clear,
-                    .black.opacity(colorScheme == .dark ? 0.35 : 0.15),
-                    .black.opacity(0.72)
-                ],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-            .clipShape(
-                RoundedRectangle(cornerRadius: AppTheme.Radius.xLarge, style: .continuous)
-            )
-
-            VStack(alignment: .leading, spacing: 8) {
-                HStack {
-                    BrandBadge(theme: .restaurant, title: "Featured", selected: true)
-                    Spacer()
-                }
-                
-                Text(item.name)
-                    .font(.title3.bold())
-                    .foregroundStyle(.white)
-                    .lineLimit(2)
-
-                Text(item.description)
-                    .font(.subheadline)
-                    .foregroundStyle(.white.opacity(0.92))
-                    .lineLimit(2)
-
-                Text(String(format: "$%.2f", item.finalPrice))
-                    .font(.headline.weight(.bold))
-                    .foregroundStyle(.white)
-            }
-            .padding(18)
-        }
-        .frame(height: 200)
-        .overlay(
-            RoundedRectangle(cornerRadius: AppTheme.Radius.xLarge, style: .continuous)
-                .stroke(palette.stroke.opacity(0.6), lineWidth: 1)
-        )
-        .shadow(
-            color: palette.shadow.opacity(colorScheme == .dark ? 0.22 : 0.12),
-            radius: 16,
-            x: 0,
-            y: 10
-        )
     }
 }

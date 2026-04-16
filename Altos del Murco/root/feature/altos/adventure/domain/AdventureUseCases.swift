@@ -12,9 +12,14 @@ struct GetAdventureAvailabilityUseCase {
     
     func execute(
         date: Date,
-        items: [AdventureReservationItemDraft]
+        items: [AdventureReservationItemDraft],
+        foodReservation: ReservationFoodDraft?
     ) async throws -> [AdventureAvailabilitySlot] {
-        try await service.fetchAvailability(for: date, items: items)
+        try await service.fetchAvailability(
+            for: date,
+            items: items,
+            foodReservation: foodReservation
+        )
     }
 }
 

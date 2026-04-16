@@ -16,7 +16,8 @@ protocol AdventureBookingsServiceable {
     
     func fetchAvailability(
         for date: Date,
-        items: [AdventureReservationItemDraft]
+        items: [AdventureReservationItemDraft],
+        foodReservation: ReservationFoodDraft?
     ) async throws -> [AdventureAvailabilitySlot]
     
     func createBooking(_ request: AdventureBookingRequest) async throws -> AdventureBooking

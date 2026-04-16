@@ -11,6 +11,6 @@ enum Route: Hashable {
     case menuDetail(MenuItem, String)
     case cart
     case checkout
-//    case orders
+    case reservationBuilder
     case orderSuccess(Order)
 }
