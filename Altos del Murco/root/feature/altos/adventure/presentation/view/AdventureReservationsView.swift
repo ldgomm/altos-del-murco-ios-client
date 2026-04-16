@@ -8,11 +8,20 @@
 import SwiftUI
 
 struct AdventureReservationsView: View {
-    @ObservedObject var viewModel: AdventureBookingsViewModel
+    @EnvironmentObject private var sessionViewModel: AppSessionViewModel
     @Environment(\.colorScheme) private var colorScheme
+    @StateObject private var viewModel: AdventureBookingsViewModel
+
+    init(viewModelFactory: @escaping () -> AdventureBookingsViewModel) {
+        _viewModel = StateObject(wrappedValue: viewModelFactory())
+    }
     
     private var palette: ThemePalette {
         AppTheme.palette(for: .adventure, scheme: colorScheme)
+    }
+
+    private var authenticatedProfile: ClientProfile? {
+        sessionViewModel.authenticatedProfile
     }
     
     var body: some View {
@@ -44,8 +53,18 @@ struct AdventureReservationsView: View {
         .navigationTitle("Reservas y eventos")
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(.hidden, for: .navigationBar)
-        .onAppear { viewModel.onAppear() }
-        .onDisappear { viewModel.onDisappear() }
+        .onAppear {
+            syncNationalIdFromSession()
+            viewModel.onAppear()
+        }
+        .onDisappear {
+            viewModel.onDisappear()
+        }
+        
+    }
+    private func syncNationalIdFromSession() {
+        guard let nationalId = authenticatedProfile?.nationalId else { return }
+        viewModel.setNationalId(nationalId)
     }
     
     private var headerSection: some View {

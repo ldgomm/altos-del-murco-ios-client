@@ -10,6 +10,7 @@ import SwiftUI
 
 struct AdventureBookingsState {
     var selectedDate: Date = Date()
+    var nationalId: String = ""
     var bookings: [AdventureBooking] = []
     var isLoading = false
     var errorMessage: String?
@@ -31,6 +32,17 @@ final class AdventureBookingsViewModel: ObservableObject {
         self.cancelBookingUseCase = cancelBookingUseCase
     }
     
+    func setNationalId(_ nationalId: String) {
+        let cleanNationalId = nationalId.filter(\.isNumber)
+        guard state.nationalId != cleanNationalId else { return }
+        
+        state.nationalId = cleanNationalId
+        
+        if listenerToken != nil {
+            startListening()
+        }
+    }
+    
     func onAppear() {
         startListening()
     }
@@ -46,9 +58,16 @@ final class AdventureBookingsViewModel: ObservableObject {
     }
     
     func cancelBooking(_ id: String) {
+        let nationalId = state.nationalId
+        
+        guard !nationalId.isEmpty else {
+            state.errorMessage = "No se encontró una cédula asociada a esta cuenta."
+            return
+        }
+        
         Task {
             do {
-                try await cancelBookingUseCase.execute(id: id, nationalId: "0503638371")
+                try await cancelBookingUseCase.execute(id: id, nationalId: nationalId)
             } catch {
                 state.errorMessage = error.localizedDescription
             }
@@ -56,11 +75,25 @@ final class AdventureBookingsViewModel: ObservableObject {
     }
     
     private func startListening() {
+        let nationalId = state.nationalId.trimmingCharacters(in: .whitespacesAndNewlines)
+        
+        guard !nationalId.isEmpty else {
+            listenerToken?.remove()
+            listenerToken = nil
+            state.bookings = []
+            state.isLoading = false
+            state.errorMessage = nil
+            return
+        }
+        
         state.isLoading = true
         state.errorMessage = nil
         
         listenerToken?.remove()
-        listenerToken = observeBookingsUseCase.execute(day: state.selectedDate, nationalId: "0503638371") { [weak self] result in
+        listenerToken = observeBookingsUseCase.execute(
+            day: state.selectedDate,
+            nationalId: nationalId
+        ) { [weak self] result in
             Task { @MainActor in
                 guard let self else { return }
                 
@@ -68,6 +101,7 @@ final class AdventureBookingsViewModel: ObservableObject {
                 case let .success(bookings):
                     self.state.bookings = bookings
                     self.state.isLoading = false
+                    
                 case let .failure(error):
                     self.state.bookings = []
                     self.state.errorMessage = error.localizedDescription

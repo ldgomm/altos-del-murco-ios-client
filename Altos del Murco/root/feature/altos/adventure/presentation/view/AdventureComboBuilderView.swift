@@ -9,7 +9,7 @@ import SwiftUI
 
 struct AdventureComboBuilderView: View {
     @EnvironmentObject private var sessionViewModel: AppSessionViewModel
-    
+    @Environment(\.dismiss) private var dismiss
     @ObservedObject var viewModel: AdventureComboBuilderViewModel
     
     @State private var editingItem: AdventureReservationItemDraft?
@@ -40,6 +40,12 @@ struct AdventureComboBuilderView: View {
         .onAppear {
             syncProfileFieldsFromSession()
             viewModel.onAppear()
+        }
+        .onChange(of: authenticatedProfile?.id) { _, _ in
+            syncProfileFieldsFromSession()
+        }
+        .onChange(of: authenticatedProfile?.updatedAt) { _, _ in
+            syncProfileFieldsFromSession()
         }
         .sheet(item: $editingItem) { item in
             AdventureItemEditorView(item: item) { updated in
@@ -510,7 +516,9 @@ struct AdventureComboBuilderView: View {
     private var confirmSection: some View {
         Section {
             Button {
+                syncProfileFieldsFromSession()
                 viewModel.submit(clientId: authenticatedProfile?.id)
+                dismiss()
             } label: {
                 if viewModel.state.isSubmitting {
                     ProgressView()

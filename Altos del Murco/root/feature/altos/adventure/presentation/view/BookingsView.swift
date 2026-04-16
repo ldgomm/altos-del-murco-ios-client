@@ -9,7 +9,7 @@ import SwiftUI
 
 struct BookingsView: View {
     @ObservedObject var ordersViewModel: OrdersViewModel
-    @ObservedObject var adventureBookingsViewModel: AdventureBookingsViewModel
+    let adventureModuleFactory: AdventureModuleFactory
     @Environment(\.colorScheme) private var colorScheme
 
     private var neutralPalette: ThemePalette {
@@ -37,7 +37,7 @@ struct BookingsView: View {
 
                     NavigationLink {
                         AdventureReservationsView(
-                            viewModel: adventureBookingsViewModel
+                            viewModelFactory: adventureModuleFactory.makeBookingsViewModel
                         )
                     } label: {
                         bookingCard(

@@ -2823,11 +2823,20 @@ private struct AdventureItemEditorView: View {
 import SwiftUI
 
 struct AdventureReservationsView: View {
-    @ObservedObject var viewModel: AdventureBookingsViewModel
+    @EnvironmentObject private var sessionViewModel: AppSessionViewModel
     @Environment(\.colorScheme) private var colorScheme
+    @StateObject private var viewModel: AdventureBookingsViewModel
+
+    init(viewModelFactory: @escaping () -> AdventureBookingsViewModel) {
+        _viewModel = StateObject(wrappedValue: viewModelFactory())
+    }
     
     private var palette: ThemePalette {
         AppTheme.palette(for: .adventure, scheme: colorScheme)
+    }
+
+    private var authenticatedProfile: ClientProfile? {
+        sessionViewModel.authenticatedProfile
     }
     
     var body: some View {
@@ -2859,8 +2868,18 @@ struct AdventureReservationsView: View {
         .navigationTitle("Reservas y eventos")
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(.hidden, for: .navigationBar)
-        .onAppear { viewModel.onAppear() }
-        .onDisappear { viewModel.onDisappear() }
+        .onAppear {
+            syncNationalIdFromSession()
+            viewModel.onAppear()
+        }
+        .onDisappear {
+            viewModel.onDisappear()
+        }
+        
+    }
+    private func syncNationalIdFromSession() {
+        guard let nationalId = authenticatedProfile?.nationalId else { return }
+        viewModel.setNationalId(nationalId)
     }
     
     private var headerSection: some View {
@@ -3137,7 +3156,7 @@ import SwiftUI
 
 struct BookingsView: View {
     @ObservedObject var ordersViewModel: OrdersViewModel
-    @ObservedObject var adventureBookingsViewModel: AdventureBookingsViewModel
+    let adventureModuleFactory: AdventureModuleFactory
     @Environment(\.colorScheme) private var colorScheme
 
     private var neutralPalette: ThemePalette {
@@ -3165,7 +3184,7 @@ struct BookingsView: View {
 
                     NavigationLink {
                         AdventureReservationsView(
-                            viewModel: adventureBookingsViewModel
+                            viewModelFactory: adventureModuleFactory.makeBookingsViewModel
                         )
                     } label: {
                         bookingCard(
@@ -3603,6 +3622,7 @@ import SwiftUI
 
 struct AdventureBookingsState {
     var selectedDate: Date = Date()
+    var nationalId: String = ""
     var bookings: [AdventureBooking] = []
     var isLoading = false
     var errorMessage: String?
@@ -3624,6 +3644,17 @@ final class AdventureBookingsViewModel: ObservableObject {
         self.cancelBookingUseCase = cancelBookingUseCase
     }
     
+    func setNationalId(_ nationalId: String) {
+        let cleanNationalId = nationalId.filter(\.isNumber)
+        guard state.nationalId != cleanNationalId else { return }
+        
+        state.nationalId = cleanNationalId
+        
+        if listenerToken != nil {
+            startListening()
+        }
+    }
+    
     func onAppear() {
         startListening()
     }
@@ -3639,9 +3670,16 @@ final class AdventureBookingsViewModel: ObservableObject {
     }
     
     func cancelBooking(_ id: String) {
+        let nationalId = state.nationalId
+        
+        guard !nationalId.isEmpty else {
+            state.errorMessage = "No se encontró una cédula asociada a esta cuenta."
+            return
+        }
+        
         Task {
             do {
-                try await cancelBookingUseCase.execute(id: id, nationalId: "0503638371")
+                try await cancelBookingUseCase.execute(id: id, nationalId: nationalId)
             } catch {
                 state.errorMessage = error.localizedDescription
             }
@@ -3649,11 +3687,25 @@ final class AdventureBookingsViewModel: ObservableObject {
     }
     
     private func startListening() {
+        let nationalId = state.nationalId.trimmingCharacters(in: .whitespacesAndNewlines)
+        
+        guard !nationalId.isEmpty else {
+            listenerToken?.remove()
+            listenerToken = nil
+            state.bookings = []
+            state.isLoading = false
+            state.errorMessage = nil
+            return
+        }
+        
         state.isLoading = true
         state.errorMessage = nil
         
         listenerToken?.remove()
-        listenerToken = observeBookingsUseCase.execute(day: state.selectedDate, nationalId: "0503638371") { [weak self] result in
+        listenerToken = observeBookingsUseCase.execute(
+            day: state.selectedDate,
+            nationalId: nationalId
+        ) { [weak self] result in
             Task { @MainActor in
                 guard let self else { return }
                 
@@ -3661,6 +3713,7 @@ final class AdventureBookingsViewModel: ObservableObject {
                 case let .success(bookings):
                     self.state.bookings = bookings
                     self.state.isLoading = false
+                    
                 case let .failure(error):
                     self.state.bookings = []
                     self.state.errorMessage = error.localizedDescription
@@ -13301,8 +13354,7 @@ struct MainTabView: View {
     
     private let adventureModuleFactory: AdventureModuleFactory
     @StateObject private var comboBuilderViewModel: AdventureComboBuilderViewModel
-    @StateObject private var adventureBookingsViewModel: AdventureBookingsViewModel
-    
+
     init(
         ordersViewModel: OrdersViewModel,
         checkoutViewModel: CheckoutViewModel,
@@ -13315,16 +13367,13 @@ struct MainTabView: View {
         _comboBuilderViewModel = StateObject(
             wrappedValue: adventureModuleFactory.makeBuilderViewModel()
         )
-        
-        _adventureBookingsViewModel = StateObject(
-            wrappedValue: adventureModuleFactory.makeBookingsViewModel()
-        )
     }
+    
     
     private var selectedPalette: ThemePalette {
         AppTheme.palette(for: selectedTab.theme, scheme: colorScheme)
     }
-    
+
     var body: some View {
         TabView(selection: $selectedTab) {
             HomeView(
@@ -13356,7 +13405,7 @@ struct MainTabView: View {
 
             BookingsView(
                 ordersViewModel: ordersViewModel,
-                adventureBookingsViewModel: adventureBookingsViewModel
+                adventureModuleFactory: adventureModuleFactory
             )
             .tabItem {
                 Label(MainTab.bookings.title, systemImage: MainTab.bookings.systemImage)

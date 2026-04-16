@@ -16,8 +16,7 @@ struct MainTabView: View {
     
     private let adventureModuleFactory: AdventureModuleFactory
     @StateObject private var comboBuilderViewModel: AdventureComboBuilderViewModel
-    @StateObject private var adventureBookingsViewModel: AdventureBookingsViewModel
-    
+
     init(
         ordersViewModel: OrdersViewModel,
         checkoutViewModel: CheckoutViewModel,
@@ -30,16 +29,13 @@ struct MainTabView: View {
         _comboBuilderViewModel = StateObject(
             wrappedValue: adventureModuleFactory.makeBuilderViewModel()
         )
-        
-        _adventureBookingsViewModel = StateObject(
-            wrappedValue: adventureModuleFactory.makeBookingsViewModel()
-        )
     }
+    
     
     private var selectedPalette: ThemePalette {
         AppTheme.palette(for: selectedTab.theme, scheme: colorScheme)
     }
-    
+
     var body: some View {
         TabView(selection: $selectedTab) {
             HomeView(
@@ -71,7 +67,7 @@ struct MainTabView: View {
 
             BookingsView(
                 ordersViewModel: ordersViewModel,
-                adventureBookingsViewModel: adventureBookingsViewModel
+                adventureModuleFactory: adventureModuleFactory
             )
             .tabItem {
                 Label(MainTab.bookings.title, systemImage: MainTab.bookings.systemImage)
