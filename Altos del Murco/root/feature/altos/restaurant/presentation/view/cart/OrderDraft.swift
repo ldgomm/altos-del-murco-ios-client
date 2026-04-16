@@ -9,7 +9,7 @@ import Foundation
 
 struct OrderDraft: Identifiable, Hashable {
     let id: UUID
-    var clientId: String?
+    var nationalId: String?
     var clientName: String
     var tableNumber: String
     var createdAt: Date
@@ -28,7 +28,7 @@ struct OrderDraft: Identifiable, Hashable {
         items: [CartItem] = []
     ) {
         self.id = id
-        self.clientId = clientId
+        self.nationalId = clientId
         self.clientName = clientName
         self.tableNumber = tableNumber
         self.createdAt = createdAt

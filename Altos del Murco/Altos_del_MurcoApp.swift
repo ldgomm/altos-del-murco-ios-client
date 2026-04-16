@@ -74,11 +74,11 @@ struct AltosDelMurcoApp: App {
             _ordersViewModel = StateObject(wrappedValue: ordersVM)
             _checkoutViewModel = StateObject(wrappedValue: checkoutVM)
 
-            let adventureService = FirestoreAdventureBookingsService()
+            let adventureService = AdventureBookingsService()
             self.adventureModuleFactory = AdventureModuleFactory(service: adventureService)
 
-            let authRepository: AuthenticationRepositoriable = FirebaseAuthenticationRepository()
-            let clientProfileRepository: ClientProfileRepositoriable = FirestoreClientProfileRepository()
+            let authRepository: AuthenticationRepositoriable = AuthenticationRepository()
+            let clientProfileRepository: ClientProfileRepositoriable = ClientProfileRepository()
 
             let signInWithAppleUseCase = SignInWithAppleUseCase(repository: authRepository)
             let resolveSessionUseCase = ResolveSessionUseCase(

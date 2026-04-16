@@ -10,7 +10,7 @@ import FirebaseFirestore
 
 struct OrderDto: Codable {
     let id: String
-    let clientId: String?
+    let nationalId: String?
     let clientName: String
     let tableNumber: String
     let createdAt: Timestamp
@@ -27,7 +27,7 @@ struct OrderDto: Codable {
 extension OrderDto {
     init(from domain: Order) {
         self.id = domain.id
-        self.clientId = domain.clientId
+        self.nationalId = domain.nationalId
         self.clientName = domain.clientName
         self.tableNumber = domain.tableNumber
         self.createdAt = Timestamp(date: domain.createdAt)
@@ -51,7 +51,7 @@ extension OrderDto {
 
         return Order(
             id: id,
-            clientId: clientId,
+            nationalId: nationalId,
             clientName: clientName,
             tableNumber: tableNumber,
             createdAt: safeCreatedAt,

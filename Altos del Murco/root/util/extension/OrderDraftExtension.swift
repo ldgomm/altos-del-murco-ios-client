@@ -21,7 +21,7 @@ extension OrderDraft {
         
         return Order(
             id: orderId,
-            clientId: clientId,
+            nationalId: nationalId,
             clientName: clientName.trimmingCharacters(in: .whitespacesAndNewlines),
             tableNumber: tableNumber.trimmingCharacters(in: .whitespacesAndNewlines),
             createdAt: Date(),

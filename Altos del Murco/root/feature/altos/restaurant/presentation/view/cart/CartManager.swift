@@ -23,9 +23,9 @@ final class CartManager: ObservableObject {
     var items: [CartItem] { draft.items }
 
     var clientId: String? {
-        get { draft.clientId }
+        get { draft.nationalId }
         set {
-            draft.clientId = newValue
+            draft.nationalId = newValue
             persist()
         }
     }
@@ -136,7 +136,7 @@ final class CartManager: ObservableObject {
     }
 
     func updateClientId(_ id: String) {
-        draft.clientId = id
+        draft.nationalId = id
         persist()
     }
 

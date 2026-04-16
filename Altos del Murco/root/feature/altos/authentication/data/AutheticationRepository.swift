@@ -8,7 +8,7 @@
 import Foundation
 import FirebaseAuth
 
-final class FirebaseAuthenticationRepository: AuthenticationRepositoriable {
+final class AuthenticationRepository: AuthenticationRepositoriable {
     func currentUser() -> AuthenticatedUser? {
         guard let user = Auth.auth().currentUser else {
             return nil

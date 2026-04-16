@@ -8,7 +8,7 @@
 import Foundation
 import FirebaseFirestore
 
-final class FirestoreClientProfileRepository: ClientProfileRepositoriable {
+final class ClientProfileRepository: ClientProfileRepositoriable {
     private let collection = Firestore.firestore().collection("clients")
 
     func fetchProfile(uid: String) async throws -> ClientProfile? {

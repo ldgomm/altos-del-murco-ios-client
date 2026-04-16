@@ -8,8 +8,6 @@
 import Foundation
 
 protocol OrdersServiceable {
-    
     func submit(order: Order) async throws
-    
-    func observeOrders() -> AsyncThrowingStream<[Order], Error>
+    func observeOrders(for nationalId: String) -> AsyncThrowingStream<[Order], Error>
 }

@@ -48,7 +48,7 @@ final class AdventureBookingsViewModel: ObservableObject {
     func cancelBooking(_ id: String) {
         Task {
             do {
-                try await cancelBookingUseCase.execute(id: id)
+                try await cancelBookingUseCase.execute(id: id, nationalId: "0503638371")
             } catch {
                 state.errorMessage = error.localizedDescription
             }
@@ -60,7 +60,7 @@ final class AdventureBookingsViewModel: ObservableObject {
         state.errorMessage = nil
         
         listenerToken?.remove()
-        listenerToken = observeBookingsUseCase.execute(day: state.selectedDate) { [weak self] result in
+        listenerToken = observeBookingsUseCase.execute(day: state.selectedDate, nationalId: "0503638371") { [weak self] result in
             Task { @MainActor in
                 guard let self else { return }
                 

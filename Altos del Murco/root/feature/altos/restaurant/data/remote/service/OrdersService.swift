@@ -22,10 +22,19 @@ final class FirebaseOrdersService: OrdersServiceable {
             .setData(data)
     }
     
-    func observeOrders() -> AsyncThrowingStream<[Order], Error> {
-        AsyncThrowingStream { continuation in
+    func observeOrders(for nationalId: String) -> AsyncThrowingStream<[Order], Error> {
+        let nationalId = nationalId.trimmingCharacters(in: .whitespacesAndNewlines)
+        
+        return AsyncThrowingStream { continuation in
+            guard !nationalId.isEmpty else {
+                continuation.yield([])
+                continuation.finish()
+                return
+            }
+            
             let listener = db
                 .collection(FirestoreConstants.restaurant_orders)
+                .whereField("nationalId", isEqualTo: nationalId)
                 .order(by: "createdAt", descending: true)
                 .addSnapshotListener { snapshot, error in
                     if let error {

@@ -58,7 +58,7 @@ extension CartDraftEntity {
     convenience init(from draft: OrderDraft) {
         self.init(
             id: draft.id,
-            clientId: draft.clientId,
+            nationalId: draft.nationalId,
             clientName: draft.clientName,
             tableNumber: draft.tableNumber,
             createdAt: draft.createdAt,
@@ -72,7 +72,7 @@ extension CartDraftEntity {
     func toDomain() -> OrderDraft {
         OrderDraft(
             id: id,
-            clientId: clientId,
+            clientId: nationalId,
             clientName: clientName,
             tableNumber: tableNumber,
             createdAt: createdAt,

@@ -10,7 +10,7 @@ import Foundation
 final class AdventureModuleFactory {
     private let service: AdventureBookingsServiceable
     
-    init(service: AdventureBookingsServiceable = FirestoreAdventureBookingsService()) {
+    init(service: AdventureBookingsServiceable = AdventureBookingsService()) {
         self.service = service
     }
     

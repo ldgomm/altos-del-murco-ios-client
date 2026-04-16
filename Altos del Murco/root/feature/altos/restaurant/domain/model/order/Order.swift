@@ -9,7 +9,7 @@ import Foundation
 
 struct Order: Identifiable, Hashable, Codable {
     let id: String
-    let clientId: String?
+    let nationalId: String?
     let clientName: String
     let tableNumber: String
     let createdAt: Date
@@ -73,7 +73,7 @@ struct Order: Identifiable, Hashable, Codable {
     func confirming(now: Date = Date()) -> Order {
         var updated = Order(
             id: id,
-            clientId: clientId,
+            nationalId: nationalId,
             clientName: clientName,
             tableNumber: tableNumber,
             createdAt: createdAt,
@@ -92,7 +92,7 @@ struct Order: Identifiable, Hashable, Codable {
     func canceling(now: Date = Date()) -> Order {
         Order(
             id: id,
-            clientId: clientId,
+            nationalId: nationalId,
             clientName: clientName,
             tableNumber: tableNumber,
             createdAt: createdAt,
@@ -114,7 +114,7 @@ struct Order: Identifiable, Hashable, Codable {
     ) -> Order {
         var updated = Order(
             id: id,
-            clientId: clientId,
+            nationalId: nationalId,
             clientName: clientName,
             tableNumber: tableNumber,
             createdAt: createdAt,
@@ -136,7 +136,7 @@ struct Order: Identifiable, Hashable, Codable {
     ) -> Order {
         var updated = Order(
             id: id,
-            clientId: clientId,
+            nationalId: nationalId,
             clientName: clientName,
             tableNumber: tableNumber,
             createdAt: createdAt,
