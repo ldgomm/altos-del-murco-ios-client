@@ -12,4 +12,5 @@ enum FirestoreConstants {
     static let adventure_bookings = "adventure_bookings"
     static let loyalty_transactions = "loyalty_transactions"
     static let posts = "posts"
+    static let restaurant_menu_items = "restaurant_menu_items"
 }

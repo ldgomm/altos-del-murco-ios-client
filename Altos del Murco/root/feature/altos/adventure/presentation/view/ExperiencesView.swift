@@ -8,9 +8,10 @@
 import SwiftUI
 
 struct ExperiencesView: View {
-    @ObservedObject var comboBuilderViewModel: AdventureComboBuilderViewModel
+    @ObservedObject var adventureComboBuilderViewModel: AdventureComboBuilderViewModel
+    @ObservedObject var menuViewModel: MenuViewModel
     
     var body: some View {
-        AdventureCatalogView(comboBuilderViewModel: comboBuilderViewModel)
+        AdventureCatalogView(adventureComboBuilderViewModel: adventureComboBuilderViewModel, menuViewModel: menuViewModel)
     }
 }

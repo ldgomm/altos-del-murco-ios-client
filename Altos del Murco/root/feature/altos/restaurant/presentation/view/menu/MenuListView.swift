@@ -12,7 +12,8 @@ struct MenuListView: View {
     
     @ObservedObject var checkoutViewModel: CheckoutViewModel
     @ObservedObject var ordersViewModel: OrdersViewModel
-    @ObservedObject var comboBuilderViewModel: AdventureComboBuilderViewModel
+    @ObservedObject var adventureComboBuilderViewModel: AdventureComboBuilderViewModel
+    @ObservedObject var menuViewModel: MenuViewModel
     
     @Binding var path: NavigationPath
     
@@ -118,9 +119,9 @@ struct MenuListView: View {
             case .checkout:
                 CheckoutView(viewModel: checkoutViewModel, path: $path)
             case .reservationBuilder:
-                AdventureComboBuilderView(viewModel: comboBuilderViewModel)
+                AdventureComboBuilderView(adventureComboBuilderViewModel: adventureComboBuilderViewModel, menuViewModel: menuViewModel)
                     .onAppear {
-                        comboBuilderViewModel.resetForFoodOnly()
+                        adventureComboBuilderViewModel.resetForFoodOnly()
                     }
             case let .orderSuccess(order):
                 OrderSuccessView(order: order, path: $path)
@@ -237,5 +238,21 @@ struct MenuListView: View {
     
     private func categoryTitle(for categoryId: String) -> String {
         categories.first(where: { $0.id == categoryId })?.title ?? ""
+    }
+    
+    private func stockBadge(for item: MenuItem) -> some View {
+        Text(item.stockLabel)
+            .font(.caption2.weight(.semibold))
+            .foregroundStyle(item.canBeOrdered ? palette.textSecondary : palette.destructive)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 5)
+            .background(
+                Capsule()
+                    .fill(
+                        item.canBeOrdered
+                        ? palette.elevatedCard
+                        : palette.destructive.opacity(0.12)
+                    )
+            )
     }
 }

@@ -82,15 +82,17 @@ struct MenuItemDetailView: View {
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(palette.onPrimary.opacity(0.92))
                     
-                    if !item.isAvailable {
-                        Text("Unavailable")
-                            .font(.caption.weight(.bold))
-                            .foregroundStyle(palette.destructive)
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 6)
-                            .background(.white.opacity(0.92))
-                            .clipShape(Capsule())
-                    }
+                    Text(item.stockLabel)
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(item.canBeOrdered ? palette.onPrimary : palette.destructive)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(
+                            item.canBeOrdered
+                            ? .white.opacity(0.18)
+                            : .white.opacity(0.92)
+                        )
+                        .clipShape(Capsule())
                 }
             }
             .padding(20)
@@ -189,8 +191,14 @@ struct MenuItemDetailView: View {
                 subtitle: "Choose how many you want to add."
             )
             
-            QuantitySelectorView(quantity: $quantity, isEnabled: item.isAvailable, theme: .restaurant)
-                .opacity(item.isAvailable ? 1 : 0.55)
+            QuantitySelectorView(
+                quantity: $quantity,
+                isEnabled: item.canBeOrdered,
+                theme: .restaurant,
+                minimum: 1,
+                maximum: item.remainingQuantity
+            )
+            .opacity(item.isAvailable ? 1 : 0.55)
         }
         .appCardStyle(.restaurant)
     }
@@ -242,6 +250,13 @@ struct MenuItemDetailView: View {
                     Spacer()
                 }
                 
+                if !item.canBeOrdered {
+                    Text("No quedan platos disponibles por ahora.")
+                        .font(.footnote)
+                        .foregroundStyle(palette.destructive)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                
                 Button {
                     cartManager.add(item: item, quantity: quantity, notes: notesText)
                     
@@ -259,10 +274,10 @@ struct MenuItemDetailView: View {
                         }
                     }
                 } label: {
-                    Text(item.isAvailable ? "Add to Order" : "Unavailable")
+                    Text(item.canBeOrdered ? "Añadir a la orden" : "Agotado")
                 }
                 .buttonStyle(BrandPrimaryButtonStyle(theme: .restaurant))
-                .disabled(!item.isAvailable)
+                .disabled(!item.canBeOrdered)
             }
             .padding(16)
             .background(

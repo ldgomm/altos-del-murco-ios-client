@@ -12,14 +12,65 @@ final class FirebaseOrdersService: OrdersServiceable {
     private lazy var db = Firestore.firestore()
     
     func submit(order: Order) async throws {
-        let dto = OrderDto(from: order)
-        let data = try Firestore.Encoder().encode(dto)
+        let quantitiesByMenuItemId = Dictionary(
+            grouping: order.items,
+            by: \.menuItemId
+        )
+        .compactMapValues { items in
+            let total = items.reduce(0) { $0 + $1.quantity }
+            return total > 0 ? total : nil
+        }
         
-        print("OrdersService, notes: \(order.items.map { $0.notes ?? "" })")
-        try await db
-            .collection(FirestoreConstants.restaurant_orders)
-            .document(order.id)
-            .setData(data)
+        let _ = try await db.runTransaction { transaction, errorPointer in
+            do {
+                for (menuItemId, totalQuantity) in quantitiesByMenuItemId {
+                    let ref = self.db
+                        .collection(FirestoreConstants.restaurant_menu_items)
+                        .document(menuItemId)
+                    
+                    let snapshot = try transaction.getDocument(ref)
+                    let dto = try snapshot.data(as: MenuItemDto.self)
+                    
+                    guard dto.isAvailable else {
+                        throw NSError(
+                            domain: "OrdersService",
+                            code: 1,
+                            userInfo: [NSLocalizedDescriptionKey: "\(dto.name) no está disponible."]
+                        )
+                    }
+                    
+                    guard dto.remainingQuantity >= totalQuantity else {
+                        throw NSError(
+                            domain: "OrdersService",
+                            code: 2,
+                            userInfo: [NSLocalizedDescriptionKey: "Ya no hay suficiente stock de \(dto.name)."]
+                        )
+                    }
+                    
+                    let newRemainingQuantity = dto.remainingQuantity - totalQuantity
+                    
+                    transaction.updateData([
+                        "remainingQuantity": newRemainingQuantity,
+                        "isAvailable": newRemainingQuantity > 0,
+                        "updatedAt": Timestamp(date: Date())
+                    ], forDocument: ref)
+                }
+                
+                let dto = OrderDto(from: order)
+                let orderData = try Firestore.Encoder().encode(dto)
+                
+                let orderRef = self.db
+                    .collection(FirestoreConstants.restaurant_orders)
+                    .document(order.id)
+                
+                transaction.setData(orderData, forDocument: orderRef)
+            } catch {
+                errorPointer?.pointee = error as NSError
+                return nil
+            }
+            
+            return nil
+        }
     }
     
     func observeOrders(for nationalId: String) -> AsyncThrowingStream<[Order], Error> {

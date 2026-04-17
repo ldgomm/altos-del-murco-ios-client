@@ -13,20 +13,23 @@ struct MainTabView: View {
     
     @ObservedObject var ordersViewModel: OrdersViewModel
     @ObservedObject var checkoutViewModel: CheckoutViewModel
+    @ObservedObject var menuViewModel: MenuViewModel
     
     private let adventureModuleFactory: AdventureModuleFactory
-    @StateObject private var comboBuilderViewModel: AdventureComboBuilderViewModel
+    @StateObject private var adventureComboBuilderViewModel: AdventureComboBuilderViewModel
 
     init(
         ordersViewModel: OrdersViewModel,
         checkoutViewModel: CheckoutViewModel,
+        menuViewModel: MenuViewModel,
         adventureModuleFactory: AdventureModuleFactory
     ) {
         self.ordersViewModel = ordersViewModel
         self.checkoutViewModel = checkoutViewModel
+        self.menuViewModel = menuViewModel
         self.adventureModuleFactory = adventureModuleFactory
         
-        _comboBuilderViewModel = StateObject(
+        _adventureComboBuilderViewModel = StateObject(
             wrappedValue: adventureModuleFactory.makeBuilderViewModel()
         )
     }
@@ -40,7 +43,6 @@ struct MainTabView: View {
         TabView(selection: $selectedTab) {
             HomeView(
                 selectedTab: $selectedTab,
-                comboBuilderViewModel: comboBuilderViewModel
             )
             .tabItem {
                 Label(MainTab.home.title, systemImage: MainTab.home.systemImage)
@@ -50,7 +52,8 @@ struct MainTabView: View {
             RestaurantRootView(
                 ordersViewModel: ordersViewModel,
                 checkoutViewModel: checkoutViewModel,
-                comboBuilderViewModel: comboBuilderViewModel
+                adventureComboBuilderViewModel: adventureComboBuilderViewModel,
+                menuViewModel: menuViewModel
             )
             .tabItem {
                 Label(MainTab.restaurant.title, systemImage: MainTab.restaurant.systemImage)
@@ -58,7 +61,7 @@ struct MainTabView: View {
             .tag(MainTab.restaurant)
             
             ExperiencesView(
-                comboBuilderViewModel: comboBuilderViewModel
+                adventureComboBuilderViewModel: adventureComboBuilderViewModel, menuViewModel: menuViewModel
             )
             .tabItem {
                 Label(MainTab.experiences.title, systemImage: MainTab.experiences.systemImage)
@@ -80,6 +83,8 @@ struct MainTabView: View {
                 }
                 .tag(MainTab.profile)
         }
+        .onAppear { menuViewModel.onAppear() }
+        .onDisappear { menuViewModel.onDisappear() }
         .tint(selectedPalette.primary)
         .animation(.easeInOut(duration: 0.22), value: selectedTab)
     }

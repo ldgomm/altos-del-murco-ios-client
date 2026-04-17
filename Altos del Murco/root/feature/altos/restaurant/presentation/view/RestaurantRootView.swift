@@ -10,19 +10,27 @@ import SwiftUI
 struct RestaurantRootView: View {
     @ObservedObject var ordersViewModel: OrdersViewModel
     @ObservedObject var checkoutViewModel: CheckoutViewModel
-    @ObservedObject var comboBuilderViewModel: AdventureComboBuilderViewModel
-    
+    @ObservedObject var adventureComboBuilderViewModel: AdventureComboBuilderViewModel
+    @ObservedObject var menuViewModel: MenuViewModel
+
     @State private var path = NavigationPath()
 
     var body: some View {
         NavigationStack(path: $path) {
-            MenuListView(
-                sections: MenuMockData.sections,
-                checkoutViewModel: checkoutViewModel,
-                ordersViewModel: ordersViewModel,
-                comboBuilderViewModel: comboBuilderViewModel,
-                path: $path
-            )
+            Group {
+                if menuViewModel.state.isLoading && menuViewModel.state.sections.isEmpty {
+                    ProgressView("Cargando menú...")
+                } else {
+                    MenuListView(
+                        sections: menuViewModel.state.sections,
+                        checkoutViewModel: checkoutViewModel,
+                        ordersViewModel: ordersViewModel,
+                        adventureComboBuilderViewModel: adventureComboBuilderViewModel,
+                        menuViewModel: menuViewModel,
+                        path: $path
+                    )
+                }
+            }
         }
     }
 }

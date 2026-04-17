@@ -10,14 +10,24 @@ import SwiftUI
 struct AdventureComboBuilderView: View {
     @EnvironmentObject private var sessionViewModel: AppSessionViewModel
     @Environment(\.dismiss) private var dismiss
-    @ObservedObject var viewModel: AdventureComboBuilderViewModel
+    @ObservedObject var adventureComboBuilderViewModel: AdventureComboBuilderViewModel
+    @ObservedObject var menuViewModel: MenuViewModel
+    
     
     @State private var editingItem: AdventureReservationItemDraft?
+    @State private var isFoodPickerPresented = false
     
-    private let menuSections = MenuMockData.sections
     private var authenticatedProfile: ClientProfile? {
         sessionViewModel.authenticatedProfile
     }
+    
+    @Environment(\.colorScheme) private var colorScheme
+    private let theme: AppSectionTheme = .restaurant
+    private var palette: ThemePalette {
+        AppTheme.palette(for: theme, scheme: colorScheme)
+    }
+    
+    @State private var showAddedMessage: Bool = false
     
     var body: some View {
         List {
@@ -39,7 +49,7 @@ struct AdventureComboBuilderView: View {
         }
         .onAppear {
             syncProfileFieldsFromSession()
-            viewModel.onAppear()
+            adventureComboBuilderViewModel.onAppear()
         }
         .onChange(of: authenticatedProfile?.id) { _, _ in
             syncProfileFieldsFromSession()
@@ -49,28 +59,28 @@ struct AdventureComboBuilderView: View {
         }
         .sheet(item: $editingItem) { item in
             AdventureItemEditorView(item: item) { updated in
-                viewModel.updateItem(updated)
+                adventureComboBuilderViewModel.updateItem(updated)
             }
         }
         .alert(
             "Mensaje",
             isPresented: Binding(
-                get: { viewModel.state.errorMessage != nil || viewModel.state.successMessage != nil },
-                set: { if !$0 { viewModel.dismissMessage() } }
+                get: { adventureComboBuilderViewModel.state.errorMessage != nil || adventureComboBuilderViewModel.state.successMessage != nil },
+                set: { if !$0 { adventureComboBuilderViewModel.dismissMessage() } }
             )
         ) {
-            Button("OK") { viewModel.dismissMessage() }
+            Button("OK") { adventureComboBuilderViewModel.dismissMessage() }
         } message: {
-            Text(viewModel.state.errorMessage ?? viewModel.state.successMessage ?? "")
+            Text(adventureComboBuilderViewModel.state.errorMessage ?? adventureComboBuilderViewModel.state.successMessage ?? "")
         }
     }
     
     private func syncProfileFieldsFromSession() {
         guard let profile = authenticatedProfile else { return }
         
-        viewModel.setClientName(profile.fullName)
-        viewModel.setWhatsapp(profile.phoneNumber)
-        viewModel.setNationalId(profile.nationalId)
+        adventureComboBuilderViewModel.setClientName(profile.fullName)
+        adventureComboBuilderViewModel.setWhatsapp(profile.phoneNumber)
+        adventureComboBuilderViewModel.setNationalId(profile.nationalId)
     }
     
     private var comboSection: some View {
@@ -82,14 +92,14 @@ struct AdventureComboBuilderView: View {
                     subtitle: "Opcionales. Puedes reservar aventura, comida o ambas. Cada actividad solo puede agregarse una vez por reserva."
                 )
                 
-                if viewModel.state.items.isEmpty {
+                if adventureComboBuilderViewModel.state.items.isEmpty {
                     Text("No hay actividades agregadas. Eso está bien si quieres una reserva solo de comida o evento.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                         .padding(.top, 2)
                 }
                 
-                if viewModel.state.items.contains(where: { $0.activity == .offRoad }) {
+                if adventureComboBuilderViewModel.state.items.contains(where: { $0.activity == .offRoad }) {
                     HStack(alignment: .top, spacing: 12) {
                         BrandIconBubble(theme: .adventure, systemImage: "info.circle", size: 34)
                         
@@ -104,7 +114,7 @@ struct AdventureComboBuilderView: View {
             .listRowBackground(Color.clear)
             .listRowSeparator(.hidden)
             
-            ForEach(viewModel.state.items) { item in
+            ForEach(adventureComboBuilderViewModel.state.items) { item in
                 Button {
                     editingItem = item
                 } label: {
@@ -115,17 +125,17 @@ struct AdventureComboBuilderView: View {
                 .listRowBackground(Color.clear)
                 .listRowSeparator(.hidden)
             }
-            .onDelete(perform: viewModel.removeItem)
-            .onMove(perform: viewModel.moveItems)
+            .onDelete(perform: adventureComboBuilderViewModel.removeItem)
+            .onMove(perform: adventureComboBuilderViewModel.moveItems)
             
             Menu {
-                if viewModel.availableActivitiesToAdd.isEmpty {
+                if adventureComboBuilderViewModel.availableActivitiesToAdd.isEmpty {
                     Button("Todas las actividades ya fueron agregadas") { }
                         .disabled(true)
                 } else {
-                    ForEach(viewModel.availableActivitiesToAdd) { activity in
+                    ForEach(adventureComboBuilderViewModel.availableActivitiesToAdd) { activity in
                         Button(activity.title) {
-                            viewModel.addItem(activity)
+                            adventureComboBuilderViewModel.addItem(activity)
                         }
                     }
                 }
@@ -165,61 +175,59 @@ struct AdventureComboBuilderView: View {
                     subtitle: "También puedes hacer una reserva solo de comida para cumpleaños, reuniones o visitas futuras."
                 )
                 
-                if viewModel.state.foodItems.isEmpty {
+                if adventureComboBuilderViewModel.state.foodItems.isEmpty {
                     Text("No hay platos agregados todavía.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 } else {
                     VStack(spacing: 12) {
-                        ForEach(viewModel.state.foodItems) { item in
+                        ForEach(adventureComboBuilderViewModel.state.foodItems) { item in
                             ReservationFoodRow(
                                 item: item,
-                                onIncrease: { viewModel.increaseFoodQuantity(item.id) },
-                                onDecrease: { viewModel.decreaseFoodQuantity(item.id) },
-                                onRemove: { viewModel.removeFoodItem(item.id) }
+                                onIncrease: { adventureComboBuilderViewModel.increaseFoodQuantity(item.id) },
+                                onDecrease: { adventureComboBuilderViewModel.decreaseFoodQuantity(item.id) },
+                                onRemove: { adventureComboBuilderViewModel.removeFoodItem(item.id) }
                             )
                         }
                     }
                 }
                 
-                Menu {
-                    ForEach(menuSections) { section in
-                        Menu(section.category.title) {
-                            ForEach(section.items.filter(\.isAvailable)) { item in
-                                Button("\(item.name) • \(item.finalPrice.priceText)") {
-                                    viewModel.addFoodItem(item)
-                                }
-                            }
-                        }
-                    }
+                Button {
+                    isFoodPickerPresented = true
                 } label: {
                     HStack(spacing: 12) {
                         BrandIconBubble(theme: .adventure, systemImage: "fork.knife")
-                        
+
                         VStack(alignment: .leading, spacing: 4) {
                             Text("Agregar comida")
                                 .font(.headline)
-                            Text("Usa el menú del restaurante para planificar la reserva.")
+
+                            Text("Explora platos, ingredientes y detalles antes de agregarlos.")
                                 .font(.subheadline)
                                 .foregroundStyle(.secondary)
                         }
-                        
+
                         Spacer()
-                        
-                        Image(systemName: "chevron.down.circle.fill")
+
+                        Image(systemName: "chevron.right.circle.fill")
                             .font(.title3)
                             .foregroundStyle(.secondary)
                     }
                     .appCardStyle(.adventure, emphasized: false)
                 }
                 .buttonStyle(.plain)
+                .sheet(isPresented: $isFoodPickerPresented) {
+                    AdventureFoodPickerSheet(menuSections: menuViewModel.state.sections) { item, quantity, notes in
+                        adventureComboBuilderViewModel.addFoodItem(item, quantity: quantity, notes: notes)
+                    }
+                }
                 
-                if !viewModel.state.foodItems.isEmpty {
+                if !adventureComboBuilderViewModel.state.foodItems.isEmpty {
                     Picker(
                         "Momento de servicio",
                         selection: Binding(
-                            get: { viewModel.state.foodServingMoment },
-                            set: { viewModel.setFoodServingMoment($0) }
+                            get: { adventureComboBuilderViewModel.state.foodServingMoment },
+                            set: { adventureComboBuilderViewModel.setFoodServingMoment($0) }
                         )
                     ) {
                         ForEach(ReservationServingMoment.allCases) { option in
@@ -227,12 +235,12 @@ struct AdventureComboBuilderView: View {
                         }
                     }
                     
-                    if viewModel.state.foodServingMoment == .specificTime {
+                    if adventureComboBuilderViewModel.state.foodServingMoment == .specificTime {
                         DatePicker(
                             "Hora de servicio",
                             selection: Binding(
-                                get: { viewModel.state.foodServingTime },
-                                set: { viewModel.setFoodServingTime($0) }
+                                get: { adventureComboBuilderViewModel.state.foodServingTime },
+                                set: { adventureComboBuilderViewModel.setFoodServingTime($0) }
                             ),
                             displayedComponents: .hourAndMinute
                         )
@@ -241,8 +249,8 @@ struct AdventureComboBuilderView: View {
                     TextField(
                         "Notas de comida (opcional)",
                         text: Binding(
-                            get: { viewModel.state.foodNotes },
-                            set: { viewModel.setFoodNotes($0) }
+                            get: { adventureComboBuilderViewModel.state.foodNotes },
+                            set: { adventureComboBuilderViewModel.setFoodNotes($0) }
                         ),
                         axis: .vertical
                     )
@@ -257,6 +265,353 @@ struct AdventureComboBuilderView: View {
         }
     }
     
+    private struct AdventureFoodPickerSheet: View {
+        @Environment(\.dismiss) private var dismiss
+
+        let menuSections: [MenuSection]
+        let onAdd: (MenuItem, Int, String?) -> Void
+
+        @State private var selectedCategoryId: String? = nil
+        @State private var searchText = ""
+
+        private var categories: [MenuCategory] {
+            menuSections.map(\.category)
+        }
+
+        private var filteredSections: [MenuSection] {
+            let categoryFiltered = menuSections.filter { section in
+                selectedCategoryId == nil || section.category.id == selectedCategoryId
+            }
+
+            guard !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                return categoryFiltered
+            }
+
+            let query = searchText.lowercased()
+
+            return categoryFiltered.compactMap { section in
+                let items = section.items.filter { item in
+                    item.isAvailable &&
+                    (
+                        item.name.lowercased().contains(query) ||
+                        item.description.lowercased().contains(query) ||
+                        item.ingredients.contains(where: { $0.lowercased().contains(query) })
+                    )
+                }
+
+                guard !items.isEmpty else { return nil }
+
+                return MenuSection(
+                    id: section.id,
+                    category: section.category,
+                    items: items
+                )
+            }
+        }
+
+        var body: some View {
+            NavigationStack {
+                ScrollView(showsIndicators: false) {
+                    LazyVStack(alignment: .leading, spacing: 18) {
+                        categorySelector
+
+                        if filteredSections.isEmpty {
+                            ContentUnavailableView(
+                                "No se encontraron platos",
+                                systemImage: "magnifyingglass",
+                                description: Text("Prueba otra búsqueda o cambia la categoría.")
+                            )
+                            .padding(.top, 32)
+                        } else {
+                            ForEach(filteredSections) { section in
+                                VStack(alignment: .leading, spacing: 12) {
+                                    Text(section.category.title)
+                                        .font(.title3.bold())
+
+                                    ForEach(section.items.filter(\.isAvailable)) { item in
+                                        NavigationLink {
+                                            AdventureFoodDetailView(item: item) { quantity, notes in
+                                                onAdd(item, quantity, notes)
+                                                dismiss()
+                                            }
+                                        } label: {
+                                            AdventureFoodMenuRow(item: item)
+                                        }
+                                        .buttonStyle(.plain)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    .padding(20)
+                }
+                .navigationTitle("Menú del restaurante")
+                .navigationBarTitleDisplayMode(.inline)
+                .searchable(text: $searchText, prompt: "Buscar plato, bebida o ingrediente")
+                .toolbar {
+                    ToolbarItem(placement: .topBarLeading) {
+                        Button("Cerrar") { dismiss() }
+                    }
+                }
+                .appScreenStyle(.adventure)
+            }
+        }
+
+        private var categorySelector: some View {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 10) {
+                    categoryChip(title: "Todo", isSelected: selectedCategoryId == nil) {
+                        selectedCategoryId = nil
+                    }
+
+                    ForEach(categories) { category in
+                        categoryChip(
+                            title: category.title,
+                            isSelected: selectedCategoryId == category.id
+                        ) {
+                            selectedCategoryId = category.id
+                        }
+                    }
+                }
+            }
+        }
+
+        private func categoryChip(
+            title: String,
+            isSelected: Bool,
+            action: @escaping () -> Void
+        ) -> some View {
+            Button(action: action) {
+                Text(title)
+                    .font(.subheadline.weight(.semibold))
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 10)
+                    .background(
+                        Capsule()
+                            .fill(isSelected ? Color.accentColor.opacity(0.18) : Color.secondary.opacity(0.12))
+                    )
+                    .overlay(
+                        Capsule()
+                            .stroke(isSelected ? Color.accentColor : Color.secondary.opacity(0.25), lineWidth: 1)
+                    )
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    private struct AdventureFoodMenuRow: View {
+        let item: MenuItem
+
+        var body: some View {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(alignment: .top, spacing: 12) {
+                    BrandIconBubble(theme: .adventure, systemImage: "fork.knife", size: 44)
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack {
+                            Text(item.name)
+                                .font(.headline)
+
+                            if item.isFeatured {
+                                Text("Destacado")
+                                    .font(.caption.bold())
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 4)
+                                    .background(Capsule().fill(Color.accentColor.opacity(0.16)))
+                            }
+                        }
+
+                        Text(item.description)
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(2)
+                    }
+
+                    Spacer()
+
+                    Text(item.finalPrice.priceText)
+                        .font(.subheadline.bold())
+                }
+
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(Array(item.ingredients.prefix(4)), id: \.self) { ingredient in
+                            Text(ingredient)
+                                .font(.caption.weight(.medium))
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 6)
+                                .background(
+                                    Capsule()
+                                        .fill(Color.secondary.opacity(0.10))
+                                )
+                        }
+
+                        if item.ingredients.count > 4 {
+                            Text("+\(item.ingredients.count - 4)")
+                                .font(.caption.weight(.bold))
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 6)
+                                .background(
+                                    Capsule()
+                                        .fill(Color.secondary.opacity(0.10))
+                                )
+                        }
+                    }
+                }
+            }
+            .appCardStyle(.adventure, emphasized: false)
+        }
+    }
+
+    private struct AdventureFoodDetailView: View {
+        @Environment(\.dismiss) private var dismiss
+
+        let item: MenuItem
+        let onAdd: (Int, String?) -> Void
+
+        @State private var quantity = 1
+        @State private var notes = ""
+
+        var body: some View {
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 18) {
+                    headerCard
+                    descriptionCard
+                    ingredientsCard
+                    priceCard
+                    quantityCard
+                    notesCard
+
+                    Button {
+                        let trimmedNotes = notes.trimmingCharacters(in: .whitespacesAndNewlines)
+                        onAdd(quantity, trimmedNotes.isEmpty ? nil : trimmedNotes)
+                    } label: {
+                        Label("Agregar a la reserva", systemImage: "plus.circle.fill")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(BrandPrimaryButtonStyle(theme: .adventure))
+                }
+                .padding(20)
+            }
+            .navigationTitle(item.name)
+            .navigationBarTitleDisplayMode(.inline)
+            .appScreenStyle(.adventure)
+        }
+
+        private var headerCard: some View {
+            HStack(spacing: 12) {
+                BrandIconBubble(theme: .adventure, systemImage: "fork.knife", size: 56)
+
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(item.name)
+                        .font(.title3.bold())
+
+                    Text(item.finalPrice.priceText)
+                        .font(.headline)
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer()
+            }
+            .appCardStyle(.adventure)
+        }
+
+        private var descriptionCard: some View {
+            VStack(alignment: .leading, spacing: 10) {
+                BrandSectionHeader(
+                    theme: .adventure,
+                    title: "Descripción",
+                    subtitle: "Qué incluye este plato."
+                )
+
+                Text(item.description)
+                    .font(.body)
+                    .foregroundStyle(.secondary)
+            }
+            .appCardStyle(.adventure, emphasized: false)
+        }
+
+        private var ingredientsCard: some View {
+            VStack(alignment: .leading, spacing: 10) {
+                BrandSectionHeader(
+                    theme: .adventure,
+                    title: "Ingredientes",
+                    subtitle: "Componentes principales."
+                )
+
+                ForEach(item.ingredients, id: \.self) { ingredient in
+                    HStack(alignment: .top, spacing: 10) {
+                        Circle()
+                            .frame(width: 7, height: 7)
+                            .padding(.top, 7)
+
+                        Text(ingredient)
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+            .appCardStyle(.adventure)
+        }
+
+        private var priceCard: some View {
+            VStack(alignment: .leading, spacing: 10) {
+                BrandSectionHeader(
+                    theme: .adventure,
+                    title: "Precio",
+                    subtitle: item.hasOffer ? "Precio promocional disponible." : "Precio actual."
+                )
+
+                HStack(alignment: .lastTextBaseline, spacing: 10) {
+                    if item.hasOffer, let offerPrice = item.offerPrice {
+                        Text(item.price.priceText)
+                            .foregroundStyle(.secondary)
+                            .strikethrough()
+
+                        Text(offerPrice.priceText)
+                            .font(.title2.bold())
+                    } else {
+                        Text(item.price.priceText)
+                            .font(.title2.bold())
+                    }
+                }
+            }
+            .appCardStyle(.adventure)
+        }
+
+        private var quantityCard: some View {
+            VStack(alignment: .leading, spacing: 10) {
+                BrandSectionHeader(
+                    theme: .adventure,
+                    title: "Cantidad",
+                    subtitle: "Cuántas unidades deseas reservar."
+                )
+
+                QuantitySelectorView(
+                    quantity: $quantity,
+                    isEnabled: item.isAvailable,
+                    theme: .adventure
+                )
+            }
+            .appCardStyle(.adventure)
+        }
+
+        private var notesCard: some View {
+            VStack(alignment: .leading, spacing: 10) {
+                BrandSectionHeader(
+                    theme: .adventure,
+                    title: "Notas",
+                    subtitle: "Indicaciones especiales para cocina."
+                )
+
+                TextField("Sin cebolla, más cocido, sin ají, etc.", text: $notes, axis: .vertical)
+                    .lineLimit(3, reservesSpace: true)
+                    .appTextFieldStyle(.adventure)
+            }
+            .appCardStyle(.adventure)
+        }
+    }
+    
     private var eventSection: some View {
         Section {
             VStack(alignment: .leading, spacing: 16) {
@@ -267,10 +622,10 @@ struct AdventureComboBuilderView: View {
                 )
                 
                 Stepper(
-                    "Invitados: \(viewModel.state.guestCount)",
+                    "Invitados: \(adventureComboBuilderViewModel.state.guestCount)",
                     value: Binding(
-                        get: { viewModel.state.guestCount },
-                        set: { viewModel.setGuestCount($0) }
+                        get: { adventureComboBuilderViewModel.state.guestCount },
+                        set: { adventureComboBuilderViewModel.setGuestCount($0) }
                     ),
                     in: 1...300
                 )
@@ -278,8 +633,8 @@ struct AdventureComboBuilderView: View {
                 Picker(
                     "Tipo de evento",
                     selection: Binding(
-                        get: { viewModel.state.eventType },
-                        set: { viewModel.setEventType($0) }
+                        get: { adventureComboBuilderViewModel.state.eventType },
+                        set: { adventureComboBuilderViewModel.setEventType($0) }
                     )
                 ) {
                     ForEach(ReservationEventType.allCases) { type in
@@ -287,12 +642,12 @@ struct AdventureComboBuilderView: View {
                     }
                 }
                 
-                if viewModel.state.eventType == .custom {
+                if adventureComboBuilderViewModel.state.eventType == .custom {
                     TextField(
                         "Nombre del evento",
                         text: Binding(
-                            get: { viewModel.state.customEventTitle },
-                            set: { viewModel.setCustomEventTitle($0) }
+                            get: { adventureComboBuilderViewModel.state.customEventTitle },
+                            set: { adventureComboBuilderViewModel.setCustomEventTitle($0) }
                         )
                     )
                     .appTextFieldStyle(.adventure)
@@ -301,8 +656,8 @@ struct AdventureComboBuilderView: View {
                 TextField(
                     "Notas del evento (decoración, pastel, sorpresa, niños, etc.)",
                     text: Binding(
-                        get: { viewModel.state.eventNotes },
-                        set: { viewModel.setEventNotes($0) }
+                        get: { adventureComboBuilderViewModel.state.eventNotes },
+                        set: { adventureComboBuilderViewModel.setEventNotes($0) }
                     ),
                     axis: .vertical
                 )
@@ -328,8 +683,8 @@ struct AdventureComboBuilderView: View {
                 DatePicker(
                     "Día de la reserva",
                     selection: Binding(
-                        get: { viewModel.state.selectedDate },
-                        set: { viewModel.setDate($0) }
+                        get: { adventureComboBuilderViewModel.state.selectedDate },
+                        set: { adventureComboBuilderViewModel.setDate($0) }
                     ),
                     in: Date()...,
                     displayedComponents: .date
@@ -363,7 +718,7 @@ struct AdventureComboBuilderView: View {
                 TextField(
                     "",
                     text: Binding(
-                        get: { authenticatedProfile?.nationalId ?? viewModel.state.nationalId },
+                        get: { authenticatedProfile?.nationalId ?? adventureComboBuilderViewModel.state.nationalId },
                         set: { _ in }
                     ),
                     prompt: Text("Cédula")
@@ -375,7 +730,7 @@ struct AdventureComboBuilderView: View {
                 TextField(
                     "",
                     text: Binding(
-                        get: { authenticatedProfile?.fullName ?? viewModel.state.clientName },
+                        get: { authenticatedProfile?.fullName ?? adventureComboBuilderViewModel.state.clientName },
                         set: { _ in }
                     ),
                     prompt: Text("Nombre")
@@ -386,7 +741,7 @@ struct AdventureComboBuilderView: View {
                 TextField(
                     "",
                     text: Binding(
-                        get: { authenticatedProfile?.phoneNumber ?? viewModel.state.whatsappNumber },
+                        get: { authenticatedProfile?.phoneNumber ?? adventureComboBuilderViewModel.state.whatsappNumber },
                         set: { _ in }
                     ),
                     prompt: Text("WhatsApp")
@@ -414,8 +769,8 @@ struct AdventureComboBuilderView: View {
                 TextField(
                     "Notas generales (opcional)",
                     text: Binding(
-                        get: { viewModel.state.notes },
-                        set: { viewModel.setNotes($0) }
+                        get: { adventureComboBuilderViewModel.state.notes },
+                        set: { adventureComboBuilderViewModel.setNotes($0) }
                     ),
                     axis: .vertical
                 )
@@ -438,11 +793,11 @@ struct AdventureComboBuilderView: View {
                     subtitle: "Selecciona el mejor horario de inicio o llegada para tu reserva."
                 )
                 
-                if viewModel.state.isLoadingAvailability {
+                if adventureComboBuilderViewModel.state.isLoadingAvailability {
                     ProgressView("Verificando disponibilidad...")
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 24)
-                } else if viewModel.state.availableSlots.isEmpty {
+                } else if adventureComboBuilderViewModel.state.availableSlots.isEmpty {
                     ContentUnavailableView(
                         "Sin horarios disponibles",
                         systemImage: "calendar.badge.exclamationmark",
@@ -451,13 +806,13 @@ struct AdventureComboBuilderView: View {
                 } else {
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 14) {
-                            ForEach(viewModel.state.availableSlots) { slot in
+                            ForEach(adventureComboBuilderViewModel.state.availableSlots) { slot in
                                 Button {
-                                    viewModel.selectSlot(slot)
+                                    adventureComboBuilderViewModel.selectSlot(slot)
                                 } label: {
                                     AdventureSlotCard(
                                         slot: slot,
-                                        isSelected: viewModel.state.selectedSlot?.id == slot.id
+                                        isSelected: adventureComboBuilderViewModel.state.selectedSlot?.id == slot.id
                                     )
                                 }
                                 .buttonStyle(.plain)
@@ -484,7 +839,7 @@ struct AdventureComboBuilderView: View {
                 )
                 
                 //Later
-                if let slot = viewModel.state.selectedSlot {
+                if let slot = adventureComboBuilderViewModel.state.selectedSlot {
                     summaryRow("Aventura", "$\(slot.adventureSubtotal.priceText)")
                     summaryRow("Comida", "$\(slot.foodSubtotal.priceText)")
                     summaryRow("Subtotal", "$\(slot.subtotal.priceText)")
@@ -493,7 +848,7 @@ struct AdventureComboBuilderView: View {
                     Divider()
                     summaryRow("Total", "$\(slot.totalAmount.priceText)", bold: true)
                 } else {
-                    let estimatedSubtotal = AdventurePricingEngine.estimatedSubtotal(items: viewModel.state.items)
+                    let estimatedSubtotal = AdventurePricingEngine.estimatedSubtotal(items: adventureComboBuilderViewModel.state.items)
                     let estimatedDiscount = AdventurePricingEngine.discount(for: estimatedSubtotal)
 //                    let estimatedNightPremium = AdventurePricingEngine.estimatedNightPremium(items: viewModel.state.items)
                     let estimatedTotal =
@@ -515,24 +870,53 @@ struct AdventureComboBuilderView: View {
     
     private var confirmSection: some View {
         Section {
-            Button {
-                syncProfileFieldsFromSession()
-                viewModel.submit(clientId: authenticatedProfile?.id)
-                dismiss()
-            } label: {
-                if viewModel.state.isSubmitting {
-                    ProgressView()
-                        .frame(maxWidth: .infinity)
-                } else {
-                    Label("Confirmar reserva", systemImage: "checkmark.circle.fill")
-                        .frame(maxWidth: .infinity)
+            VStack(spacing: 12) {
+                if showAddedMessage {
+                    Text("Order has been added")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 10)
+                        .background(
+                            Capsule()
+                                .fill(palette.success)
+                        )
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
+                Button {
+                    syncProfileFieldsFromSession()
+                    adventureComboBuilderViewModel.submit(clientId: authenticatedProfile?.id)
+                    
+                    withAnimation(.easeInOut(duration: 0.25)) {
+                        showAddedMessage = true
+                    }
+                    
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+                        withAnimation(.easeInOut(duration: 0.25)) {
+                            showAddedMessage = false
+                        }
+                        
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                            dismiss()
+                        }
+                    }
+                    
+                    dismiss()
+                } label: {
+                    if adventureComboBuilderViewModel.state.isSubmitting {
+                        ProgressView()
+                            .frame(maxWidth: .infinity)
+                    } else {
+                        Label("Confirmar reserva", systemImage: "checkmark.circle.fill")
+                            .frame(maxWidth: .infinity)
+                    }
+                }
+                .buttonStyle(BrandPrimaryButtonStyle(theme: .adventure))
+                .disabled(adventureComboBuilderViewModel.state.isSubmitting || adventureComboBuilderViewModel.state.selectedSlot == nil)
+                .listRowInsets(EdgeInsets(top: 10, leading: 16, bottom: 28, trailing: 16))
+                .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
             }
-            .buttonStyle(BrandPrimaryButtonStyle(theme: .adventure))
-            .disabled(viewModel.state.isSubmitting || viewModel.state.selectedSlot == nil)
-            .listRowInsets(EdgeInsets(top: 10, leading: 16, bottom: 28, trailing: 16))
-            .listRowBackground(Color.clear)
-            .listRowSeparator(.hidden)
         }
     }
     

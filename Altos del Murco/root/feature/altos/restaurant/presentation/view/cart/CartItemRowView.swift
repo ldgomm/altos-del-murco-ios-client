@@ -33,6 +33,16 @@ struct CartItemRowView: View {
                         .foregroundStyle(.secondary)
                         .lineLimit(2)
 
+                    if !cartItem.menuItem.canBeOrdered {
+                        Text("Agotado")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.red)
+                    } else if cartItem.quantity >= cartItem.menuItem.remainingQuantity {
+                        Text("Límite alcanzado")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.orange)
+                    }
+                    
                     if let notes = cartItem.notes, !notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                         Text(notes)
                             .font(.footnote)
@@ -87,7 +97,7 @@ struct CartItemRowView: View {
                             .clipShape(Circle())
                     }
                     .buttonStyle(.borderless)
-                    .disabled(!cartItem.menuItem.isAvailable)
+                    .disabled(!cartItem.menuItem.canBeOrdered || cartItem.quantity >= cartItem.menuItem.remainingQuantity)
                 }
                 
                 Spacer()

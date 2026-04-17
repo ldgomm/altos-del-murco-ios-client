@@ -31,7 +31,7 @@ struct AltosDelMurcoApp: App {
     @StateObject private var ordersViewModel: OrdersViewModel
     @StateObject private var checkoutViewModel: CheckoutViewModel
     @StateObject private var sessionViewModel: AppSessionViewModel
-
+    @StateObject private var menuViewModel: MenuViewModel
     private let adventureModuleFactory: AdventureModuleFactory
 
     init() {
@@ -103,6 +103,10 @@ struct AltosDelMurcoApp: App {
             )
 
             _sessionViewModel = StateObject(wrappedValue: sessionVM)
+            
+            let menuService = MenuService()
+            let menuViewModel = MenuViewModel(service: menuService)
+            _menuViewModel = StateObject(wrappedValue: menuViewModel)
 
         } catch {
             fatalError("Failed to create SwiftData container: \(error)")
@@ -115,6 +119,7 @@ struct AltosDelMurcoApp: App {
                 MainTabView(
                     ordersViewModel: ordersViewModel,
                     checkoutViewModel: checkoutViewModel,
+                    menuViewModel: menuViewModel,
                     adventureModuleFactory: adventureModuleFactory
                 )
             }

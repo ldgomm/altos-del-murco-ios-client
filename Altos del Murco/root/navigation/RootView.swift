@@ -7,8 +7,6 @@
 
 import SwiftUI
 
-import SwiftUI
-
 struct RootView<Home: View>: View {
     @ObservedObject var viewModel: AppSessionViewModel
     let home: () -> Home

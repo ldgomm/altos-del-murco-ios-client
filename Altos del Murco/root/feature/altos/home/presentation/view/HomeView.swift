@@ -9,9 +9,6 @@ import SwiftUI
 
 struct HomeView: View {
     @Binding var selectedTab: MainTab
-    @ObservedObject var comboBuilderViewModel: AdventureComboBuilderViewModel
-
-    private let featuredServices = AdventureService.mockServices
 
     var body: some View {
         NavigationStack {

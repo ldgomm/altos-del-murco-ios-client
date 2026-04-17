@@ -34,7 +34,7 @@ struct AltosDelMurcoApp: App {
     @StateObject private var ordersViewModel: OrdersViewModel
     @StateObject private var checkoutViewModel: CheckoutViewModel
     @StateObject private var sessionViewModel: AppSessionViewModel
-
+    @StateObject private var menuViewModel: MenuViewModel
     private let adventureModuleFactory: AdventureModuleFactory
 
     init() {
@@ -106,6 +106,10 @@ struct AltosDelMurcoApp: App {
             )
 
             _sessionViewModel = StateObject(wrappedValue: sessionVM)
+            
+            let menuService = MenuService()
+            let menuViewModel = MenuViewModel(service: menuService)
+            _menuViewModel = StateObject(wrappedValue: menuViewModel)
 
         } catch {
             fatalError("Failed to create SwiftData container: \(error)")
@@ -118,6 +122,7 @@ struct AltosDelMurcoApp: App {
                 MainTabView(
                     ordersViewModel: ordersViewModel,
                     checkoutViewModel: checkoutViewModel,
+                    menuViewModel: menuViewModel,
                     adventureModuleFactory: adventureModuleFactory
                 )
             }
@@ -1736,7 +1741,8 @@ import SwiftUI
 
 @MainActor
 struct AdventureCatalogView: View {
-    @ObservedObject var comboBuilderViewModel: AdventureComboBuilderViewModel
+    @ObservedObject var adventureComboBuilderViewModel: AdventureComboBuilderViewModel
+    @ObservedObject var menuViewModel: MenuViewModel
     @Environment(\.colorScheme) private var colorScheme
     
     private let singles = AdventureActivityType.allCases.map(AdventureActivityType.defaultDraft(for:))
@@ -1820,9 +1826,9 @@ struct AdventureCatalogView: View {
                 }
                 
                 NavigationLink {
-                    AdventureComboBuilderView(viewModel: comboBuilderViewModel)
+                    AdventureComboBuilderView(adventureComboBuilderViewModel: adventureComboBuilderViewModel, menuViewModel: menuViewModel)
                         .onAppear {
-                            comboBuilderViewModel.reset()
+                            adventureComboBuilderViewModel.reset()
                         }
                 } label: {
                     HStack(spacing: 10) {
@@ -1846,9 +1852,9 @@ struct AdventureCatalogView: View {
             
             ForEach(AdventureCatalogTemplates.featured) { template in
                 NavigationLink {
-                    AdventureComboBuilderView(viewModel: comboBuilderViewModel)
+                    AdventureComboBuilderView(adventureComboBuilderViewModel: adventureComboBuilderViewModel, menuViewModel: menuViewModel)
                         .onAppear {
-                            comboBuilderViewModel.replaceItems(with: template.items)
+                            adventureComboBuilderViewModel.replaceItems(with: template.items)
                         }
                 } label: {
                     TemplateCard(template: template)
@@ -1868,9 +1874,9 @@ struct AdventureCatalogView: View {
             
             ForEach(singles, id: \.id) { item in
                 NavigationLink {
-                    AdventureComboBuilderView(viewModel: comboBuilderViewModel)
+                    AdventureComboBuilderView(adventureComboBuilderViewModel: adventureComboBuilderViewModel, menuViewModel: menuViewModel)
                         .onAppear {
-                            comboBuilderViewModel.replaceItems(with: [item])
+                            adventureComboBuilderViewModel.replaceItems(with: [item])
                         }
                 } label: {
                     SingleActivityCard(item: item)
@@ -1894,9 +1900,9 @@ struct AdventureCatalogView: View {
                     .foregroundStyle(palette.textSecondary)
                 
                 NavigationLink {
-                    AdventureComboBuilderView(viewModel: comboBuilderViewModel)
+                    AdventureComboBuilderView(adventureComboBuilderViewModel: adventureComboBuilderViewModel, menuViewModel: menuViewModel)
                         .onAppear {
-                            comboBuilderViewModel.reset()
+                            adventureComboBuilderViewModel.reset()
                         }
                 } label: {
                     HStack(spacing: 10) {
@@ -2049,15 +2055,25 @@ import SwiftUI
 
 struct AdventureComboBuilderView: View {
     @EnvironmentObject private var sessionViewModel: AppSessionViewModel
+    @Environment(\.dismiss) private var dismiss
+    @ObservedObject var adventureComboBuilderViewModel: AdventureComboBuilderViewModel
+    @ObservedObject var menuViewModel: MenuViewModel
     
-    @ObservedObject var viewModel: AdventureComboBuilderViewModel
     
     @State private var editingItem: AdventureReservationItemDraft?
+    @State private var isFoodPickerPresented = false
     
-    private let menuSections = MenuMockData.sections
     private var authenticatedProfile: ClientProfile? {
         sessionViewModel.authenticatedProfile
     }
+    
+    @Environment(\.colorScheme) private var colorScheme
+    private let theme: AppSectionTheme = .restaurant
+    private var palette: ThemePalette {
+        AppTheme.palette(for: theme, scheme: colorScheme)
+    }
+    
+    @State private var showAddedMessage: Bool = false
     
     var body: some View {
         List {
@@ -2079,32 +2095,38 @@ struct AdventureComboBuilderView: View {
         }
         .onAppear {
             syncProfileFieldsFromSession()
-            viewModel.onAppear()
+            adventureComboBuilderViewModel.onAppear()
+        }
+        .onChange(of: authenticatedProfile?.id) { _, _ in
+            syncProfileFieldsFromSession()
+        }
+        .onChange(of: authenticatedProfile?.updatedAt) { _, _ in
+            syncProfileFieldsFromSession()
         }
         .sheet(item: $editingItem) { item in
             AdventureItemEditorView(item: item) { updated in
-                viewModel.updateItem(updated)
+                adventureComboBuilderViewModel.updateItem(updated)
             }
         }
         .alert(
             "Mensaje",
             isPresented: Binding(
-                get: { viewModel.state.errorMessage != nil || viewModel.state.successMessage != nil },
-                set: { if !$0 { viewModel.dismissMessage() } }
+                get: { adventureComboBuilderViewModel.state.errorMessage != nil || adventureComboBuilderViewModel.state.successMessage != nil },
+                set: { if !$0 { adventureComboBuilderViewModel.dismissMessage() } }
             )
         ) {
-            Button("OK") { viewModel.dismissMessage() }
+            Button("OK") { adventureComboBuilderViewModel.dismissMessage() }
         } message: {
-            Text(viewModel.state.errorMessage ?? viewModel.state.successMessage ?? "")
+            Text(adventureComboBuilderViewModel.state.errorMessage ?? adventureComboBuilderViewModel.state.successMessage ?? "")
         }
     }
     
     private func syncProfileFieldsFromSession() {
         guard let profile = authenticatedProfile else { return }
         
-        viewModel.setClientName(profile.fullName)
-        viewModel.setWhatsapp(profile.phoneNumber)
-        viewModel.setNationalId(profile.nationalId)
+        adventureComboBuilderViewModel.setClientName(profile.fullName)
+        adventureComboBuilderViewModel.setWhatsapp(profile.phoneNumber)
+        adventureComboBuilderViewModel.setNationalId(profile.nationalId)
     }
     
     private var comboSection: some View {
@@ -2116,14 +2138,14 @@ struct AdventureComboBuilderView: View {
                     subtitle: "Opcionales. Puedes reservar aventura, comida o ambas. Cada actividad solo puede agregarse una vez por reserva."
                 )
                 
-                if viewModel.state.items.isEmpty {
+                if adventureComboBuilderViewModel.state.items.isEmpty {
                     Text("No hay actividades agregadas. Eso está bien si quieres una reserva solo de comida o evento.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                         .padding(.top, 2)
                 }
                 
-                if viewModel.state.items.contains(where: { $0.activity == .offRoad }) {
+                if adventureComboBuilderViewModel.state.items.contains(where: { $0.activity == .offRoad }) {
                     HStack(alignment: .top, spacing: 12) {
                         BrandIconBubble(theme: .adventure, systemImage: "info.circle", size: 34)
                         
@@ -2138,7 +2160,7 @@ struct AdventureComboBuilderView: View {
             .listRowBackground(Color.clear)
             .listRowSeparator(.hidden)
             
-            ForEach(viewModel.state.items) { item in
+            ForEach(adventureComboBuilderViewModel.state.items) { item in
                 Button {
                     editingItem = item
                 } label: {
@@ -2149,17 +2171,17 @@ struct AdventureComboBuilderView: View {
                 .listRowBackground(Color.clear)
                 .listRowSeparator(.hidden)
             }
-            .onDelete(perform: viewModel.removeItem)
-            .onMove(perform: viewModel.moveItems)
+            .onDelete(perform: adventureComboBuilderViewModel.removeItem)
+            .onMove(perform: adventureComboBuilderViewModel.moveItems)
             
             Menu {
-                if viewModel.availableActivitiesToAdd.isEmpty {
+                if adventureComboBuilderViewModel.availableActivitiesToAdd.isEmpty {
                     Button("Todas las actividades ya fueron agregadas") { }
                         .disabled(true)
                 } else {
-                    ForEach(viewModel.availableActivitiesToAdd) { activity in
+                    ForEach(adventureComboBuilderViewModel.availableActivitiesToAdd) { activity in
                         Button(activity.title) {
-                            viewModel.addItem(activity)
+                            adventureComboBuilderViewModel.addItem(activity)
                         }
                     }
                 }
@@ -2199,61 +2221,59 @@ struct AdventureComboBuilderView: View {
                     subtitle: "También puedes hacer una reserva solo de comida para cumpleaños, reuniones o visitas futuras."
                 )
                 
-                if viewModel.state.foodItems.isEmpty {
+                if adventureComboBuilderViewModel.state.foodItems.isEmpty {
                     Text("No hay platos agregados todavía.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 } else {
                     VStack(spacing: 12) {
-                        ForEach(viewModel.state.foodItems) { item in
+                        ForEach(adventureComboBuilderViewModel.state.foodItems) { item in
                             ReservationFoodRow(
                                 item: item,
-                                onIncrease: { viewModel.increaseFoodQuantity(item.id) },
-                                onDecrease: { viewModel.decreaseFoodQuantity(item.id) },
-                                onRemove: { viewModel.removeFoodItem(item.id) }
+                                onIncrease: { adventureComboBuilderViewModel.increaseFoodQuantity(item.id) },
+                                onDecrease: { adventureComboBuilderViewModel.decreaseFoodQuantity(item.id) },
+                                onRemove: { adventureComboBuilderViewModel.removeFoodItem(item.id) }
                             )
                         }
                     }
                 }
                 
-                Menu {
-                    ForEach(menuSections) { section in
-                        Menu(section.category.title) {
-                            ForEach(section.items.filter(\.isAvailable)) { item in
-                                Button("\(item.name) • \(item.finalPrice.priceText)") {
-                                    viewModel.addFoodItem(item)
-                                }
-                            }
-                        }
-                    }
+                Button {
+                    isFoodPickerPresented = true
                 } label: {
                     HStack(spacing: 12) {
                         BrandIconBubble(theme: .adventure, systemImage: "fork.knife")
-                        
+
                         VStack(alignment: .leading, spacing: 4) {
                             Text("Agregar comida")
                                 .font(.headline)
-                            Text("Usa el menú del restaurante para planificar la reserva.")
+
+                            Text("Explora platos, ingredientes y detalles antes de agregarlos.")
                                 .font(.subheadline)
                                 .foregroundStyle(.secondary)
                         }
-                        
+
                         Spacer()
-                        
-                        Image(systemName: "chevron.down.circle.fill")
+
+                        Image(systemName: "chevron.right.circle.fill")
                             .font(.title3)
                             .foregroundStyle(.secondary)
                     }
                     .appCardStyle(.adventure, emphasized: false)
                 }
                 .buttonStyle(.plain)
+                .sheet(isPresented: $isFoodPickerPresented) {
+                    AdventureFoodPickerSheet(menuSections: menuViewModel.state.sections) { item, quantity, notes in
+                        adventureComboBuilderViewModel.addFoodItem(item, quantity: quantity, notes: notes)
+                    }
+                }
                 
-                if !viewModel.state.foodItems.isEmpty {
+                if !adventureComboBuilderViewModel.state.foodItems.isEmpty {
                     Picker(
                         "Momento de servicio",
                         selection: Binding(
-                            get: { viewModel.state.foodServingMoment },
-                            set: { viewModel.setFoodServingMoment($0) }
+                            get: { adventureComboBuilderViewModel.state.foodServingMoment },
+                            set: { adventureComboBuilderViewModel.setFoodServingMoment($0) }
                         )
                     ) {
                         ForEach(ReservationServingMoment.allCases) { option in
@@ -2261,12 +2281,12 @@ struct AdventureComboBuilderView: View {
                         }
                     }
                     
-                    if viewModel.state.foodServingMoment == .specificTime {
+                    if adventureComboBuilderViewModel.state.foodServingMoment == .specificTime {
                         DatePicker(
                             "Hora de servicio",
                             selection: Binding(
-                                get: { viewModel.state.foodServingTime },
-                                set: { viewModel.setFoodServingTime($0) }
+                                get: { adventureComboBuilderViewModel.state.foodServingTime },
+                                set: { adventureComboBuilderViewModel.setFoodServingTime($0) }
                             ),
                             displayedComponents: .hourAndMinute
                         )
@@ -2275,8 +2295,8 @@ struct AdventureComboBuilderView: View {
                     TextField(
                         "Notas de comida (opcional)",
                         text: Binding(
-                            get: { viewModel.state.foodNotes },
-                            set: { viewModel.setFoodNotes($0) }
+                            get: { adventureComboBuilderViewModel.state.foodNotes },
+                            set: { adventureComboBuilderViewModel.setFoodNotes($0) }
                         ),
                         axis: .vertical
                     )
@@ -2291,6 +2311,353 @@ struct AdventureComboBuilderView: View {
         }
     }
     
+    private struct AdventureFoodPickerSheet: View {
+        @Environment(\.dismiss) private var dismiss
+
+        let menuSections: [MenuSection]
+        let onAdd: (MenuItem, Int, String?) -> Void
+
+        @State private var selectedCategoryId: String? = nil
+        @State private var searchText = ""
+
+        private var categories: [MenuCategory] {
+            menuSections.map(\.category)
+        }
+
+        private var filteredSections: [MenuSection] {
+            let categoryFiltered = menuSections.filter { section in
+                selectedCategoryId == nil || section.category.id == selectedCategoryId
+            }
+
+            guard !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                return categoryFiltered
+            }
+
+            let query = searchText.lowercased()
+
+            return categoryFiltered.compactMap { section in
+                let items = section.items.filter { item in
+                    item.isAvailable &&
+                    (
+                        item.name.lowercased().contains(query) ||
+                        item.description.lowercased().contains(query) ||
+                        item.ingredients.contains(where: { $0.lowercased().contains(query) })
+                    )
+                }
+
+                guard !items.isEmpty else { return nil }
+
+                return MenuSection(
+                    id: section.id,
+                    category: section.category,
+                    items: items
+                )
+            }
+        }
+
+        var body: some View {
+            NavigationStack {
+                ScrollView(showsIndicators: false) {
+                    LazyVStack(alignment: .leading, spacing: 18) {
+                        categorySelector
+
+                        if filteredSections.isEmpty {
+                            ContentUnavailableView(
+                                "No se encontraron platos",
+                                systemImage: "magnifyingglass",
+                                description: Text("Prueba otra búsqueda o cambia la categoría.")
+                            )
+                            .padding(.top, 32)
+                        } else {
+                            ForEach(filteredSections) { section in
+                                VStack(alignment: .leading, spacing: 12) {
+                                    Text(section.category.title)
+                                        .font(.title3.bold())
+
+                                    ForEach(section.items.filter(\.isAvailable)) { item in
+                                        NavigationLink {
+                                            AdventureFoodDetailView(item: item) { quantity, notes in
+                                                onAdd(item, quantity, notes)
+                                                dismiss()
+                                            }
+                                        } label: {
+                                            AdventureFoodMenuRow(item: item)
+                                        }
+                                        .buttonStyle(.plain)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    .padding(20)
+                }
+                .navigationTitle("Menú del restaurante")
+                .navigationBarTitleDisplayMode(.inline)
+                .searchable(text: $searchText, prompt: "Buscar plato, bebida o ingrediente")
+                .toolbar {
+                    ToolbarItem(placement: .topBarLeading) {
+                        Button("Cerrar") { dismiss() }
+                    }
+                }
+                .appScreenStyle(.adventure)
+            }
+        }
+
+        private var categorySelector: some View {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 10) {
+                    categoryChip(title: "Todo", isSelected: selectedCategoryId == nil) {
+                        selectedCategoryId = nil
+                    }
+
+                    ForEach(categories) { category in
+                        categoryChip(
+                            title: category.title,
+                            isSelected: selectedCategoryId == category.id
+                        ) {
+                            selectedCategoryId = category.id
+                        }
+                    }
+                }
+            }
+        }
+
+        private func categoryChip(
+            title: String,
+            isSelected: Bool,
+            action: @escaping () -> Void
+        ) -> some View {
+            Button(action: action) {
+                Text(title)
+                    .font(.subheadline.weight(.semibold))
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 10)
+                    .background(
+                        Capsule()
+                            .fill(isSelected ? Color.accentColor.opacity(0.18) : Color.secondary.opacity(0.12))
+                    )
+                    .overlay(
+                        Capsule()
+                            .stroke(isSelected ? Color.accentColor : Color.secondary.opacity(0.25), lineWidth: 1)
+                    )
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    private struct AdventureFoodMenuRow: View {
+        let item: MenuItem
+
+        var body: some View {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(alignment: .top, spacing: 12) {
+                    BrandIconBubble(theme: .adventure, systemImage: "fork.knife", size: 44)
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack {
+                            Text(item.name)
+                                .font(.headline)
+
+                            if item.isFeatured {
+                                Text("Destacado")
+                                    .font(.caption.bold())
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 4)
+                                    .background(Capsule().fill(Color.accentColor.opacity(0.16)))
+                            }
+                        }
+
+                        Text(item.description)
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(2)
+                    }
+
+                    Spacer()
+
+                    Text(item.finalPrice.priceText)
+                        .font(.subheadline.bold())
+                }
+
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(Array(item.ingredients.prefix(4)), id: \.self) { ingredient in
+                            Text(ingredient)
+                                .font(.caption.weight(.medium))
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 6)
+                                .background(
+                                    Capsule()
+                                        .fill(Color.secondary.opacity(0.10))
+                                )
+                        }
+
+                        if item.ingredients.count > 4 {
+                            Text("+\(item.ingredients.count - 4)")
+                                .font(.caption.weight(.bold))
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 6)
+                                .background(
+                                    Capsule()
+                                        .fill(Color.secondary.opacity(0.10))
+                                )
+                        }
+                    }
+                }
+            }
+            .appCardStyle(.adventure, emphasized: false)
+        }
+    }
+
+    private struct AdventureFoodDetailView: View {
+        @Environment(\.dismiss) private var dismiss
+
+        let item: MenuItem
+        let onAdd: (Int, String?) -> Void
+
+        @State private var quantity = 1
+        @State private var notes = ""
+
+        var body: some View {
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 18) {
+                    headerCard
+                    descriptionCard
+                    ingredientsCard
+                    priceCard
+                    quantityCard
+                    notesCard
+
+                    Button {
+                        let trimmedNotes = notes.trimmingCharacters(in: .whitespacesAndNewlines)
+                        onAdd(quantity, trimmedNotes.isEmpty ? nil : trimmedNotes)
+                    } label: {
+                        Label("Agregar a la reserva", systemImage: "plus.circle.fill")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(BrandPrimaryButtonStyle(theme: .adventure))
+                }
+                .padding(20)
+            }
+            .navigationTitle(item.name)
+            .navigationBarTitleDisplayMode(.inline)
+            .appScreenStyle(.adventure)
+        }
+
+        private var headerCard: some View {
+            HStack(spacing: 12) {
+                BrandIconBubble(theme: .adventure, systemImage: "fork.knife", size: 56)
+
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(item.name)
+                        .font(.title3.bold())
+
+                    Text(item.finalPrice.priceText)
+                        .font(.headline)
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer()
+            }
+            .appCardStyle(.adventure)
+        }
+
+        private var descriptionCard: some View {
+            VStack(alignment: .leading, spacing: 10) {
+                BrandSectionHeader(
+                    theme: .adventure,
+                    title: "Descripción",
+                    subtitle: "Qué incluye este plato."
+                )
+
+                Text(item.description)
+                    .font(.body)
+                    .foregroundStyle(.secondary)
+            }
+            .appCardStyle(.adventure, emphasized: false)
+        }
+
+        private var ingredientsCard: some View {
+            VStack(alignment: .leading, spacing: 10) {
+                BrandSectionHeader(
+                    theme: .adventure,
+                    title: "Ingredientes",
+                    subtitle: "Componentes principales."
+                )
+
+                ForEach(item.ingredients, id: \.self) { ingredient in
+                    HStack(alignment: .top, spacing: 10) {
+                        Circle()
+                            .frame(width: 7, height: 7)
+                            .padding(.top, 7)
+
+                        Text(ingredient)
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+            .appCardStyle(.adventure)
+        }
+
+        private var priceCard: some View {
+            VStack(alignment: .leading, spacing: 10) {
+                BrandSectionHeader(
+                    theme: .adventure,
+                    title: "Precio",
+                    subtitle: item.hasOffer ? "Precio promocional disponible." : "Precio actual."
+                )
+
+                HStack(alignment: .lastTextBaseline, spacing: 10) {
+                    if item.hasOffer, let offerPrice = item.offerPrice {
+                        Text(item.price.priceText)
+                            .foregroundStyle(.secondary)
+                            .strikethrough()
+
+                        Text(offerPrice.priceText)
+                            .font(.title2.bold())
+                    } else {
+                        Text(item.price.priceText)
+                            .font(.title2.bold())
+                    }
+                }
+            }
+            .appCardStyle(.adventure)
+        }
+
+        private var quantityCard: some View {
+            VStack(alignment: .leading, spacing: 10) {
+                BrandSectionHeader(
+                    theme: .adventure,
+                    title: "Cantidad",
+                    subtitle: "Cuántas unidades deseas reservar."
+                )
+
+                QuantitySelectorView(
+                    quantity: $quantity,
+                    isEnabled: item.isAvailable,
+                    theme: .adventure
+                )
+            }
+            .appCardStyle(.adventure)
+        }
+
+        private var notesCard: some View {
+            VStack(alignment: .leading, spacing: 10) {
+                BrandSectionHeader(
+                    theme: .adventure,
+                    title: "Notas",
+                    subtitle: "Indicaciones especiales para cocina."
+                )
+
+                TextField("Sin cebolla, más cocido, sin ají, etc.", text: $notes, axis: .vertical)
+                    .lineLimit(3, reservesSpace: true)
+                    .appTextFieldStyle(.adventure)
+            }
+            .appCardStyle(.adventure)
+        }
+    }
+    
     private var eventSection: some View {
         Section {
             VStack(alignment: .leading, spacing: 16) {
@@ -2301,10 +2668,10 @@ struct AdventureComboBuilderView: View {
                 )
                 
                 Stepper(
-                    "Invitados: \(viewModel.state.guestCount)",
+                    "Invitados: \(adventureComboBuilderViewModel.state.guestCount)",
                     value: Binding(
-                        get: { viewModel.state.guestCount },
-                        set: { viewModel.setGuestCount($0) }
+                        get: { adventureComboBuilderViewModel.state.guestCount },
+                        set: { adventureComboBuilderViewModel.setGuestCount($0) }
                     ),
                     in: 1...300
                 )
@@ -2312,8 +2679,8 @@ struct AdventureComboBuilderView: View {
                 Picker(
                     "Tipo de evento",
                     selection: Binding(
-                        get: { viewModel.state.eventType },
-                        set: { viewModel.setEventType($0) }
+                        get: { adventureComboBuilderViewModel.state.eventType },
+                        set: { adventureComboBuilderViewModel.setEventType($0) }
                     )
                 ) {
                     ForEach(ReservationEventType.allCases) { type in
@@ -2321,12 +2688,12 @@ struct AdventureComboBuilderView: View {
                     }
                 }
                 
-                if viewModel.state.eventType == .custom {
+                if adventureComboBuilderViewModel.state.eventType == .custom {
                     TextField(
                         "Nombre del evento",
                         text: Binding(
-                            get: { viewModel.state.customEventTitle },
-                            set: { viewModel.setCustomEventTitle($0) }
+                            get: { adventureComboBuilderViewModel.state.customEventTitle },
+                            set: { adventureComboBuilderViewModel.setCustomEventTitle($0) }
                         )
                     )
                     .appTextFieldStyle(.adventure)
@@ -2335,8 +2702,8 @@ struct AdventureComboBuilderView: View {
                 TextField(
                     "Notas del evento (decoración, pastel, sorpresa, niños, etc.)",
                     text: Binding(
-                        get: { viewModel.state.eventNotes },
-                        set: { viewModel.setEventNotes($0) }
+                        get: { adventureComboBuilderViewModel.state.eventNotes },
+                        set: { adventureComboBuilderViewModel.setEventNotes($0) }
                     ),
                     axis: .vertical
                 )
@@ -2362,8 +2729,8 @@ struct AdventureComboBuilderView: View {
                 DatePicker(
                     "Día de la reserva",
                     selection: Binding(
-                        get: { viewModel.state.selectedDate },
-                        set: { viewModel.setDate($0) }
+                        get: { adventureComboBuilderViewModel.state.selectedDate },
+                        set: { adventureComboBuilderViewModel.setDate($0) }
                     ),
                     in: Date()...,
                     displayedComponents: .date
@@ -2397,7 +2764,7 @@ struct AdventureComboBuilderView: View {
                 TextField(
                     "",
                     text: Binding(
-                        get: { authenticatedProfile?.nationalId ?? viewModel.state.nationalId },
+                        get: { authenticatedProfile?.nationalId ?? adventureComboBuilderViewModel.state.nationalId },
                         set: { _ in }
                     ),
                     prompt: Text("Cédula")
@@ -2409,7 +2776,7 @@ struct AdventureComboBuilderView: View {
                 TextField(
                     "",
                     text: Binding(
-                        get: { authenticatedProfile?.fullName ?? viewModel.state.clientName },
+                        get: { authenticatedProfile?.fullName ?? adventureComboBuilderViewModel.state.clientName },
                         set: { _ in }
                     ),
                     prompt: Text("Nombre")
@@ -2420,7 +2787,7 @@ struct AdventureComboBuilderView: View {
                 TextField(
                     "",
                     text: Binding(
-                        get: { authenticatedProfile?.phoneNumber ?? viewModel.state.whatsappNumber },
+                        get: { authenticatedProfile?.phoneNumber ?? adventureComboBuilderViewModel.state.whatsappNumber },
                         set: { _ in }
                     ),
                     prompt: Text("WhatsApp")
@@ -2448,8 +2815,8 @@ struct AdventureComboBuilderView: View {
                 TextField(
                     "Notas generales (opcional)",
                     text: Binding(
-                        get: { viewModel.state.notes },
-                        set: { viewModel.setNotes($0) }
+                        get: { adventureComboBuilderViewModel.state.notes },
+                        set: { adventureComboBuilderViewModel.setNotes($0) }
                     ),
                     axis: .vertical
                 )
@@ -2472,11 +2839,11 @@ struct AdventureComboBuilderView: View {
                     subtitle: "Selecciona el mejor horario de inicio o llegada para tu reserva."
                 )
                 
-                if viewModel.state.isLoadingAvailability {
+                if adventureComboBuilderViewModel.state.isLoadingAvailability {
                     ProgressView("Verificando disponibilidad...")
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 24)
-                } else if viewModel.state.availableSlots.isEmpty {
+                } else if adventureComboBuilderViewModel.state.availableSlots.isEmpty {
                     ContentUnavailableView(
                         "Sin horarios disponibles",
                         systemImage: "calendar.badge.exclamationmark",
@@ -2485,13 +2852,13 @@ struct AdventureComboBuilderView: View {
                 } else {
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 14) {
-                            ForEach(viewModel.state.availableSlots) { slot in
+                            ForEach(adventureComboBuilderViewModel.state.availableSlots) { slot in
                                 Button {
-                                    viewModel.selectSlot(slot)
+                                    adventureComboBuilderViewModel.selectSlot(slot)
                                 } label: {
                                     AdventureSlotCard(
                                         slot: slot,
-                                        isSelected: viewModel.state.selectedSlot?.id == slot.id
+                                        isSelected: adventureComboBuilderViewModel.state.selectedSlot?.id == slot.id
                                     )
                                 }
                                 .buttonStyle(.plain)
@@ -2518,7 +2885,7 @@ struct AdventureComboBuilderView: View {
                 )
                 
                 //Later
-                if let slot = viewModel.state.selectedSlot {
+                if let slot = adventureComboBuilderViewModel.state.selectedSlot {
                     summaryRow("Aventura", "$\(slot.adventureSubtotal.priceText)")
                     summaryRow("Comida", "$\(slot.foodSubtotal.priceText)")
                     summaryRow("Subtotal", "$\(slot.subtotal.priceText)")
@@ -2527,7 +2894,7 @@ struct AdventureComboBuilderView: View {
                     Divider()
                     summaryRow("Total", "$\(slot.totalAmount.priceText)", bold: true)
                 } else {
-                    let estimatedSubtotal = AdventurePricingEngine.estimatedSubtotal(items: viewModel.state.items)
+                    let estimatedSubtotal = AdventurePricingEngine.estimatedSubtotal(items: adventureComboBuilderViewModel.state.items)
                     let estimatedDiscount = AdventurePricingEngine.discount(for: estimatedSubtotal)
 //                    let estimatedNightPremium = AdventurePricingEngine.estimatedNightPremium(items: viewModel.state.items)
                     let estimatedTotal =
@@ -2549,22 +2916,53 @@ struct AdventureComboBuilderView: View {
     
     private var confirmSection: some View {
         Section {
-            Button {
-                viewModel.submit(clientId: authenticatedProfile?.id)
-            } label: {
-                if viewModel.state.isSubmitting {
-                    ProgressView()
-                        .frame(maxWidth: .infinity)
-                } else {
-                    Label("Confirmar reserva", systemImage: "checkmark.circle.fill")
-                        .frame(maxWidth: .infinity)
+            VStack(spacing: 12) {
+                if showAddedMessage {
+                    Text("Order has been added")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 10)
+                        .background(
+                            Capsule()
+                                .fill(palette.success)
+                        )
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
+                Button {
+                    syncProfileFieldsFromSession()
+                    adventureComboBuilderViewModel.submit(clientId: authenticatedProfile?.id)
+                    
+                    withAnimation(.easeInOut(duration: 0.25)) {
+                        showAddedMessage = true
+                    }
+                    
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+                        withAnimation(.easeInOut(duration: 0.25)) {
+                            showAddedMessage = false
+                        }
+                        
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                            dismiss()
+                        }
+                    }
+                    
+                    dismiss()
+                } label: {
+                    if adventureComboBuilderViewModel.state.isSubmitting {
+                        ProgressView()
+                            .frame(maxWidth: .infinity)
+                    } else {
+                        Label("Confirmar reserva", systemImage: "checkmark.circle.fill")
+                            .frame(maxWidth: .infinity)
+                    }
+                }
+                .buttonStyle(BrandPrimaryButtonStyle(theme: .adventure))
+                .disabled(adventureComboBuilderViewModel.state.isSubmitting || adventureComboBuilderViewModel.state.selectedSlot == nil)
+                .listRowInsets(EdgeInsets(top: 10, leading: 16, bottom: 28, trailing: 16))
+                .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
             }
-            .buttonStyle(BrandPrimaryButtonStyle(theme: .adventure))
-            .disabled(viewModel.state.isSubmitting || viewModel.state.selectedSlot == nil)
-            .listRowInsets(EdgeInsets(top: 10, leading: 16, bottom: 28, trailing: 16))
-            .listRowBackground(Color.clear)
-            .listRowSeparator(.hidden)
         }
     }
     
@@ -3276,10 +3674,11 @@ struct BookingsView: View {
 import SwiftUI
 
 struct ExperiencesView: View {
-    @ObservedObject var comboBuilderViewModel: AdventureComboBuilderViewModel
+    @ObservedObject var adventureComboBuilderViewModel: AdventureComboBuilderViewModel
+    @ObservedObject var menuViewModel: MenuViewModel
     
     var body: some View {
-        AdventureCatalogView(comboBuilderViewModel: comboBuilderViewModel)
+        AdventureCatalogView(adventureComboBuilderViewModel: adventureComboBuilderViewModel, menuViewModel: menuViewModel)
     }
 }
 
@@ -3391,7 +3790,8 @@ import SwiftUI
 
 struct ServiceDetailView: View {
     let service: AdventureService
-    @ObservedObject var comboBuilderViewModel: AdventureComboBuilderViewModel
+    @ObservedObject var adventureComboBuilderViewModel: AdventureComboBuilderViewModel
+    @ObservedObject var menuViewModel: MenuViewModel
     
     @Environment(\.colorScheme) private var colorScheme
     
@@ -3581,9 +3981,9 @@ struct ServiceDetailView: View {
     private var actionSection: some View {
         VStack(spacing: 12) {
             NavigationLink {
-                AdventureComboBuilderView(viewModel: comboBuilderViewModel)
+                AdventureComboBuilderView(adventureComboBuilderViewModel: adventureComboBuilderViewModel, menuViewModel: menuViewModel)
                     .onAppear {
-                        comboBuilderViewModel.replaceItems(with: [service.defaultDraft])
+                        adventureComboBuilderViewModel.replaceItems(with: [service.defaultDraft])
                     }
             } label: {
                 HStack(spacing: 10) {
@@ -3842,15 +4242,31 @@ final class AdventureComboBuilderViewModel: ObservableObject {
         Task { await loadAvailability() }
     }
     
-    func addFoodItem(_ menuItem: MenuItem) {
+    func addFoodItem(
+        _ menuItem: MenuItem,
+        quantity: Int = 1,
+        notes: String? = nil
+    ) {
         guard menuItem.isAvailable else { return }
-        
-        if let index = state.foodItems.firstIndex(where: { $0.menuItemId == menuItem.id }) {
-            state.foodItems[index].quantity += 1
+
+        let trimmedNotes = notes?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let finalNotes = (trimmedNotes?.isEmpty == false) ? trimmedNotes : nil
+        let safeQuantity = max(1, quantity)
+
+        if let index = state.foodItems.firstIndex(where: {
+            $0.menuItemId == menuItem.id && $0.notes == finalNotes
+        }) {
+            state.foodItems[index].quantity += safeQuantity
         } else {
-            state.foodItems.append(ReservationFoodItemDraft(from: menuItem))
+            state.foodItems.append(
+                ReservationFoodItemDraft(
+                    from: menuItem,
+                    quantity: safeQuantity,
+                    notes: finalNotes
+                )
+            )
         }
-        
+
         state.selectedSlot = nil
         Task { await loadAvailability() }
     }
@@ -6444,9 +6860,6 @@ import SwiftUI
 
 struct HomeView: View {
     @Binding var selectedTab: MainTab
-    @ObservedObject var comboBuilderViewModel: AdventureComboBuilderViewModel
-
-    private let featuredServices = AdventureService.mockServices
 
     var body: some View {
         NavigationStack {
@@ -7683,6 +8096,91 @@ private struct ReadOnlyFieldCard: View {
 
 ---
 
+# Altos del Murco/root/feature/altos/profile/presentation/view/ProfileAccountHubView.swift
+
+```swift
+//
+//  ProfileAccountHubView.swift
+//  Altos del Murco
+//
+//  Created by José Ruiz on 16/4/26.
+//
+
+import SwiftUI
+
+struct ProfileAccountHubView: View {
+    @ObservedObject var viewModel: ProfileViewModel
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.openURL) private var openURL
+
+    private let theme: AppSectionTheme = .neutral
+
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 16) {
+                actionRow(
+                    title: "Personal Information",
+                    subtitle: "Edit your contact and emergency details",
+                    systemImage: "person.text.rectangle",
+                    tint: .blue
+                ) {
+                    viewModel.openEditProfile()
+                }
+
+                actionRow(
+                    title: "Rewards & Points",
+                    subtitle: "Your loyalty history and benefits",
+                    systemImage: "gift.fill",
+                    tint: .orange
+                ) { }
+
+                actionRow(
+                    title: "Birthday Benefits",
+                    subtitle: "Used for special promos and discounts",
+                    systemImage: "birthday.cake.fill",
+                    tint: .pink
+                ) { }
+            }
+            .padding(16)
+        }
+        .navigationTitle("Account")
+        .appScreenStyle(theme)
+    }
+
+    private func actionRow(
+        title: String,
+        subtitle: String,
+        systemImage: String,
+        tint: Color,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            HStack(spacing: 14) {
+                BrandIconBubble(theme: theme, systemImage: systemImage, size: 44)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(title)
+                        .font(.headline)
+                    Text(subtitle)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer()
+
+                Image(systemName: "chevron.right")
+                    .foregroundStyle(.tertiary)
+            }
+            .appCardStyle(theme)
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+```
+
+---
+
 # Altos del Murco/root/feature/altos/profile/presentation/view/ProfileAlertItem.swift
 
 ```swift
@@ -7762,6 +8260,85 @@ struct ProfileContainerView: View {
 
 ---
 
+# Altos del Murco/root/feature/altos/profile/presentation/view/ProfilePreferencesHubView.swift
+
+```swift
+//
+//  ProfilePreferencesHubView.swift
+//  Altos del Murco
+//
+//  Created by José Ruiz on 16/4/26.
+//
+
+import SwiftUI
+
+struct ProfilePreferencesHubView: View {
+    @ObservedObject var viewModel: ProfileViewModel
+    @Environment(\.openURL) private var openURL
+
+    private let theme: AppSectionTheme = .neutral
+
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 16) {
+                NavigationLink {
+                    AppearanceSettingsView(viewModel: viewModel)
+                } label: {
+                    row(
+                        title: "Appearance",
+                        subtitle: viewModel.appearanceTitle,
+                        systemImage: "circle.lefthalf.filled"
+                    )
+                }
+                .buttonStyle(.plain)
+
+                Button {
+                    guard let settingsURL = URL(string: UIApplication.openSettingsURLString) else { return }
+                    openURL(settingsURL)
+                } label: {
+                    row(
+                        title: "App Permissions",
+                        subtitle: "Notifications, location and device settings",
+                        systemImage: "gearshape.2.fill"
+                    )
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(16)
+        }
+        .navigationTitle("Preferences")
+        .appScreenStyle(theme)
+    }
+
+    private func row(
+        title: String,
+        subtitle: String,
+        systemImage: String
+    ) -> some View {
+        HStack(spacing: 14) {
+            BrandIconBubble(theme: theme, systemImage: systemImage, size: 44)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title)
+                    .font(.headline)
+                Text(subtitle)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer()
+
+            Image(systemName: "chevron.right")
+                .foregroundStyle(.tertiary)
+        }
+        .appCardStyle(theme)
+    }
+}
+
+```
+
+---
+
 # Altos del Murco/root/feature/altos/profile/presentation/view/ProfileStats.swift
 
 ```swift
@@ -7784,6 +8361,92 @@ struct ProfileStats {
         orders: 0,
         bookings: 0
     )
+}
+
+```
+
+---
+
+# Altos del Murco/root/feature/altos/profile/presentation/view/ProfileSupportHubView.swift
+
+```swift
+//
+//  ProfileSupportHubView.swift
+//  Altos del Murco
+//
+//  Created by José Ruiz on 16/4/26.
+//
+
+import SwiftUI
+
+struct ProfileSupportHubView: View {
+    @Environment(\.openURL) private var openURL
+
+    private let theme: AppSectionTheme = .neutral
+
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 16) {
+                supportRow(
+                    title: "Help & Support",
+                    subtitle: "Email our support team",
+                    systemImage: "questionmark.circle.fill",
+                    tint: .teal,
+                    url: AppExternalLinks.supportEmail
+                )
+
+                supportRow(
+                    title: "Privacy Policy",
+                    subtitle: "Read how your data is used",
+                    systemImage: "hand.raised.fill",
+                    tint: .indigo,
+                    url: AppExternalLinks.privacyPolicy
+                )
+
+                supportRow(
+                    title: "Terms & Conditions",
+                    subtitle: "App and service terms",
+                    systemImage: "doc.text.fill",
+                    tint: .brown,
+                    url: AppExternalLinks.terms
+                )
+            }
+            .padding(16)
+        }
+        .navigationTitle("Help & Support")
+        .appScreenStyle(theme)
+    }
+
+    private func supportRow(
+        title: String,
+        subtitle: String,
+        systemImage: String,
+        tint: Color,
+        url: URL
+    ) -> some View {
+        Button {
+            openURL(url)
+        } label: {
+            HStack(spacing: 14) {
+                BrandIconBubble(theme: theme, systemImage: systemImage, size: 44)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(title)
+                        .font(.headline)
+                    Text(subtitle)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer()
+
+                Image(systemName: "arrow.up.right")
+                    .foregroundStyle(.tertiary)
+            }
+            .appCardStyle(theme)
+        }
+        .buttonStyle(.plain)
+    }
 }
 
 ```
@@ -7823,10 +8486,8 @@ struct ProfileView: View {
                 VStack(spacing: 20) {
                     headerSection
                     statsSection
-                    accountSection
-                    preferencesSection
-                    socialSection
-                    supportSection
+                    mainMenuSection
+                    socialCompactSection
                     dangerSection
                     aboutSection
                 }
@@ -7856,53 +8517,144 @@ struct ProfileView: View {
     }
 
     private var headerSection: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            HStack(alignment: .center, spacing: 16) {
-                ZStack {
-                    Circle()
-                        .fill(palette.heroGradient)
-                        .frame(width: 84, height: 84)
+        VStack(spacing: 18) {
+            ZStack(alignment: .bottomTrailing) {
+                Circle()
+                    .fill(palette.heroGradient)
+                    .frame(width: 104, height: 104)
+                    .overlay(
+                        Circle()
+                            .stroke(
+                                Color.white.opacity(colorScheme == .dark ? 0.10 : 0.32),
+                                lineWidth: 1
+                            )
+                    )
+                    .shadow(
+                        color: palette.shadow.opacity(colorScheme == .dark ? 0.28 : 0.12),
+                        radius: 16,
+                        x: 0,
+                        y: 10
+                    )
+
+                Text(viewModel.displayName.initials)
+                    .font(.system(size: 34, weight: .bold, design: .rounded))
+                    .foregroundStyle(palette.onPrimary)
+
+                Button {
+                    viewModel.openEditProfile()
+                } label: {
+                    Image(systemName: "pencil")
+                        .font(.caption.bold())
+                        .foregroundStyle(.white)
+                        .padding(10)
+                        .background(
+                            Circle()
+                                .fill(palette.primary)
+                        )
                         .overlay(
                             Circle()
-                                .stroke(Color.white.opacity(colorScheme == .dark ? 0.10 : 0.35), lineWidth: 1)
+                                .stroke(Color.white.opacity(0.18), lineWidth: 1)
                         )
-                        .shadow(
-                            color: palette.shadow.opacity(colorScheme == .dark ? 0.28 : 0.12),
-                            radius: 14,
-                            x: 0,
-                            y: 8
-                        )
-
-                    Text(viewModel.displayName.initials)
-                        .font(.title.bold())
-                        .foregroundStyle(palette.onPrimary)
                 }
+                .offset(x: 4, y: 4)
+            }
 
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(viewModel.displayName)
-                        .font(.title2.bold())
-                        .foregroundStyle(palette.textPrimary)
+            VStack(spacing: 6) {
+                Text(viewModel.displayName)
+                    .font(.system(size: 30, weight: .bold, design: .rounded))
+                    .foregroundStyle(palette.textPrimary)
+                    .multilineTextAlignment(.center)
 
-                    Text(viewModel.emailText)
+                Text(viewModel.emailText)
+                    .font(.subheadline)
+                    .foregroundStyle(palette.textSecondary)
+                    .multilineTextAlignment(.center)
+
+                Label("Member since \(viewModel.memberSinceText)", systemImage: "calendar")
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(palette.textSecondary)
+            }
+
+            HStack(spacing: 10) {
+                compactInfoCard(
+                    title: "Phone",
+                    value: viewModel.phoneText,
+                    systemImage: "phone.fill"
+                )
+
+                compactInfoCard(
+                    title: "Birthday",
+                    value: viewModel.birthdayText,
+                    systemImage: "birthday.cake.fill"
+                )
+            }
+
+            HStack(alignment: .top, spacing: 12) {
+                BrandIconBubble(
+                    theme: theme,
+                    systemImage: "house.fill",
+                    size: 38
+                )
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Address")
+                        .font(.caption.bold())
+                        .foregroundStyle(palette.textSecondary)
+
+                    Text(viewModel.addressText)
                         .font(.subheadline)
-                        .foregroundStyle(palette.textSecondary)
-
-                    Label("Member since \(viewModel.memberSinceText)", systemImage: "calendar")
-                        .font(.caption.weight(.medium))
-                        .foregroundStyle(palette.textSecondary)
+                        .foregroundStyle(palette.textPrimary)
+                        .multilineTextAlignment(.leading)
                 }
 
                 Spacer()
             }
+            .padding(14)
+            .background(
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .fill(palette.elevatedCard)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .stroke(palette.stroke, lineWidth: 1)
+            )
+        }
+        .frame(maxWidth: .infinity)
+        .appCardStyle(theme, emphasized: false)
+    }
+    
+    private func compactInfoCard(
+        title: String,
+        value: String,
+        systemImage: String
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                Image(systemName: systemImage)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(palette.primary)
 
-            VStack(spacing: 10) {
-                infoPill(title: "Phone", value: viewModel.phoneText)
-                infoPill(title: "Birthday", value: viewModel.birthdayText)
-                infoPill(title: "Address", value: viewModel.addressText)
+                Text(title)
+                    .font(.caption.bold())
+                    .foregroundStyle(palette.textSecondary)
             }
+
+            Text(value)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(palette.textPrimary)
+                .lineLimit(2)
+                .minimumScaleFactor(0.85)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .appCardStyle(theme, emphasized: false)
+        .padding(14)
+        .background(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(palette.elevatedCard)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(palette.stroke, lineWidth: 1)
+        )
     }
 
     private func infoPill(title: String, value: String) -> some View {
@@ -7931,11 +8683,77 @@ struct ProfileView: View {
     }
 
     private var statsSection: some View {
-        HStack(spacing: 12) {
-            statCard(title: "Points", value: "\(viewModel.stats.points)")
-            statCard(title: "Orders", value: "\(viewModel.stats.orders)")
-            statCard(title: "Bookings", value: "\(viewModel.stats.bookings)")
+        VStack(spacing: 12) {
+            HStack {
+                Text("Overview")
+                    .font(.headline)
+                    .foregroundStyle(palette.textPrimary)
+
+                Spacer()
+            }
+
+            HStack(spacing: 12) {
+                profileStatCard(
+                    title: "Points",
+                    value: "\(viewModel.stats.points)",
+                    systemImage: "star.fill"
+                )
+
+                profileStatCard(
+                    title: "Orders",
+                    value: "\(viewModel.stats.orders)",
+                    systemImage: "fork.knife"
+                )
+
+                profileStatCard(
+                    title: "Bookings",
+                    value: "\(viewModel.stats.bookings)",
+                    systemImage: "calendar"
+                )
+            }
         }
+    }
+    
+    private func profileStatCard(
+        title: String,
+        value: String,
+        systemImage: String
+    ) -> some View {
+        VStack(spacing: 10) {
+            ZStack {
+                Circle()
+                    .fill(palette.chipGradient)
+                    .frame(width: 42, height: 42)
+
+                Image(systemName: systemImage)
+                    .font(.subheadline.weight(.bold))
+                    .foregroundStyle(palette.primary)
+            }
+
+            Text(value)
+                .font(.title3.bold())
+                .foregroundStyle(palette.textPrimary)
+
+            Text(title)
+                .font(.caption.weight(.medium))
+                .foregroundStyle(palette.textSecondary)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 16)
+        .background(
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .fill(palette.cardGradient)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .stroke(palette.stroke, lineWidth: 1)
+        )
+        .shadow(
+            color: palette.shadow.opacity(colorScheme == .dark ? 0.14 : 0.06),
+            radius: 8,
+            x: 0,
+            y: 4
+        )
     }
 
     private func statCard(title: String, value: String) -> some View {
@@ -7950,6 +8768,107 @@ struct ProfileView: View {
         }
         .frame(maxWidth: .infinity)
         .appCardStyle(theme)
+    }
+    
+    private var mainMenuSection: some View {
+        VStack(spacing: 12) {
+            sectionHeader("Settings")
+
+            NavigationLink {
+                ProfileAccountHubView(viewModel: viewModel)
+            } label: {
+                navigationRow(
+                    title: "Account",
+                    subtitle: "Personal information, rewards and birthday benefits",
+                    systemImage: "person.crop.circle",
+                    tint: .blue
+                )
+            }
+            .buttonStyle(.plain)
+
+            NavigationLink {
+                ProfilePreferencesHubView(viewModel: viewModel)
+            } label: {
+                navigationRow(
+                    title: "Preferences",
+                    subtitle: "Appearance and app permissions",
+                    systemImage: "slider.horizontal.3",
+                    tint: .purple
+                )
+            }
+            .buttonStyle(.plain)
+
+            NavigationLink {
+                ProfileSupportHubView()
+            } label: {
+                navigationRow(
+                    title: "Help & Support",
+                    subtitle: "Support, privacy policy and terms",
+                    systemImage: "questionmark.circle",
+                    tint: .teal
+                )
+            }
+            .buttonStyle(.plain)
+        }
+    }
+    
+    private var socialCompactSection: some View {
+        VStack(spacing: 12) {
+            sectionHeader("Social & Visit Us")
+
+            HStack(spacing: 14) {
+                socialIconButton(
+                    systemImage: "camera.fill",
+                    tint: .pink,
+                    action: { openURL(AppExternalLinks.instagram) }
+                )
+
+                socialIconButton(
+                    systemImage: "music.note.tv",
+                    tint: .black,
+                    action: { openURL(AppExternalLinks.tiktok) }
+                )
+
+                socialIconButton(
+                    systemImage: "f.cursive.circle.fill",
+                    tint: .blue,
+                    action: { openURL(AppExternalLinks.facebook) }
+                )
+
+                socialIconButton(
+                    systemImage: "message.fill",
+                    tint: .green,
+                    action: { openURL(AppExternalLinks.whatsapp) }
+                )
+
+                socialIconButton(
+                    systemImage: "map.fill",
+                    tint: .red,
+                    action: { openURL(AppExternalLinks.maps) }
+                )
+            }
+            .frame(maxWidth: .infinity)
+            .appCardStyle(theme)
+        }
+    }
+
+    private func socialIconButton(
+        systemImage: String,
+        tint: Color,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            ZStack {
+                Circle()
+                    .fill(tint.opacity(colorScheme == .dark ? 0.22 : 0.14))
+                    .frame(width: 54, height: 54)
+
+                Image(systemName: systemImage)
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(tint)
+            }
+        }
+        .buttonStyle(.plain)
     }
 
     private var accountSection: some View {
@@ -8095,25 +9014,95 @@ struct ProfileView: View {
 
     private var dangerSection: some View {
         VStack(spacing: 12) {
-            sectionHeader("Danger Zone")
+            HStack {
+                Text("Account Actions")
+                    .font(.headline)
+                    .foregroundStyle(palette.textPrimary)
 
-            actionRow(
-                title: "Sign Out",
-                subtitle: "Close your current session",
-                systemImage: "rectangle.portrait.and.arrow.right",
-                tint: .orange
-            ) {
+                Spacer()
+            }
+
+            Button {
                 viewModel.signOutTapped()
-            }
+            } label: {
+                HStack(spacing: 14) {
+                    ZStack {
+                        Circle()
+                            .fill(Color.orange.opacity(colorScheme == .dark ? 0.20 : 0.12))
+                            .frame(width: 44, height: 44)
 
-            actionRow(
-                title: "Delete Account",
-                subtitle: "Permanently remove your account",
-                systemImage: "trash.fill",
-                tint: .red
-            ) {
-                viewModel.askForDeleteAccount()
+                        Image(systemName: "rectangle.portrait.and.arrow.right")
+                            .font(.headline)
+                            .foregroundStyle(.orange)
+                    }
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Sign Out")
+                            .font(.headline)
+                            .foregroundStyle(palette.textPrimary)
+
+                        Text("Close your current session")
+                            .font(.subheadline)
+                            .foregroundStyle(palette.textSecondary)
+                    }
+
+                    Spacer()
+
+                    Image(systemName: "chevron.right")
+                        .foregroundStyle(palette.textTertiary)
+                }
+                .padding(16)
+                .background(
+                    RoundedRectangle(cornerRadius: 22, style: .continuous)
+                        .fill(palette.cardGradient)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 22, style: .continuous)
+                        .stroke(palette.stroke, lineWidth: 1)
+                )
             }
+            .buttonStyle(.plain)
+
+            Button {
+                viewModel.askForDeleteAccount()
+            } label: {
+                HStack(spacing: 14) {
+                    ZStack {
+                        Circle()
+                            .fill(Color.red.opacity(0.16))
+                            .frame(width: 44, height: 44)
+
+                        Image(systemName: "trash.fill")
+                            .font(.headline)
+                            .foregroundStyle(.red)
+                    }
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Delete Account")
+                            .font(.headline)
+                            .foregroundStyle(.red)
+
+                        Text("Permanently remove your account")
+                            .font(.subheadline)
+                            .foregroundStyle(palette.textSecondary)
+                    }
+
+                    Spacer()
+
+                    Image(systemName: "chevron.right")
+                        .foregroundStyle(.red.opacity(0.7))
+                }
+                .padding(16)
+                .background(
+                    RoundedRectangle(cornerRadius: 22, style: .continuous)
+                        .fill(Color.red.opacity(colorScheme == .dark ? 0.10 : 0.06))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 22, style: .continuous)
+                        .stroke(Color.red.opacity(0.22), lineWidth: 1)
+                )
+            }
+            .buttonStyle(.plain)
         }
     }
 
@@ -8515,6 +9504,61 @@ final class ProfileViewModel: ObservableObject {
 
 ---
 
+# Altos del Murco/root/feature/altos/restaurant/data/remote/dto/MenuItemDto.swift
+
+```swift
+//
+//  MenuItemDto.swift
+//  Altos del Murco
+//
+//  Created by José Ruiz on 16/4/26.
+//
+
+import Foundation
+import FirebaseFirestore
+
+struct MenuItemDto: Codable {
+    let id: String
+    let categoryId: String
+    let categoryTitle: String
+    let name: String
+    let description: String
+    let notes: String?
+    let ingredients: [String]
+    let price: Double
+    let offerPrice: Double?
+    let imageURL: String?
+    let isAvailable: Bool
+    let remainingQuantity: Int
+    let isFeatured: Bool
+    let sortOrder: Int
+    let createdAt: Timestamp?
+    let updatedAt: Timestamp?
+
+    func toDomain() -> MenuItem {
+        MenuItem(
+            id: id,
+            categoryId: categoryId,
+            categoryTitle: categoryTitle,
+            name: name,
+            description: description,
+            notes: notes,
+            ingredients: ingredients,
+            price: price,
+            offerPrice: offerPrice,
+            imageURL: imageURL,
+            isAvailable: isAvailable,
+            remainingQuantity: max(0, remainingQuantity),
+            isFeatured: isFeatured,
+            sortOrder: sortOrder
+        )
+    }
+}
+
+```
+
+---
+
 # Altos del Murco/root/feature/altos/restaurant/data/remote/dto/OrderDto.swift
 
 ```swift
@@ -8718,6 +9762,83 @@ final class CartPersistenceService {
 
 ---
 
+# Altos del Murco/root/feature/altos/restaurant/data/remote/service/MenuService.swift
+
+```swift
+//
+//  MenuService.swift
+//  Altos del Murco
+//
+//  Created by José Ruiz on 16/4/26.
+//
+
+import Foundation
+import FirebaseFirestore
+
+final class MenuService: MenuServiceable {
+    private let db: Firestore
+
+    init(db: Firestore = Firestore.firestore()) {
+        self.db = db
+    }
+
+    func observeMenu(
+        onChange: @escaping (Result<[MenuSection], Error>) -> Void
+    ) -> MenuListenerTokenable {
+        let registration = db
+            .collection(FirestoreConstants.restaurant_menu_items)
+            .order(by: "categoryTitle")
+            .order(by: "sortOrder")
+            .addSnapshotListener { snapshot, error in
+                if let error {
+                    onChange(.failure(error))
+                    return
+                }
+
+                guard let documents = snapshot?.documents else {
+                    onChange(.success([]))
+                    return
+                }
+
+                do {
+                    let items = try documents.map { document in
+                        try document.data(as: MenuItemDto.self).toDomain()
+                    }
+
+                    let sections = Self.groupIntoSections(items: items)
+                    onChange(.success(sections))
+                } catch {
+                    onChange(.failure(error))
+                }
+            }
+
+        return MenuListenerToken(registration: registration)
+    }
+
+    private static func groupIntoSections(items: [MenuItem]) -> [MenuSection] {
+        let grouped = Dictionary(grouping: items, by: \.categoryId)
+
+        let sections = grouped.compactMap { categoryId, items -> MenuSection? in
+            guard let first = items.first else { return nil }
+
+            return MenuSection(
+                id: categoryId,
+                category: MenuCategory(
+                    id: categoryId,
+                    title: first.categoryTitle
+                ),
+                items: items.sorted { $0.sortOrder < $1.sortOrder }
+            )
+        }
+
+        return sections.sorted { $0.category.title < $1.category.title }
+    }
+}
+
+```
+
+---
+
 # Altos del Murco/root/feature/altos/restaurant/data/remote/service/OrdersService.swift
 
 ```swift
@@ -8735,14 +9856,53 @@ final class FirebaseOrdersService: OrdersServiceable {
     private lazy var db = Firestore.firestore()
     
     func submit(order: Order) async throws {
-        let dto = OrderDto(from: order)
-        let data = try Firestore.Encoder().encode(dto)
-        
-        print("OrdersService, notes: \(order.items.map { $0.notes ?? "" })")
-        try await db
-            .collection(FirestoreConstants.restaurant_orders)
-            .document(order.id)
-            .setData(data)
+        let _ = try await db.runTransaction { transaction, errorPointer in
+            do {
+                for item in order.items {
+                    let ref = self.db
+                        .collection(FirestoreConstants.restaurant_menu_items)
+                        .document(item.menuItemId)
+                    
+                    let snapshot = try transaction.getDocument(ref)
+                    let dto = try snapshot.data(as: MenuItemDto.self)
+                    
+                    guard dto.isAvailable else {
+                        throw NSError(
+                            domain: "OrdersService",
+                            code: 1,
+                            userInfo: [NSLocalizedDescriptionKey: "\(dto.name) no está disponible."]
+                        )
+                    }
+                    
+                    guard dto.remainingQuantity >= item.quantity else {
+                        throw NSError(
+                            domain: "OrdersService",
+                            code: 2,
+                            userInfo: [NSLocalizedDescriptionKey: "Ya no hay suficiente stock de \(dto.name)."]
+                        )
+                    }
+                    
+                    transaction.updateData([
+                        "remainingQuantity": dto.remainingQuantity - item.quantity,
+                        "updatedAt": Timestamp(date: Date())
+                    ], forDocument: ref)
+                }
+                
+                let dto = OrderDto(from: order)
+                let orderData = try Firestore.Encoder().encode(dto)
+                
+                let orderRef = self.db
+                    .collection(FirestoreConstants.restaurant_orders)
+                    .document(order.id)
+                
+                transaction.setData(orderData, forDocument: orderRef)
+            } catch {
+                errorPointer?.pointee = error as NSError
+                return nil
+            }
+            
+            return nil
+        }
     }
     
     func observeOrders(for nationalId: String) -> AsyncThrowingStream<[Order], Error> {
@@ -9098,6 +10258,7 @@ import Foundation
 struct MenuItem: Identifiable, Hashable {
     let id: String
     let categoryId: String
+    let categoryTitle: String
     let name: String
     let description: String
     var notes: String?
@@ -9106,821 +10267,67 @@ struct MenuItem: Identifiable, Hashable {
     let offerPrice: Double?
     let imageURL: String?
     let isAvailable: Bool
+    let remainingQuantity: Int
     let isFeatured: Bool
-    
+    let sortOrder: Int
+
+    init(
+        id: String,
+        categoryId: String,
+        categoryTitle: String = "",
+        name: String,
+        description: String,
+        notes: String? = nil,
+        ingredients: [String],
+        price: Double,
+        offerPrice: Double? = nil,
+        imageURL: String? = nil,
+        isAvailable: Bool = true,
+        remainingQuantity: Int = 20,
+        isFeatured: Bool = false,
+        sortOrder: Int = 0
+    ) {
+        self.id = id
+        self.categoryId = categoryId
+        self.categoryTitle = categoryTitle
+        self.name = name
+        self.description = description
+        self.notes = notes
+        self.ingredients = ingredients
+        self.price = price
+        self.offerPrice = offerPrice
+        self.imageURL = imageURL
+        self.isAvailable = isAvailable
+        self.remainingQuantity = max(0, remainingQuantity)
+        self.isFeatured = isFeatured
+        self.sortOrder = sortOrder
+    }
+
     var hasOffer: Bool {
         guard let offerPrice else { return false }
         return offerPrice < price
     }
-    
+
     var finalPrice: Double {
         offerPrice ?? price
     }
+
+    var isSoldOut: Bool {
+        remainingQuantity <= 0
+    }
+
+    var canBeOrdered: Bool {
+        isAvailable && remainingQuantity > 0
+    }
+
+    var stockLabel: String {
+        if !isAvailable { return "No disponible" }
+        if remainingQuantity <= 0 { return "Agotado" }
+        if remainingQuantity == 1 { return "Último plato" }
+        if remainingQuantity <= 5 { return "Quedan \(remainingQuantity)" }
+        return "\(remainingQuantity) disponibles"
+    }
 }
-
-
-```
-
----
-
-# Altos del Murco/root/feature/altos/restaurant/domain/model/menu/MenuMockData.swift
-
-```swift
-//
-//  MenuMockData.swift
-//  Altos del Murco
-//
-//  Created by José Ruiz on 12/3/26.
-//
-
-import Foundation
-
-struct MenuMockData {
-    static let entradasCategory = MenuCategory(id: "entradas", title: "Entradas")
-    static let sopasCategory = MenuCategory(id: "sopas", title: "Sopas")
-    static let platosFuertesCategory = MenuCategory(id: "platos-fuertes", title: "Platos Fuertes")
-    static let extrasCategory = MenuCategory(id: "extras", title: "Extras")
-    static let postresCategory = MenuCategory(id: "postres", title: "Postres")
-    static let bebidasCategory = MenuCategory(id: "bebidas", title: "Bebidas")
-    static let bebidasAlcoholicasCategory = MenuCategory(id: "bebidas-alcoholicas", title: "Bebidas Alcohólicas")
-
-    static let sections: [MenuSection] = [
-        MenuSection(
-            id: entradasCategory.id,
-            category: entradasCategory,
-            items: [
-                MenuItem(
-                    id: "choclo-con-queso",
-                    categoryId: entradasCategory.id,
-                    name: "Choclo con queso",
-                    description: "Entrada tradicional serrana, ideal para abrir el apetito.",
-                    notes: nil,
-                    ingredients: [
-                        "Choclo",
-                        "Queso"
-                    ],
-                    price: 2.00,
-                    offerPrice: nil,
-                    imageURL: nil,
-                    isAvailable: true,
-                    isFeatured: false
-                ),
-                MenuItem(
-                    id: "habas-con-queso",
-                    categoryId: entradasCategory.id,
-                    name: "Habas con queso",
-                    description: "Clásica combinación serrana, fresca y deliciosa.",
-                    notes: nil,
-                    ingredients: [
-                        "Habas",
-                        "Queso"
-                    ],
-                    price: 2.00,
-                    offerPrice: nil,
-                    imageURL: nil,
-                    isAvailable: true,
-                    isFeatured: false
-                ),
-                MenuItem(
-                    id: "maduro-con-queso",
-                    categoryId: entradasCategory.id,
-                    name: "Maduro con queso",
-                    description: "Maduro suave y dulce con el contraste perfecto del queso.",
-                    notes: nil,
-                    ingredients: [
-                        "Maduro",
-                        "Queso"
-                    ],
-                    price: 2.00,
-                    offerPrice: nil,
-                    imageURL: nil,
-                    isAvailable: true,
-                    isFeatured: false
-                ),
-                MenuItem(
-                    id: "bandeja-mixta",
-                    categoryId: entradasCategory.id,
-                    name: "Bandeja mixta",
-                    description: "Mix de entradas con auténtico sabor serrano.",
-                    notes: nil,
-                    ingredients: [
-                        "Choclo",
-                        "Habas",
-                        "Maduro",
-                        "Queso"
-                    ],
-                    price: 6.00,
-                    offerPrice: nil,
-                    imageURL: nil,
-                    isAvailable: true,
-                    isFeatured: true
-                )
-            ]
-        ),
-
-        MenuSection(
-            id: sopasCategory.id,
-            category: sopasCategory,
-            items: [
-                MenuItem(
-                    id: "caldo-de-gallina",
-                    categoryId: sopasCategory.id,
-                    name: "Caldo de gallina",
-                    description: "Delicioso caldo de gallina de campo con papas y verduras.",
-                    notes: nil,
-                    ingredients: [
-                        "Gallina",
-                        "Papa",
-                        "Verduras",
-                        "Caldo"
-                    ],
-                    price: 3.00,
-                    offerPrice: nil,
-                    imageURL: nil,
-                    isAvailable: true,
-                    isFeatured: false
-                ),
-                MenuItem(
-                    id: "yahuarlocro",
-                    categoryId: sopasCategory.id,
-                    name: "Yahuarlocro",
-                    description: "Locro de papas con entrañas de borrego, aguacate, tomate, sangre de borrego y cebolla.",
-                    notes: nil,
-                    ingredients: [
-                        "Papa",
-                        "Entrañas de borrego",
-                        "Aguacate",
-                        "Tomate",
-                        "Sangre de borrego",
-                        "Cebolla"
-                    ],
-                    price: 5.00,
-                    offerPrice: nil,
-                    imageURL: nil,
-                    isAvailable: true,
-                    isFeatured: true
-                )
-            ]
-        ),
-
-        MenuSection(
-            id: platosFuertesCategory.id,
-            category: platosFuertesCategory,
-            items: [
-                MenuItem(
-                    id: "cuy-asado-medio",
-                    categoryId: platosFuertesCategory.id,
-                    name: "Cuy asado - Medio",
-                    description: "Crujiente y jugoso cuy asado con papas cocidas, encurtido, aguacate, tostado y salsa de maní.",
-                    notes: nil,
-                    ingredients: [
-                        "Medio cuy asado",
-                        "Papas cocidas",
-                        "Encurtido de cebolla y tomate",
-                        "Aguacate",
-                        "Tostado",
-                        "Salsa de maní"
-                    ],
-                    price: 12.00,
-                    offerPrice: nil,
-                    imageURL: nil,
-                    isAvailable: true,
-                    isFeatured: true
-                ),
-                MenuItem(
-                    id: "cuy-asado-entero",
-                    categoryId: platosFuertesCategory.id,
-                    name: "Cuy asado - Entero",
-                    description: "Crujiente y jugoso cuy asado con papas cocidas, encurtido, aguacate, tostado y salsa de maní.",
-                    notes: nil,
-                    ingredients: [
-                        "Cuy asado",
-                        "Papas cocidas",
-                        "Encurtido de cebolla y tomate",
-                        "Aguacate",
-                        "Tostado",
-                        "Salsa de maní"
-                    ],
-                    price: 24.00,
-                    offerPrice: nil,
-                    imageURL: nil,
-                    isAvailable: true,
-                    isFeatured: true
-                ),
-                MenuItem(
-                    id: "parrillada-andina-individual",
-                    categoryId: platosFuertesCategory.id,
-                    name: "Parrillada Andina - Individual",
-                    description: "Pollo, chuleta de lomo o chuleta de cerdo con chorizo parrillero, morcilla, choclo, habas y papa chaucha.",
-                    notes: nil,
-                    ingredients: [
-                        "Chorizo parrillero",
-                        "Morcilla",
-                        "Pollo",
-                        "Chuleta de lomo",
-                        "Chuleta de cerdo",
-                        "Choclo",
-                        "Habas",
-                        "Papa chaucha"
-                    ],
-                    price: 8.00,
-                    offerPrice: nil,
-                    imageURL: nil,
-                    isAvailable: true,
-                    isFeatured: false
-                ),
-                MenuItem(
-                    id: "parrillada-andina-completa",
-                    categoryId: platosFuertesCategory.id,
-                    name: "Parrillada Andina - Completa",
-                    description: "Chorizo parrillero, morcilla, pollo, chuleta de lomo y chuleta de cerdo con choclo, habas y papa chaucha.",
-                    notes: nil,
-                    ingredients: [
-                        "Chorizo parrillero",
-                        "Morcilla",
-                        "Pollo",
-                        "Chuleta de lomo",
-                        "Chuleta de cerdo",
-                        "Choclo",
-                        "Habas",
-                        "Papa chaucha"
-                    ],
-                    price: 12.00,
-                    offerPrice: nil,
-                    imageURL: nil,
-                    isAvailable: true,
-                    isFeatured: false
-                ),
-                MenuItem(
-                    id: "parrillada-andina-para-dos",
-                    categoryId: platosFuertesCategory.id,
-                    name: "Parrillada Andina - Para dos",
-                    description: "Chorizo parrillero, morcilla, pollo, chuleta de lomo y chuleta de cerdo con choclo, habas y papa chaucha.",
-                    notes: nil,
-                    ingredients: [
-                        "Chorizo parrillero",
-                        "Morcilla",
-                        "Pollo",
-                        "Chuleta de lomo",
-                        "Chuleta de cerdo",
-                        "Choclo",
-                        "Habas",
-                        "Papa chaucha"
-                    ],
-                    price: 23.00,
-                    offerPrice: nil,
-                    imageURL: nil,
-                    isAvailable: true,
-                    isFeatured: true
-                ),
-                MenuItem(
-                    id: "parrillada-andina-familiar",
-                    categoryId: platosFuertesCategory.id,
-                    name: "Parrillada Andina - Familiar",
-                    description: "Chorizo parrillero, morcilla, pollo, chuleta de lomo y chuleta de cerdo con choclo, habas y papa chaucha.",
-                    notes: nil,
-                    ingredients: [
-                        "Chorizo parrillero",
-                        "Morcilla",
-                        "Pollo",
-                        "Chuleta de lomo",
-                        "Chuleta de cerdo",
-                        "Choclo",
-                        "Habas",
-                        "Papa chaucha"
-                    ],
-                    price: 34.00,
-                    offerPrice: nil,
-                    imageURL: nil,
-                    isAvailable: true,
-                    isFeatured: true
-                ),
-                MenuItem(
-                    id: "parrillada-altos-individual",
-                    categoryId: platosFuertesCategory.id,
-                    name: "Parrillada Altos - Individual",
-                    description: "Pollo, chuleta de lomo o chuleta de cerdo con chorizo parrillero, morcilla, asados al carbón y papas fritas.",
-                    notes: nil,
-                    ingredients: [
-                        "Chorizo parrillero",
-                        "Morcilla",
-                        "Pollo",
-                        "Chuleta de lomo",
-                        "Chuleta de cerdo",
-                        "Papas fritas"
-                    ],
-                    price: 8.00,
-                    offerPrice: nil,
-                    imageURL: nil,
-                    isAvailable: true,
-                    isFeatured: false
-                ),
-                MenuItem(
-                    id: "parrillada-altos-completa",
-                    categoryId: platosFuertesCategory.id,
-                    name: "Parrillada Altos - Completa",
-                    description: "Chorizo parrillero, morcilla, pollo, chuleta de lomo y chuleta de cerdo asados al carbón con papas fritas.",
-                    notes: nil,
-                    ingredients: [
-                        "Chorizo parrillero",
-                        "Morcilla",
-                        "Pollo",
-                        "Chuleta de lomo",
-                        "Chuleta de cerdo",
-                        "Papas fritas"
-                    ],
-                    price: 12.00,
-                    offerPrice: nil,
-                    imageURL: nil,
-                    isAvailable: true,
-                    isFeatured: false
-                ),
-                MenuItem(
-                    id: "parrillada-altos-para-dos",
-                    categoryId: platosFuertesCategory.id,
-                    name: "Parrillada Altos - Para dos",
-                    description: "Chorizo parrillero, morcilla, pollo, chuleta de lomo y chuleta de cerdo asados al carbón con papas fritas.",
-                    notes: nil,
-                    ingredients: [
-                        "Chorizo parrillero",
-                        "Morcilla",
-                        "Pollo",
-                        "Chuleta de lomo",
-                        "Chuleta de cerdo",
-                        "Papas fritas"
-                    ],
-                    price: 23.00,
-                    offerPrice: nil,
-                    imageURL: nil,
-                    isAvailable: true,
-                    isFeatured: true
-                ),
-                MenuItem(
-                    id: "parrillada-altos-familiar",
-                    categoryId: platosFuertesCategory.id,
-                    name: "Parrillada Altos - Familiar",
-                    description: "Chorizo parrillero, morcilla, pollo, chuleta de lomo y chuleta de cerdo asados al carbón con papas fritas.",
-                    notes: nil,
-                    ingredients: [
-                        "Chorizo parrillero",
-                        "Morcilla",
-                        "Pollo",
-                        "Chuleta de lomo",
-                        "Chuleta de cerdo",
-                        "Papas fritas"
-                    ],
-                    price: 34.00,
-                    offerPrice: nil,
-                    imageURL: nil,
-                    isAvailable: true,
-                    isFeatured: true
-                ),
-                MenuItem(
-                    id: "borrego-asado",
-                    categoryId: platosFuertesCategory.id,
-                    name: "Borrego asado",
-                    description: "Filete de borrego tierno y sabroso con choclo, habas, queso, papa chaucha y melloco.",
-                    notes: nil,
-                    ingredients: [
-                        "Filete de borrego",
-                        "Choclo",
-                        "Habas",
-                        "Queso",
-                        "Papa chaucha",
-                        "Melloco"
-                    ],
-                    price: 10.00,
-                    offerPrice: nil,
-                    imageURL: nil,
-                    isAvailable: true,
-                    isFeatured: true
-                ),
-                MenuItem(
-                    id: "costilla-bbq-jack-daniels",
-                    categoryId: platosFuertesCategory.id,
-                    name: "Costilla BBQ Jack Daniel’s",
-                    description: "Costilla de cerdo suave y jugosa bañada en salsa BBQ Jack Daniel’s, con papas fritas y arroz blanco.",
-                    notes: nil,
-                    ingredients: [
-                        "Costilla de cerdo",
-                        "Salsa BBQ Jack Daniel’s",
-                        "Papas fritas",
-                        "Arroz blanco"
-                    ],
-                    price: 10.00,
-                    offerPrice: nil,
-                    imageURL: nil,
-                    isAvailable: true,
-                    isFeatured: true
-                )
-            ]
-        ),
-
-        MenuSection(
-            id: extrasCategory.id,
-            category: extrasCategory,
-            items: [
-                MenuItem(
-                    id: "arroz",
-                    categoryId: extrasCategory.id,
-                    name: "Arroz",
-                    description: "Porción adicional de arroz blanco.",
-                    notes: nil,
-                    ingredients: [
-                        "Arroz"
-                    ],
-                    price: 1.00,
-                    offerPrice: nil,
-                    imageURL: nil,
-                    isAvailable: true,
-                    isFeatured: false
-                ),
-                MenuItem(
-                    id: "salsa-bbq",
-                    categoryId: extrasCategory.id,
-                    name: "Salsa BBQ",
-                    description: "Porción extra de salsa BBQ.",
-                    notes: nil,
-                    ingredients: [
-                        "Salsa BBQ"
-                    ],
-                    price: 1.00,
-                    offerPrice: nil,
-                    imageURL: nil,
-                    isAvailable: true,
-                    isFeatured: false
-                ),
-                MenuItem(
-                    id: "papas-fritas",
-                    categoryId: extrasCategory.id,
-                    name: "Papas fritas",
-                    description: "Porción extra de papas fritas.",
-                    notes: nil,
-                    ingredients: [
-                        "Papas fritas"
-                    ],
-                    price: 3.00,
-                    offerPrice: nil,
-                    imageURL: nil,
-                    isAvailable: true,
-                    isFeatured: false
-                )
-            ]
-        ),
-
-        MenuSection(
-            id: postresCategory.id,
-            category: postresCategory,
-            items: [
-                MenuItem(
-                    id: "fresas-con-crema",
-                    categoryId: postresCategory.id,
-                    name: "Fresas con crema",
-                    description: "Postre fresco y cremoso.",
-                    notes: nil,
-                    ingredients: [
-                        "Fresas",
-                        "Crema"
-                    ],
-                    price: 2.00,
-                    offerPrice: nil,
-                    imageURL: nil,
-                    isAvailable: true,
-                    isFeatured: false
-                ),
-                MenuItem(
-                    id: "helados-de-crema",
-                    categoryId: postresCategory.id,
-                    name: "Helados de crema",
-                    description: "Postre clásico y refrescante.",
-                    notes: nil,
-                    ingredients: [
-                        "Helado de crema"
-                    ],
-                    price: 2.00,
-                    offerPrice: nil,
-                    imageURL: nil,
-                    isAvailable: true,
-                    isFeatured: false
-                ),
-                MenuItem(
-                    id: "cheesecake-limon",
-                    categoryId: postresCategory.id,
-                    name: "Cheesecake de limón",
-                    description: "Cheesecake cremoso sabor limón.",
-                    notes: nil,
-                    ingredients: [
-                        "Queso crema",
-                        "Limón",
-                        "Base de galleta"
-                    ],
-                    price: 3.00,
-                    offerPrice: nil,
-                    imageURL: nil,
-                    isAvailable: true,
-                    isFeatured: false
-                ),
-                MenuItem(
-                    id: "cheesecake-maracuya",
-                    categoryId: postresCategory.id,
-                    name: "Cheesecake de maracuyá",
-                    description: "Cheesecake cremoso sabor maracuyá.",
-                    notes: nil,
-                    ingredients: [
-                        "Queso crema",
-                        "Maracuyá",
-                        "Base de galleta"
-                    ],
-                    price: 3.00,
-                    offerPrice: nil,
-                    imageURL: nil,
-                    isAvailable: true,
-                    isFeatured: false
-                ),
-                MenuItem(
-                    id: "cheesecake-arandano",
-                    categoryId: postresCategory.id,
-                    name: "Cheesecake de arándano",
-                    description: "Cheesecake cremoso sabor arándano.",
-                    notes: nil,
-                    ingredients: [
-                        "Queso crema",
-                        "Arándano",
-                        "Base de galleta"
-                    ],
-                    price: 3.00,
-                    offerPrice: nil,
-                    imageURL: nil,
-                    isAvailable: true,
-                    isFeatured: false
-                )
-            ]
-        ),
-
-        MenuSection(
-            id: bebidasCategory.id,
-            category: bebidasCategory,
-            items: [
-                MenuItem(
-                    id: "jugo-natural-personal",
-                    categoryId: bebidasCategory.id,
-                    name: "Jugo natural - Personal",
-                    description: "Jugo refrescante preparado al momento.",
-                    notes: nil,
-                    ingredients: [
-                        "Fruta natural",
-                        "Agua",
-                        "Azúcar"
-                    ],
-                    price: 1.00,
-                    offerPrice: nil,
-                    imageURL: nil,
-                    isAvailable: true,
-                    isFeatured: false
-                ),
-                MenuItem(
-                    id: "jugo-natural-jarra",
-                    categoryId: bebidasCategory.id,
-                    name: "Jugo natural - Jarra",
-                    description: "Jugo natural ideal para compartir.",
-                    notes: nil,
-                    ingredients: [
-                        "Fruta natural",
-                        "Agua",
-                        "Azúcar"
-                    ],
-                    price: 3.00,
-                    offerPrice: nil,
-                    imageURL: nil,
-                    isAvailable: true,
-                    isFeatured: true
-                ),
-                MenuItem(
-                    id: "jarra-de-chicha",
-                    categoryId: bebidasCategory.id,
-                    name: "Jarra de chicha",
-                    description: "Bebida de jora, panela y hierbas.",
-                    notes: nil,
-                    ingredients: [
-                        "Jora",
-                        "Panela",
-                        "Hierbas"
-                    ],
-                    price: 3.00,
-                    offerPrice: nil,
-                    imageURL: nil,
-                    isAvailable: true,
-                    isFeatured: false
-                ),
-                MenuItem(
-                    id: "cola-500ml",
-                    categoryId: bebidasCategory.id,
-                    name: "Cola personal",
-                    description: "Bebida gaseosa personal.",
-                    notes: nil,
-                    ingredients: [
-                        "Cola"
-                    ],
-                    price: 0.50,
-                    offerPrice: nil,
-                    imageURL: nil,
-                    isAvailable: true,
-                    isFeatured: false
-                ),
-                MenuItem(
-                    id: "cola-125l",
-                    categoryId: bebidasCategory.id,
-                    name: "Cola 1.25 L",
-                    description: "Bebida gaseosa para compartir.",
-                    notes: nil,
-                    ingredients: [
-                        "Cola"
-                    ],
-                    price: 1.50,
-                    offerPrice: nil,
-                    imageURL: nil,
-                    isAvailable: true,
-                    isFeatured: false
-                ),
-                MenuItem(
-                    id: "agua",
-                    categoryId: bebidasCategory.id,
-                    name: "Agua",
-                    description: "Agua embotellada sin gas.",
-                    notes: nil,
-                    ingredients: [
-                        "Agua"
-                    ],
-                    price: 1.00,
-                    offerPrice: nil,
-                    imageURL: nil,
-                    isAvailable: true,
-                    isFeatured: false
-                ),
-                MenuItem(
-                    id: "agua-mineral",
-                    categoryId: bebidasCategory.id,
-                    name: "Agua mineral",
-                    description: "Agua mineral refrescante.",
-                    notes: nil,
-                    ingredients: [
-                        "Agua mineral"
-                    ],
-                    price: 1.50,
-                    offerPrice: nil,
-                    imageURL: nil,
-                    isAvailable: true,
-                    isFeatured: false
-                ),
-                MenuItem(
-                    id: "cafe-sweet-and-coffee",
-                    categoryId: bebidasCategory.id,
-                    name: "Café Sweet And Coffee",
-                    description: "Café caliente para acompañar postres o una buena conversación.",
-                    notes: nil,
-                    ingredients: [
-                        "Café"
-                    ],
-                    price: 2.00,
-                    offerPrice: nil,
-                    imageURL: nil,
-                    isAvailable: true,
-                    isFeatured: false
-                ),
-                MenuItem(
-                    id: "te-twinings",
-                    categoryId: bebidasCategory.id,
-                    name: "Té Twinings",
-                    description: "Té caliente y aromático.",
-                    notes: nil,
-                    ingredients: [
-                        "Té Twinings"
-                    ],
-                    price: 2.00,
-                    offerPrice: nil,
-                    imageURL: nil,
-                    isAvailable: true,
-                    isFeatured: false
-                )
-            ]
-        ),
-
-        MenuSection(
-            id: bebidasAlcoholicasCategory.id,
-            category: bebidasAlcoholicasCategory,
-            items: [
-                MenuItem(
-                    id: "cerveza-club-pequena",
-                    categoryId: bebidasAlcoholicasCategory.id,
-                    name: "Cerveza Club pequeña",
-                    description: "Cerveza Club pequeña bien fría.",
-                    notes: nil,
-                    ingredients: [
-                        "Cerveza Club"
-                    ],
-                    price: 1.50,
-                    offerPrice: nil,
-                    imageURL: nil,
-                    isAvailable: true,
-                    isFeatured: false
-                ),
-                MenuItem(
-                    id: "cerveza-club-mediana",
-                    categoryId: bebidasAlcoholicasCategory.id,
-                    name: "Cerveza Club mediana",
-                    description: "Cerveza Club mediana bien fría.",
-                    notes: nil,
-                    ingredients: [
-                        "Cerveza Club"
-                    ],
-                    price: 2.50,
-                    offerPrice: nil,
-                    imageURL: nil,
-                    isAvailable: true,
-                    isFeatured: false
-                ),
-                MenuItem(
-                    id: "cerveza-club-grande",
-                    categoryId: bebidasAlcoholicasCategory.id,
-                    name: "Cerveza Club grande",
-                    description: "Cerveza Club grande bien fría.",
-                    notes: nil,
-                    ingredients: [
-                        "Cerveza Club"
-                    ],
-                    price: 3.50,
-                    offerPrice: nil,
-                    imageURL: nil,
-                    isAvailable: true,
-                    isFeatured: false
-                ),
-                MenuItem(
-                    id: "cerveza-coronita",
-                    categoryId: bebidasAlcoholicasCategory.id,
-                    name: "Cerveza Coronita",
-                    description: "Cerveza Coronita bien fría.",
-                    notes: nil,
-                    ingredients: [
-                        "Cerveza Coronita"
-                    ],
-                    price: 2.00,
-                    offerPrice: nil,
-                    imageURL: nil,
-                    isAvailable: true,
-                    isFeatured: false
-                ),
-                MenuItem(
-                    id: "cerveza-corona",
-                    categoryId: bebidasAlcoholicasCategory.id,
-                    name: "Cerveza Corona",
-                    description: "Cerveza Corona bien fría.",
-                    notes: nil,
-                    ingredients: [
-                        "Cerveza Corona"
-                    ],
-                    price: 3.50,
-                    offerPrice: nil,
-                    imageURL: nil,
-                    isAvailable: true,
-                    isFeatured: false
-                ),
-                MenuItem(
-                    id: "cerveza-modelo",
-                    categoryId: bebidasAlcoholicasCategory.id,
-                    name: "Cerveza Modelo",
-                    description: "Cerveza Modelo bien fría.",
-                    notes: nil,
-                    ingredients: [
-                        "Cerveza Modelo"
-                    ],
-                    price: 3.50,
-                    offerPrice: nil,
-                    imageURL: nil,
-                    isAvailable: true,
-                    isFeatured: false
-                ),
-                MenuItem(
-                    id: "vino-artesanal",
-                    categoryId: bebidasAlcoholicasCategory.id,
-                    name: "Vino artesanal",
-                    description: "Vino artesanal de mortiño, mora y uva.",
-                    notes: nil,
-                    ingredients: [
-                        "Mortiño",
-                        "Mora",
-                        "Uva"
-                    ],
-                    price: 20.00,
-                    offerPrice: nil,
-                    imageURL: nil,
-                    isAvailable: true,
-                    isFeatured: true
-                )
-            ]
-        )
-    ]
-}
-
 
 ```
 
@@ -10220,6 +10627,61 @@ enum OrderStatus: String, Codable, Hashable, CaseIterable {
 
 ---
 
+# Altos del Murco/root/feature/altos/restaurant/domain/serviceable/MenuListenerToken.swift
+
+```swift
+//
+//  MenuListenerToken.swift
+//  Altos del Murco
+//
+//  Created by José Ruiz on 16/4/26.
+//
+
+import FirebaseFirestore
+
+final class MenuListenerToken: MenuListenerTokenable {
+    private var registration: ListenerRegistration?
+
+    init(registration: ListenerRegistration) {
+        self.registration = registration
+    }
+
+    func remove() {
+        registration?.remove()
+        registration = nil
+    }
+}
+
+```
+
+---
+
+# Altos del Murco/root/feature/altos/restaurant/domain/serviceable/MenuServiceable.swift
+
+```swift
+//
+//  MenuServiceable.swift
+//  Altos del Murco
+//
+//  Created by José Ruiz on 16/4/26.
+//
+
+import Foundation
+
+protocol MenuServiceable {
+    func observeMenu(
+        onChange: @escaping (Result<[MenuSection], Error>) -> Void
+    ) -> MenuListenerTokenable
+}
+
+protocol MenuListenerTokenable {
+    func remove()
+}
+
+```
+
+---
+
 # Altos del Murco/root/feature/altos/restaurant/domain/serviceable/OrdersServiceable.swift
 
 ```swift
@@ -10348,19 +10810,29 @@ import SwiftUI
 struct RestaurantRootView: View {
     @ObservedObject var ordersViewModel: OrdersViewModel
     @ObservedObject var checkoutViewModel: CheckoutViewModel
-    @ObservedObject var comboBuilderViewModel: AdventureComboBuilderViewModel
-    
+    @ObservedObject var adventureComboBuilderViewModel: AdventureComboBuilderViewModel
+    @ObservedObject var menuViewModel: MenuViewModel
+
     @State private var path = NavigationPath()
 
     var body: some View {
         NavigationStack(path: $path) {
-            MenuListView(
-                sections: MenuMockData.sections,
-                checkoutViewModel: checkoutViewModel,
-                ordersViewModel: ordersViewModel,
-                comboBuilderViewModel: comboBuilderViewModel,
-                path: $path
-            )
+            Group {
+                if menuViewModel.state.isLoading && menuViewModel.state.sections.isEmpty {
+                    ProgressView("Cargando menú...")
+                } else {
+                    MenuListView(
+                        sections: menuViewModel.state.sections,
+                        checkoutViewModel: checkoutViewModel,
+                        ordersViewModel: ordersViewModel,
+                        adventureComboBuilderViewModel: adventureComboBuilderViewModel,
+                        menuViewModel: menuViewModel,
+                        path: $path
+                    )
+                }
+            }
+            .onAppear { menuViewModel.onAppear() }
+            .onDisappear { menuViewModel.onDisappear() }
         }
     }
 }
@@ -10407,6 +10879,16 @@ struct CartItemRowView: View {
                         .foregroundStyle(.secondary)
                         .lineLimit(2)
 
+                    if !cartItem.menuItem.canBeOrdered {
+                        Text("Agotado")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.red)
+                    } else if cartItem.quantity >= cartItem.menuItem.remainingQuantity {
+                        Text("Límite alcanzado")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.orange)
+                    }
+                    
                     if let notes = cartItem.notes, !notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                         Text(notes)
                             .font(.footnote)
@@ -10461,7 +10943,7 @@ struct CartItemRowView: View {
                             .clipShape(Circle())
                     }
                     .buttonStyle(.borderless)
-                    .disabled(!cartItem.menuItem.isAvailable)
+                    .disabled(!cartItem.menuItem.canBeOrdered || cartItem.quantity >= cartItem.menuItem.remainingQuantity)
                 }
                 
                 Spacer()
@@ -10546,7 +11028,7 @@ final class CartManager: ObservableObject {
     var isEmpty: Bool { draft.isEmpty }
 
     func add(item: MenuItem, quantity: Int = 1, notes: String? = nil) {
-        guard item.isAvailable else { return }
+        guard item.canBeOrdered else { return }
         guard quantity > 0 else { return }
 
         let cleanNotes = notes?.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -10557,9 +11039,13 @@ final class CartManager: ObservableObject {
         }
 
         if let index = draft.items.firstIndex(where: { $0.menuItem.id == item.id && $0.notes == finalNotes }) {
-            draft.items[index].quantity += quantity
+            let current = draft.items[index].quantity
+            let next = min(current + quantity, item.remainingQuantity)
+            draft.items[index].quantity = next
         } else {
-            draft.items.append(CartItem(menuItem: item, quantity: quantity, notes: finalNotes))
+            let safeQuantity = min(quantity, item.remainingQuantity)
+            guard safeQuantity > 0 else { return }
+            draft.items.append(CartItem(menuItem: item, quantity: safeQuantity, notes: finalNotes))
         }
 
         draft.updatedAt = Date()
@@ -10569,9 +11055,15 @@ final class CartManager: ObservableObject {
     func increaseQuantity(for itemId: String, by amount: Int = 1) {
         guard amount > 0 else { return }
         guard let index = draft.items.firstIndex(where: { $0.menuItem.id == itemId }) else { return }
-        guard draft.items[index].menuItem.isAvailable else { return }
 
-        draft.items[index].quantity += amount
+        let menuItem = draft.items[index].menuItem
+        guard menuItem.canBeOrdered else { return }
+
+        let current = draft.items[index].quantity
+        let next = min(current + amount, menuItem.remainingQuantity)
+        guard next > current else { return }
+
+        draft.items[index].quantity = next
         draft.updatedAt = Date()
         persist()
     }
@@ -11091,15 +11583,17 @@ struct MenuItemDetailView: View {
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(palette.onPrimary.opacity(0.92))
                     
-                    if !item.isAvailable {
-                        Text("Unavailable")
-                            .font(.caption.weight(.bold))
-                            .foregroundStyle(palette.destructive)
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 6)
-                            .background(.white.opacity(0.92))
-                            .clipShape(Capsule())
-                    }
+                    Text(item.stockLabel)
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(item.canBeOrdered ? palette.onPrimary : palette.destructive)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(
+                            item.canBeOrdered
+                            ? .white.opacity(0.18)
+                            : .white.opacity(0.92)
+                        )
+                        .clipShape(Capsule())
                 }
             }
             .padding(20)
@@ -11198,8 +11692,14 @@ struct MenuItemDetailView: View {
                 subtitle: "Choose how many you want to add."
             )
             
-            QuantitySelectorView(quantity: $quantity, isEnabled: item.isAvailable, theme: .restaurant)
-                .opacity(item.isAvailable ? 1 : 0.55)
+            QuantitySelectorView(
+                quantity: $quantity,
+                isEnabled: item.canBeOrdered,
+                theme: .restaurant,
+                minimum: 1,
+                maximum: item.remainingQuantity
+            )
+            .opacity(item.isAvailable ? 1 : 0.55)
         }
         .appCardStyle(.restaurant)
     }
@@ -11251,6 +11751,13 @@ struct MenuItemDetailView: View {
                     Spacer()
                 }
                 
+                if !item.canBeOrdered {
+                    Text("No quedan platos disponibles por ahora.")
+                        .font(.footnote)
+                        .foregroundStyle(palette.destructive)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                
                 Button {
                     cartManager.add(item: item, quantity: quantity, notes: notesText)
                     
@@ -11268,10 +11775,10 @@ struct MenuItemDetailView: View {
                         }
                     }
                 } label: {
-                    Text(item.isAvailable ? "Add to Order" : "Unavailable")
+                    Text(item.canBeOrdered ? "Añadir a la orden" : "Agotado")
                 }
                 .buttonStyle(BrandPrimaryButtonStyle(theme: .restaurant))
-                .disabled(!item.isAvailable)
+                .disabled(!item.canBeOrdered)
             }
             .padding(16)
             .background(
@@ -11319,6 +11826,16 @@ struct MenuItemRowView: View {
         AppTheme.palette(for: .restaurant, scheme: colorScheme)
     }
     
+    private var stockTextColor: Color {
+        item.canBeOrdered ? palette.textSecondary : palette.destructive
+    }
+    
+    private var stockBackground: Color {
+        item.canBeOrdered
+        ? palette.elevatedCard
+        : palette.destructive.opacity(colorScheme == .dark ? 0.22 : 0.12)
+    }
+    
     var body: some View {
         HStack(alignment: .top, spacing: 14) {
             thumbnail
@@ -11339,59 +11856,66 @@ struct MenuItemRowView: View {
                 .stroke(palette.stroke, lineWidth: 1)
         )
         .shadow(
-            color: palette.shadow.opacity(colorScheme == .dark ? 0.20 : 0.08),
-            radius: 12,
+            color: palette.shadow.opacity(colorScheme == .dark ? 0.18 : 0.08),
+            radius: 10,
             x: 0,
             y: 6
         )
+        .opacity(item.canBeOrdered ? 1 : 0.58)
     }
     
     private var thumbnail: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(palette.chipGradient)
-                .frame(width: 74, height: 74)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 18, style: .continuous)
-                        .stroke(palette.stroke, lineWidth: 1)
-                )
-            
-            Image(systemName: "fork.knife")
-                .font(.system(size: 24, weight: .semibold))
-                .foregroundStyle(palette.primary)
-        }
+        RoundedRectangle(cornerRadius: 16, style: .continuous)
+            .fill(palette.elevatedCard)
+            .frame(width: 88, height: 88)
+            .overlay {
+                if let imageURL = item.imageURL,
+                   let url = URL(string: imageURL) {
+                    AsyncImage(url: url) { phase in
+                        switch phase {
+                        case .empty:
+                            ProgressView()
+                                .tint(palette.primary)
+                        case .success(let image):
+                            image
+                                .resizable()
+                                .scaledToFill()
+                        case .failure:
+                            Image(systemName: "fork.knife")
+                                .font(.title2)
+                                .foregroundStyle(palette.primary)
+                        @unknown default:
+                            EmptyView()
+                        }
+                    }
+                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                } else {
+                    Image(systemName: "fork.knife")
+                        .font(.title2)
+                        .foregroundStyle(palette.primary)
+                }
+            }
+            .overlay(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .stroke(palette.stroke, lineWidth: 1)
+            )
     }
     
     private var headerSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        HStack(alignment: .top, spacing: 8) {
             Text(item.name)
-                .font(.headline.weight(.semibold))
-                .foregroundStyle(item.isAvailable ? palette.textPrimary : palette.textSecondary)
+                .font(.headline)
+                .foregroundStyle(palette.textPrimary)
+                .lineLimit(2)
             
-            HStack(spacing: 8) {
-                if item.isFeatured {
-                    statusBadge(
-                        title: "Popular",
-                        textColor: palette.warning,
-                        background: palette.warning.opacity(colorScheme == .dark ? 0.20 : 0.12)
-                    )
-                }
-                
-                if item.hasOffer {
-                    statusBadge(
-                        title: "Offer",
-                        textColor: palette.success,
-                        background: palette.success.opacity(colorScheme == .dark ? 0.20 : 0.12)
-                    )
-                }
-                
-                if !item.isAvailable {
-                    statusBadge(
-                        title: "Sold out",
-                        textColor: palette.destructive,
-                        background: palette.destructive.opacity(colorScheme == .dark ? 0.20 : 0.12)
-                    )
-                }
+            Spacer()
+            
+            if item.isFeatured {
+                statusBadge(
+                    title: "Popular",
+                    textColor: palette.primary,
+                    background: palette.primary.opacity(0.12)
+                )
             }
         }
     }
@@ -11422,6 +11946,12 @@ struct MenuItemRowView: View {
             }
             
             Spacer()
+            
+            statusBadge(
+                title: item.stockLabel,
+                textColor: stockTextColor,
+                background: stockBackground
+            )
         }
         .padding(.top, 2)
     }
@@ -11468,7 +11998,8 @@ struct MenuListView: View {
     
     @ObservedObject var checkoutViewModel: CheckoutViewModel
     @ObservedObject var ordersViewModel: OrdersViewModel
-    @ObservedObject var comboBuilderViewModel: AdventureComboBuilderViewModel
+    @ObservedObject var adventureComboBuilderViewModel: AdventureComboBuilderViewModel
+    @ObservedObject var menuViewModel: MenuViewModel
     
     @Binding var path: NavigationPath
     
@@ -11574,9 +12105,9 @@ struct MenuListView: View {
             case .checkout:
                 CheckoutView(viewModel: checkoutViewModel, path: $path)
             case .reservationBuilder:
-                AdventureComboBuilderView(viewModel: comboBuilderViewModel)
+                AdventureComboBuilderView(adventureComboBuilderViewModel: adventureComboBuilderViewModel, menuViewModel: menuViewModel)
                     .onAppear {
-                        comboBuilderViewModel.resetForFoodOnly()
+                        adventureComboBuilderViewModel.resetForFoodOnly()
                     }
             case let .orderSuccess(order):
                 OrderSuccessView(order: order, path: $path)
@@ -11693,6 +12224,22 @@ struct MenuListView: View {
     
     private func categoryTitle(for categoryId: String) -> String {
         categories.first(where: { $0.id == categoryId })?.title ?? ""
+    }
+    
+    private func stockBadge(for item: MenuItem) -> some View {
+        Text(item.stockLabel)
+            .font(.caption2.weight(.semibold))
+            .foregroundStyle(item.canBeOrdered ? palette.textSecondary : palette.destructive)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 5)
+            .background(
+                Capsule()
+                    .fill(
+                        item.canBeOrdered
+                        ? palette.elevatedCard
+                        : palette.destructive.opacity(0.12)
+                    )
+            )
     }
 }
 
@@ -13242,6 +13789,70 @@ final class CheckoutViewModel: ObservableObject {
 
 ---
 
+# Altos del Murco/root/feature/altos/restaurant/presentation/viewmodel/MenuViewModel.swift
+
+```swift
+//
+//  MenuViewModel.swift
+//  Altos del Murco
+//
+//  Created by José Ruiz on 16/4/26.
+//
+
+import Combine
+import Foundation
+
+struct RestaurantMenuState {
+    var sections: [MenuSection] = []
+    var isLoading = false
+    var errorMessage: String?
+}
+
+@MainActor
+final class MenuViewModel: ObservableObject {
+    @Published private(set) var state = RestaurantMenuState()
+
+    private let service: MenuServiceable
+    private var listenerToken: MenuListenerTokenable?
+
+    init(service: MenuServiceable) {
+        self.service = service
+    }
+
+    func onAppear() {
+        guard listenerToken == nil else { return }
+
+        state.isLoading = true
+        state.errorMessage = nil
+
+        listenerToken = service.observeMenu { [weak self] result in
+            Task { @MainActor in
+                guard let self else { return }
+
+                switch result {
+                case .success(let sections):
+                    self.state.sections = sections
+                    self.state.isLoading = false
+
+                case .failure(let error):
+                    self.state.sections = []
+                    self.state.errorMessage = error.localizedDescription
+                    self.state.isLoading = false
+                }
+            }
+        }
+    }
+
+    func onDisappear() {
+        listenerToken?.remove()
+        listenerToken = nil
+    }
+}
+
+```
+
+---
+
 # Altos del Murco/root/feature/altos/restaurant/presentation/viewmodel/OrdersViewModel.swift
 
 ```swift
@@ -13351,20 +13962,23 @@ struct MainTabView: View {
     
     @ObservedObject var ordersViewModel: OrdersViewModel
     @ObservedObject var checkoutViewModel: CheckoutViewModel
+    @ObservedObject var menuViewModel: MenuViewModel
     
     private let adventureModuleFactory: AdventureModuleFactory
-    @StateObject private var comboBuilderViewModel: AdventureComboBuilderViewModel
+    @StateObject private var adventureComboBuilderViewModel: AdventureComboBuilderViewModel
 
     init(
         ordersViewModel: OrdersViewModel,
         checkoutViewModel: CheckoutViewModel,
+        menuViewModel: MenuViewModel,
         adventureModuleFactory: AdventureModuleFactory
     ) {
         self.ordersViewModel = ordersViewModel
         self.checkoutViewModel = checkoutViewModel
+        self.menuViewModel = menuViewModel
         self.adventureModuleFactory = adventureModuleFactory
         
-        _comboBuilderViewModel = StateObject(
+        _adventureComboBuilderViewModel = StateObject(
             wrappedValue: adventureModuleFactory.makeBuilderViewModel()
         )
     }
@@ -13378,7 +13992,6 @@ struct MainTabView: View {
         TabView(selection: $selectedTab) {
             HomeView(
                 selectedTab: $selectedTab,
-                comboBuilderViewModel: comboBuilderViewModel
             )
             .tabItem {
                 Label(MainTab.home.title, systemImage: MainTab.home.systemImage)
@@ -13388,7 +14001,8 @@ struct MainTabView: View {
             RestaurantRootView(
                 ordersViewModel: ordersViewModel,
                 checkoutViewModel: checkoutViewModel,
-                comboBuilderViewModel: comboBuilderViewModel
+                adventureComboBuilderViewModel: adventureComboBuilderViewModel,
+                menuViewModel: menuViewModel
             )
             .tabItem {
                 Label(MainTab.restaurant.title, systemImage: MainTab.restaurant.systemImage)
@@ -13396,7 +14010,7 @@ struct MainTabView: View {
             .tag(MainTab.restaurant)
             
             ExperiencesView(
-                comboBuilderViewModel: comboBuilderViewModel
+                adventureComboBuilderViewModel: adventureComboBuilderViewModel, menuViewModel: menuViewModel
             )
             .tabItem {
                 Label(MainTab.experiences.title, systemImage: MainTab.experiences.systemImage)
@@ -13474,8 +14088,6 @@ enum MainTab: Hashable {
 //
 //  Created by José Ruiz on 3/4/26.
 //
-
-import SwiftUI
 
 import SwiftUI
 
@@ -14542,6 +15154,7 @@ enum FirestoreConstants {
     static let adventure_bookings = "adventure_bookings"
     static let loyalty_transactions = "loyalty_transactions"
     static let posts = "posts"
+    static let restaurant_menu_items = "restaurant_menu_items"
 }
 
 ```

@@ -109,15 +109,31 @@ final class AdventureComboBuilderViewModel: ObservableObject {
         Task { await loadAvailability() }
     }
     
-    func addFoodItem(_ menuItem: MenuItem) {
+    func addFoodItem(
+        _ menuItem: MenuItem,
+        quantity: Int = 1,
+        notes: String? = nil
+    ) {
         guard menuItem.isAvailable else { return }
-        
-        if let index = state.foodItems.firstIndex(where: { $0.menuItemId == menuItem.id }) {
-            state.foodItems[index].quantity += 1
+
+        let trimmedNotes = notes?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let finalNotes = (trimmedNotes?.isEmpty == false) ? trimmedNotes : nil
+        let safeQuantity = max(1, quantity)
+
+        if let index = state.foodItems.firstIndex(where: {
+            $0.menuItemId == menuItem.id && $0.notes == finalNotes
+        }) {
+            state.foodItems[index].quantity += safeQuantity
         } else {
-            state.foodItems.append(ReservationFoodItemDraft(from: menuItem))
+            state.foodItems.append(
+                ReservationFoodItemDraft(
+                    from: menuItem,
+                    quantity: safeQuantity,
+                    notes: finalNotes
+                )
+            )
         }
-        
+
         state.selectedSlot = nil
         Task { await loadAvailability() }
     }

@@ -53,7 +53,7 @@ final class CartManager: ObservableObject {
     var isEmpty: Bool { draft.isEmpty }
 
     func add(item: MenuItem, quantity: Int = 1, notes: String? = nil) {
-        guard item.isAvailable else { return }
+        guard item.canBeOrdered else { return }
         guard quantity > 0 else { return }
 
         let cleanNotes = notes?.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -64,9 +64,13 @@ final class CartManager: ObservableObject {
         }
 
         if let index = draft.items.firstIndex(where: { $0.menuItem.id == item.id && $0.notes == finalNotes }) {
-            draft.items[index].quantity += quantity
+            let current = draft.items[index].quantity
+            let next = min(current + quantity, item.remainingQuantity)
+            draft.items[index].quantity = next
         } else {
-            draft.items.append(CartItem(menuItem: item, quantity: quantity, notes: finalNotes))
+            let safeQuantity = min(quantity, item.remainingQuantity)
+            guard safeQuantity > 0 else { return }
+            draft.items.append(CartItem(menuItem: item, quantity: safeQuantity, notes: finalNotes))
         }
 
         draft.updatedAt = Date()
@@ -76,9 +80,15 @@ final class CartManager: ObservableObject {
     func increaseQuantity(for itemId: String, by amount: Int = 1) {
         guard amount > 0 else { return }
         guard let index = draft.items.firstIndex(where: { $0.menuItem.id == itemId }) else { return }
-        guard draft.items[index].menuItem.isAvailable else { return }
 
-        draft.items[index].quantity += amount
+        let menuItem = draft.items[index].menuItem
+        guard menuItem.canBeOrdered else { return }
+
+        let current = draft.items[index].quantity
+        let next = min(current + amount, menuItem.remainingQuantity)
+        guard next > current else { return }
+
+        draft.items[index].quantity = next
         draft.updatedAt = Date()
         persist()
     }

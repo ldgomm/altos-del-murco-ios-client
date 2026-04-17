@@ -9,7 +9,8 @@ import SwiftUI
 
 @MainActor
 struct AdventureCatalogView: View {
-    @ObservedObject var comboBuilderViewModel: AdventureComboBuilderViewModel
+    @ObservedObject var adventureComboBuilderViewModel: AdventureComboBuilderViewModel
+    @ObservedObject var menuViewModel: MenuViewModel
     @Environment(\.colorScheme) private var colorScheme
     
     private let singles = AdventureActivityType.allCases.map(AdventureActivityType.defaultDraft(for:))
@@ -93,9 +94,9 @@ struct AdventureCatalogView: View {
                 }
                 
                 NavigationLink {
-                    AdventureComboBuilderView(viewModel: comboBuilderViewModel)
+                    AdventureComboBuilderView(adventureComboBuilderViewModel: adventureComboBuilderViewModel, menuViewModel: menuViewModel)
                         .onAppear {
-                            comboBuilderViewModel.reset()
+                            adventureComboBuilderViewModel.reset()
                         }
                 } label: {
                     HStack(spacing: 10) {
@@ -119,9 +120,9 @@ struct AdventureCatalogView: View {
             
             ForEach(AdventureCatalogTemplates.featured) { template in
                 NavigationLink {
-                    AdventureComboBuilderView(viewModel: comboBuilderViewModel)
+                    AdventureComboBuilderView(adventureComboBuilderViewModel: adventureComboBuilderViewModel, menuViewModel: menuViewModel)
                         .onAppear {
-                            comboBuilderViewModel.replaceItems(with: template.items)
+                            adventureComboBuilderViewModel.replaceItems(with: template.items)
                         }
                 } label: {
                     TemplateCard(template: template)
@@ -141,9 +142,9 @@ struct AdventureCatalogView: View {
             
             ForEach(singles, id: \.id) { item in
                 NavigationLink {
-                    AdventureComboBuilderView(viewModel: comboBuilderViewModel)
+                    AdventureComboBuilderView(adventureComboBuilderViewModel: adventureComboBuilderViewModel, menuViewModel: menuViewModel)
                         .onAppear {
-                            comboBuilderViewModel.replaceItems(with: [item])
+                            adventureComboBuilderViewModel.replaceItems(with: [item])
                         }
                 } label: {
                     SingleActivityCard(item: item)
@@ -167,9 +168,9 @@ struct AdventureCatalogView: View {
                     .foregroundStyle(palette.textSecondary)
                 
                 NavigationLink {
-                    AdventureComboBuilderView(viewModel: comboBuilderViewModel)
+                    AdventureComboBuilderView(adventureComboBuilderViewModel: adventureComboBuilderViewModel, menuViewModel: menuViewModel)
                         .onAppear {
-                            comboBuilderViewModel.reset()
+                            adventureComboBuilderViewModel.reset()
                         }
                 } label: {
                     HStack(spacing: 10) {

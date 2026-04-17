@@ -9,7 +9,8 @@ import SwiftUI
 
 struct ServiceDetailView: View {
     let service: AdventureService
-    @ObservedObject var comboBuilderViewModel: AdventureComboBuilderViewModel
+    @ObservedObject var adventureComboBuilderViewModel: AdventureComboBuilderViewModel
+    @ObservedObject var menuViewModel: MenuViewModel
     
     @Environment(\.colorScheme) private var colorScheme
     
@@ -199,9 +200,9 @@ struct ServiceDetailView: View {
     private var actionSection: some View {
         VStack(spacing: 12) {
             NavigationLink {
-                AdventureComboBuilderView(viewModel: comboBuilderViewModel)
+                AdventureComboBuilderView(adventureComboBuilderViewModel: adventureComboBuilderViewModel, menuViewModel: menuViewModel)
                     .onAppear {
-                        comboBuilderViewModel.replaceItems(with: [service.defaultDraft])
+                        adventureComboBuilderViewModel.replaceItems(with: [service.defaultDraft])
                     }
             } label: {
                 HStack(spacing: 10) {
