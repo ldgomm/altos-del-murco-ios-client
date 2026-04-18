@@ -24,7 +24,7 @@ enum FeaturedPostCategory: String, Codable, CaseIterable, Identifiable {
     }
 }
 
-struct FeaturedPostMediaDTO: Codable, Hashable, Identifiable {
+struct FeaturedPostMediaDto: Codable, Hashable, Identifiable {
     let id: String
     let downloadURL: String
     let storagePath: String
@@ -33,11 +33,11 @@ struct FeaturedPostMediaDTO: Codable, Hashable, Identifiable {
     let position: Int
 }
 
-struct FeaturedPostDTO: Codable {
+struct FeaturedPostDto: Codable {
     @DocumentID var id: String?
     let category: String
     let description: String?
-    let media: [FeaturedPostMediaDTO]
+    let media: [FeaturedPostMediaDto]
     let createdAt: Date
     let updatedAt: Date
     let expiresAt: Date
@@ -77,7 +77,7 @@ struct FeaturedPost: Identifiable, Hashable {
     }
 }
 
-extension FeaturedPostDTO {
+extension FeaturedPostDto {
     func toDomain() -> FeaturedPost? {
         guard let id else { return nil }
         guard let category = FeaturedPostCategory(rawValue: category) else { return nil }
@@ -107,13 +107,13 @@ extension FeaturedPostDTO {
 }
 
 extension FeaturedPost {
-    func toDTO() -> FeaturedPostDTO {
-        FeaturedPostDTO(
+    func toDto() -> FeaturedPostDto {
+        FeaturedPostDto(
             id: id,
             category: category.rawValue,
             description: description,
             media: orderedMedia.map {
-                FeaturedPostMediaDTO(
+                FeaturedPostMediaDto(
                     id: $0.id,
                     downloadURL: $0.downloadURL?.absoluteString ?? "",
                     storagePath: $0.storagePath,

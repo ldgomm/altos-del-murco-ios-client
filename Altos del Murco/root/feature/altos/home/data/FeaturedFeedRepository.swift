@@ -35,7 +35,7 @@ final class FeaturedFeedRepository: FeaturedFeedRepositoriable {
 
                 do {
                     let posts = try snapshot.documents.compactMap { document in
-                        try document.data(as: FeaturedPostDTO.self).toDomain()
+                        try document.data(as: FeaturedPostDto.self).toDomain()
                     }
 
                     let page = FeaturedFeedPage(
@@ -59,7 +59,7 @@ final class FeaturedFeedRepository: FeaturedFeedRepositoriable {
 
         let snapshot = try await query.getDocuments()
         let posts = try snapshot.documents.compactMap { document in
-            try document.data(as: FeaturedPostDTO.self).toDomain()
+            try document.data(as: FeaturedPostDto.self).toDomain()
         }
 
         return FeaturedFeedPage(

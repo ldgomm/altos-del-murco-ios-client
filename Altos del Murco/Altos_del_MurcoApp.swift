@@ -61,7 +61,7 @@ struct AltosDelMurcoApp: App {
 
             _cartManager = StateObject(wrappedValue: sharedCartManager)
 
-            let ordersService: OrdersServiceable = FirebaseOrdersService()
+            let ordersService: OrdersServiceable = OrdersService()
             let observeOrdersUseCase = ObserveOrdersUseCase(service: ordersService)
             let submitOrderUseCase = SubmitOrderUseCase(service: ordersService)
 

@@ -25,7 +25,7 @@ final class FirestoreAdventureListenerToken: AdventureListenerToken {
     }
 }
 
-struct AdventureReservationItemDraftDTO: Codable {
+struct AdventureReservationItemDraftDto: Codable {
     let id: String
     let activity: String
     let durationMinutes: Int
@@ -59,7 +59,7 @@ struct AdventureReservationItemDraftDTO: Codable {
     }
 }
 
-struct ReservationFoodItemDraftDTO: Codable {
+struct ReservationFoodItemDraftDto: Codable {
     let id: String
     let menuItemId: String
     let name: String
@@ -88,14 +88,14 @@ struct ReservationFoodItemDraftDTO: Codable {
     }
 }
 
-struct ReservationFoodDraftDTO: Codable {
-    let items: [ReservationFoodItemDraftDTO]
+struct ReservationFoodDraftDto: Codable {
+    let items: [ReservationFoodItemDraftDto]
     let servingMoment: String
     let servingTime: Timestamp?
     let notes: String?
     
     init(from food: ReservationFoodDraft) {
-        self.items = food.items.map(ReservationFoodItemDraftDTO.init(from:))
+        self.items = food.items.map(ReservationFoodItemDraftDto.init(from:))
         self.servingMoment = food.servingMoment.rawValue
         self.servingTime = food.servingTime.map(Timestamp.init(date:))
         self.notes = food.notes
@@ -111,7 +111,7 @@ struct ReservationFoodDraftDTO: Codable {
     }
 }
 
-struct AdventureBookingBlockDTO: Codable {
+struct AdventureBookingBlockDto: Codable {
     let id: String
     let title: String
     let activity: String
@@ -152,7 +152,7 @@ struct AdventureBookingBlockDTO: Codable {
 }
 
 @MainActor
-struct AdventureBookingDTO: Codable {
+struct AdventureBookingDto: Codable {
     let clientId: String?
     let clientName: String
     let whatsappNumber: String
@@ -164,9 +164,9 @@ struct AdventureBookingDTO: Codable {
     let eventType: String?
     let customEventTitle: String?
     let eventNotes: String?
-    let items: [AdventureReservationItemDraftDTO]
-    let foodReservation: ReservationFoodDraftDTO?
-    let blocks: [AdventureBookingBlockDTO]
+    let items: [AdventureReservationItemDraftDto]
+    let foodReservation: ReservationFoodDraftDto?
+    let blocks: [AdventureBookingBlockDto]
     let adventureSubtotal: Double?
     let foodSubtotal: Double?
     let subtotal: Double
@@ -210,9 +210,10 @@ struct AdventureBookingDTO: Codable {
         bookingId: String,
         request: AdventureBookingRequest,
         plan: AdventureBuildPlan,
-        createdAt: Date
-    ) -> AdventureBookingDTO {
-        AdventureBookingDTO(
+        createdAt: Date,
+        status: AdventureBookingStatus = .pending
+    ) -> AdventureBookingDto {
+        AdventureBookingDto(
             clientId: request.clientId,
             clientName: request.clientName,
             whatsappNumber: request.whatsappNumber,
@@ -224,16 +225,16 @@ struct AdventureBookingDTO: Codable {
             eventType: request.eventType.rawValue,
             customEventTitle: request.customEventTitle,
             eventNotes: request.eventNotes,
-            items: request.items.map(AdventureReservationItemDraftDTO.init(from:)),
-            foodReservation: request.foodReservation.map(ReservationFoodDraftDTO.init(from:)),
-            blocks: plan.blocks.map(AdventureBookingBlockDTO.init(from:)),
+            items: request.items.map(AdventureReservationItemDraftDto.init(from:)),
+            foodReservation: request.foodReservation.map(ReservationFoodDraftDto.init(from:)),
+            blocks: plan.blocks.map(AdventureBookingBlockDto.init(from:)),
             adventureSubtotal: plan.adventureSubtotal,
             foodSubtotal: plan.foodSubtotal,
             subtotal: plan.subtotal,
             discountAmount: plan.discountAmount,
             nightPremium: plan.nightPremium,
             totalAmount: plan.totalAmount,
-            status: AdventureBookingStatus.confirmed.rawValue,
+            status: status.rawValue,
             createdAt: Timestamp(date: createdAt),
             notes: request.notes
         )

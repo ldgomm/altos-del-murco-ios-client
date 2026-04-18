@@ -31,13 +31,16 @@ struct AdventureComboBuilderView: View {
     
     var body: some View {
         List {
+            schedulingSection
+            availabilitySection
+            eventSection
+            
             comboSection
             foodSection
-            eventSection
-            schedulingSection
+            
             contactSection
-            availabilitySection
             summarySection
+            
             confirmSection
         }
         .listStyle(.plain)
@@ -72,6 +75,25 @@ struct AdventureComboBuilderView: View {
             Button("OK") { adventureComboBuilderViewModel.dismissMessage() }
         } message: {
             Text(adventureComboBuilderViewModel.state.errorMessage ?? adventureComboBuilderViewModel.state.successMessage ?? "")
+        }
+    }
+    
+    private var menuItemsById: [String: MenuItem] {
+        Dictionary(
+            uniqueKeysWithValues: menuViewModel.state.sections
+                .flatMap(\.items)
+                .map { ($0.id, $0) }
+        )
+    }
+
+    private var blockedFoodItemsForToday: [ReservationFoodItemDraft] {
+        guard AdventureDateHelper.calendar.isDateInToday(adventureComboBuilderViewModel.state.selectedDate) else {
+            return []
+        }
+
+        return adventureComboBuilderViewModel.state.foodItems.filter { draft in
+            guard let menuItem = menuItemsById[draft.menuItemId] else { return false }
+            return !menuItem.canBeOrdered
         }
     }
     
@@ -217,8 +239,16 @@ struct AdventureComboBuilderView: View {
                 }
                 .buttonStyle(.plain)
                 .sheet(isPresented: $isFoodPickerPresented) {
-                    AdventureFoodPickerSheet(menuSections: menuViewModel.state.sections) { item, quantity, notes in
-                        adventureComboBuilderViewModel.addFoodItem(item, quantity: quantity, notes: notes)
+                    AdventureFoodPickerSheet(
+                        menuSections: menuViewModel.state.sections,
+                        selectedDate: adventureComboBuilderViewModel.state.selectedDate
+                    ) { item, quantity, notes in
+                        adventureComboBuilderViewModel.addFoodItem(
+                            item,
+                            quantity: quantity,
+                            notes: notes,
+                            for: adventureComboBuilderViewModel.state.selectedDate
+                        )
                     }
                 }
                 
@@ -269,44 +299,41 @@ struct AdventureComboBuilderView: View {
         @Environment(\.dismiss) private var dismiss
 
         let menuSections: [MenuSection]
+        let selectedDate: Date
         let onAdd: (MenuItem, Int, String?) -> Void
 
         @State private var selectedCategoryId: String? = nil
         @State private var searchText = ""
 
-        private var categories: [MenuCategory] {
-            menuSections.map(\.category)
+        private let categoryDisplayOrder: [String] = [
+            "Entradas",
+            "Sopas",
+            "Platos Fuertes",
+            "Extras",
+            "Postres",
+            "Bebidas",
+            "Bebidas Alcohólicas"
+        ]
+
+        private func categoryRank(for title: String) -> Int {
+            categoryDisplayOrder.firstIndex(of: title) ?? Int.max
         }
 
-        private var filteredSections: [MenuSection] {
-            let categoryFiltered = menuSections.filter { section in
-                selectedCategoryId == nil || section.category.id == selectedCategoryId
-            }
+        private var orderedSections: [MenuSection] {
+            menuSections.sorted { lhs, rhs in
+                let lhsRank = categoryRank(for: lhs.category.title)
+                let rhsRank = categoryRank(for: rhs.category.title)
 
-            guard !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-                return categoryFiltered
-            }
-
-            let query = searchText.lowercased()
-
-            return categoryFiltered.compactMap { section in
-                let items = section.items.filter { item in
-                    item.isAvailable &&
-                    (
-                        item.name.lowercased().contains(query) ||
-                        item.description.lowercased().contains(query) ||
-                        item.ingredients.contains(where: { $0.lowercased().contains(query) })
-                    )
+                if lhsRank != rhsRank {
+                    return lhsRank < rhsRank
                 }
 
-                guard !items.isEmpty else { return nil }
-
-                return MenuSection(
-                    id: section.id,
-                    category: section.category,
-                    items: items
-                )
+                return lhs.category.title < rhs.category.title
             }
+        }
+
+        private var categories: [MenuCategory] {
+            orderedSections.map(\.category)
         }
 
         var body: some View {
@@ -328,14 +355,20 @@ struct AdventureComboBuilderView: View {
                                     Text(section.category.title)
                                         .font(.title3.bold())
 
-                                    ForEach(section.items.filter(\.isAvailable)) { item in
+                                    ForEach(section.items) { item in
                                         NavigationLink {
-                                            AdventureFoodDetailView(item: item) { quantity, notes in
+                                            AdventureFoodDetailView(
+                                                item: item,
+                                                selectedDate: selectedDate
+                                            ) { quantity, notes in
                                                 onAdd(item, quantity, notes)
                                                 dismiss()
                                             }
                                         } label: {
-                                            AdventureFoodMenuRow(item: item)
+                                            AdventureFoodMenuRow(
+                                                item: item,
+                                                selectedDate: selectedDate
+                                            )
                                         }
                                         .buttonStyle(.plain)
                                     }
@@ -397,10 +430,51 @@ struct AdventureComboBuilderView: View {
             }
             .buttonStyle(.plain)
         }
+        
+        private var isTodayReservation: Bool {
+            AdventureDateHelper.calendar.isDateInToday(selectedDate)
+        }
+
+        private func isBlockedForSelectedDate(_ item: MenuItem) -> Bool {
+            isTodayReservation && !item.canBeOrdered
+        }
+        
+        private var filteredSections: [MenuSection] {
+            let categoryFiltered = orderedSections.filter { section in
+                selectedCategoryId == nil || section.category.id == selectedCategoryId
+            }
+
+            guard !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                return categoryFiltered
+            }
+
+            let query = searchText.lowercased()
+
+            return categoryFiltered.compactMap { section in
+                let items = section.items.filter { item in
+                    item.name.lowercased().contains(query) ||
+                    item.description.lowercased().contains(query) ||
+                    item.ingredients.contains(where: { $0.lowercased().contains(query) })
+                }
+
+                guard !items.isEmpty else { return nil }
+
+                return MenuSection(
+                    id: section.id,
+                    category: section.category,
+                    items: items
+                )
+            }
+        }
     }
 
     private struct AdventureFoodMenuRow: View {
         let item: MenuItem
+        let selectedDate: Date
+
+        private var isBlockedForSelectedDate: Bool {
+            AdventureDateHelper.calendar.isDateInToday(selectedDate) && !item.canBeOrdered
+        }
 
         var body: some View {
             VStack(alignment: .leading, spacing: 10) {
@@ -433,6 +507,12 @@ struct AdventureComboBuilderView: View {
                         .font(.subheadline.bold())
                 }
 
+                if isBlockedForSelectedDate {
+                    Text("For today this is out of stock and cannot be ordered")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.red)
+                }
+
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 8) {
                         ForEach(Array(item.ingredients.prefix(4)), id: \.self) { ingredient in
@@ -460,6 +540,7 @@ struct AdventureComboBuilderView: View {
                 }
             }
             .appCardStyle(.adventure, emphasized: false)
+            .opacity(isBlockedForSelectedDate ? 0.82 : 1)
         }
     }
 
@@ -467,7 +548,12 @@ struct AdventureComboBuilderView: View {
         @Environment(\.dismiss) private var dismiss
 
         let item: MenuItem
+        let selectedDate: Date
         let onAdd: (Int, String?) -> Void
+
+        private var isBlockedForSelectedDate: Bool {
+            AdventureDateHelper.calendar.isDateInToday(selectedDate) && !item.canBeOrdered
+        }
 
         @State private var quantity = 1
         @State private var notes = ""
@@ -479,6 +565,20 @@ struct AdventureComboBuilderView: View {
                     descriptionCard
                     ingredientsCard
                     priceCard
+                    if isBlockedForSelectedDate {
+                        VStack(alignment: .leading, spacing: 10) {
+                            BrandSectionHeader(
+                                theme: .adventure,
+                                title: "Availability",
+                                subtitle: "This restriction only applies for today's reservations."
+                            )
+
+                            Text("For today this is out of stock and cannot be ordered. Select tomorrow or another future day to reserve it.")
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                        }
+                        .appCardStyle(.adventure, emphasized: false)
+                    }
                     quantityCard
                     notesCard
 
@@ -490,6 +590,7 @@ struct AdventureComboBuilderView: View {
                             .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(BrandPrimaryButtonStyle(theme: .adventure))
+                    .disabled(isBlockedForSelectedDate)
                 }
                 .padding(20)
             }
@@ -589,7 +690,7 @@ struct AdventureComboBuilderView: View {
 
                 QuantitySelectorView(
                     quantity: $quantity,
-                    isEnabled: item.isAvailable,
+                    isEnabled: !isBlockedForSelectedDate,
                     theme: .adventure
                 )
             }
@@ -884,23 +985,30 @@ struct AdventureComboBuilderView: View {
                         .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
                 Button {
+                    guard blockedFoodItemsForToday.isEmpty else {
+                        adventureComboBuilderViewModel.presentError(
+                            "For today some selected items are out of stock and cannot be ordered. Choose tomorrow or another future day."
+                        )
+                        return
+                    }
+
                     syncProfileFieldsFromSession()
                     adventureComboBuilderViewModel.submit(clientId: authenticatedProfile?.id)
-                    
+
                     withAnimation(.easeInOut(duration: 0.25)) {
                         showAddedMessage = true
                     }
-                    
+
                     DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
                         withAnimation(.easeInOut(duration: 0.25)) {
                             showAddedMessage = false
                         }
-                        
+
                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
                             dismiss()
                         }
                     }
-                    
+
                     dismiss()
                 } label: {
                     if adventureComboBuilderViewModel.state.isSubmitting {

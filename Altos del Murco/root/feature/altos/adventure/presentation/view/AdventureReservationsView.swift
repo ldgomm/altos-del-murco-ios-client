@@ -11,6 +11,7 @@ struct AdventureReservationsView: View {
     @EnvironmentObject private var sessionViewModel: AppSessionViewModel
     @Environment(\.colorScheme) private var colorScheme
     @StateObject private var viewModel: AdventureBookingsViewModel
+    @State private var selectedBooking: AdventureBooking?
 
     init(viewModelFactory: @escaping () -> AdventureBookingsViewModel) {
         _viewModel = StateObject(wrappedValue: viewModelFactory())
@@ -48,6 +49,14 @@ struct AdventureReservationsView: View {
                 .scrollContentBackground(.hidden)
                 .background(Color.clear)
                 .appScreenStyle(.adventure)
+                .navigationDestination(item: $selectedBooking) { booking in
+                    ReserveViewDetail(
+                        booking: booking,
+                        onCancel: booking.status != .canceled
+                            ? { viewModel.cancelBooking(booking.id) }
+                            : nil
+                    )
+                }
             }
         }
         .navigationTitle("Reservas y eventos")
@@ -138,19 +147,48 @@ struct AdventureReservationsView: View {
         } else {
             Section {
                 ForEach(viewModel.state.bookings) { booking in
-                    AdventureReservationRow(booking: booking)
-                        .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
-                        .listRowBackground(Color.clear)
-                        .listRowSeparator(.hidden)
-                        .swipeActions(edge: .trailing) {
-                            if booking.status != .canceled {
-                                Button(role: .destructive) {
-                                    viewModel.cancelBooking(booking.id)
-                                } label: {
-                                    Label("Cancelar", systemImage: "xmark")
-                                }
+//                    NavigationLink {
+//                        ReserveViewDetail(
+//                            booking: booking,
+//                            onCancel: booking.status != .canceled
+//                                ? { viewModel.cancelBooking(booking.id) }
+//                                : nil
+//                        )
+//                    } label: {
+//                        AdventureReservationRow(booking: booking)
+//                    }
+//                    .buttonStyle(.plain)
+//                    .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+//                    .listRowBackground(Color.clear)
+//                    .listRowSeparator(.hidden)
+//                    .swipeActions(edge: .trailing) {
+//                        if booking.status != .canceled {
+//                            Button(role: .destructive) {
+//                                viewModel.cancelBooking(booking.id)
+//                            } label: {
+//                                Label("Cancelar", systemImage: "xmark")
+//                            }
+//                        }
+//                    }
+                    Button {
+                        selectedBooking = booking
+                    } label: {
+                        AdventureReservationRow(booking: booking)
+                    }
+                    .buttonStyle(.plain)
+                    .contentShape(Rectangle())
+                    .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
+                    .swipeActions(edge: .trailing) {
+                        if booking.status != .canceled {
+                            Button(role: .destructive) {
+                                viewModel.cancelBooking(booking.id)
+                            } label: {
+                                Label("Cancelar", systemImage: "xmark")
                             }
                         }
+                    }
                 }
             } header: {
                 Text("Reservas")
@@ -250,12 +288,20 @@ private struct AdventureReservationRow: View {
             Divider()
                 .overlay(palette.stroke)
             
-            VStack(spacing: 8) {
+            VStack(spacing: 10) {
                 amountRow("Aventura", booking.adventureSubtotal)
                 amountRow("Comida", booking.foodSubtotal)
                 amountRow("Descuento", -booking.discountAmount)
-//                amountRow("Recargo nocturno", booking.nightPremium)
+            //    amountRow("Recargo nocturno", booking.nightPremium)
                 amountRow("Total", booking.totalAmount, isPrimary: true)
+
+                HStack {
+                    Spacer()
+
+                    Label("Ver detalle", systemImage: "chevron.right")
+                        .font(.caption.bold())
+                        .foregroundStyle(palette.textTertiary)
+                }
             }
         }
         .appCardStyle(.adventure)
@@ -295,6 +341,8 @@ private struct AdventureReservationRow: View {
             return palette.warning.opacity(colorScheme == .dark ? 0.22 : 0.14)
         case .confirmed:
             return palette.success.opacity(colorScheme == .dark ? 0.22 : 0.14)
+        case .completed:
+            return palette.success.opacity(colorScheme == .dark ? 0.22 : 0.14)
         case .canceled:
             return palette.destructive.opacity(colorScheme == .dark ? 0.22 : 0.14)
         }
@@ -306,6 +354,8 @@ private struct AdventureReservationRow: View {
             return palette.warning.opacity(0.45)
         case .confirmed:
             return palette.success.opacity(0.45)
+        case .completed:
+            return palette.success.opacity(colorScheme == .dark ? 0.22 : 0.14)
         case .canceled:
             return palette.destructive.opacity(0.45)
         }
@@ -316,6 +366,8 @@ private struct AdventureReservationRow: View {
         case .pending:
             return palette.warning
         case .confirmed:
+            return palette.success
+        case .completed:
             return palette.success
         case .canceled:
             return palette.destructive

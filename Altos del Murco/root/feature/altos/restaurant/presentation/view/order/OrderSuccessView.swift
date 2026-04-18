@@ -100,7 +100,7 @@ struct OrderSuccessView: View {
                 InfoRow(title: "Total", value: order.totalAmount.priceText, theme: theme, emphasized: true)
             }
         }
-        .appCardStyle(theme, emphasized: true)
+        .appCardStyle(theme, emphasized: false)
     }
 }
 

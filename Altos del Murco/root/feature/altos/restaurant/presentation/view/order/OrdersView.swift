@@ -11,6 +11,8 @@ struct OrdersView: View {
     @ObservedObject var viewModel: OrdersViewModel
     @Environment(\.colorScheme) private var colorScheme
     
+    @State private var selectedOrder: Order?
+    
     private var palette: ThemePalette {
         AppTheme.palette(for: .restaurant, scheme: colorScheme)
     }
@@ -103,14 +105,15 @@ struct OrdersView: View {
             ForEach(groupedOrders, id: \.status) { group in
                 Section {
                     ForEach(group.orders) { order in
-                        NavigationLink {
-                            OrderDetailView(order: order)
+                        Button {
+                            selectedOrder = order
                         } label: {
                             OrderRowView(order: order)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .appListRowStyle(.restaurant)
                         }
                         .buttonStyle(.plain)
+                        .contentShape(Rectangle())
                         .listRowInsets(EdgeInsets(top: 6, leading: 8, bottom: 6, trailing: 8))
                         .listRowBackground(Color.clear)
                     }
@@ -124,6 +127,9 @@ struct OrdersView: View {
         .background(Color.clear)
         .refreshable {
             viewModel.onEvent(.refresh)
+        }
+        .navigationDestination(item: $selectedOrder) { order in
+            OrderDetailView(order: order)
         }
     }
 

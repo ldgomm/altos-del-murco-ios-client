@@ -112,9 +112,16 @@ final class AdventureComboBuilderViewModel: ObservableObject {
     func addFoodItem(
         _ menuItem: MenuItem,
         quantity: Int = 1,
-        notes: String? = nil
+        notes: String? = nil,
+        for selectedDate: Date
     ) {
-        guard menuItem.isAvailable else { return }
+        let isTodayReservation = AdventureDateHelper.calendar.isDateInToday(selectedDate)
+
+        guard !(isTodayReservation && !menuItem.canBeOrdered) else {
+            state.errorMessage = "For today this item is out of stock and cannot be ordered."
+            state.successMessage = nil
+            return
+        }
 
         let trimmedNotes = notes?.trimmingCharacters(in: .whitespacesAndNewlines)
         let finalNotes = (trimmedNotes?.isEmpty == false) ? trimmedNotes : nil
@@ -211,7 +218,12 @@ final class AdventureComboBuilderViewModel: ObservableObject {
         state.errorMessage = nil
         state.successMessage = nil
     }
-    
+
+    func presentError(_ message: String) {
+        state.errorMessage = message
+        state.successMessage = nil
+    }
+
     func submit(clientId: String?) {
         Task { await submitReservation(clientId: clientId) }
     }

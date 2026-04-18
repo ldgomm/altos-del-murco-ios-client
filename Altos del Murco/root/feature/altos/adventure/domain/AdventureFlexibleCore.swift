@@ -121,15 +121,19 @@ enum AdventureResourceType: String, Codable, Hashable {
     case extremeSlidePeople
 }
 
-enum AdventureBookingStatus: String, Codable, CaseIterable, Hashable {
+enum AdventureBookingStatus: String, Codable, CaseIterable, Hashable, Identifiable {
     case pending
     case confirmed
+    case completed
     case canceled
-    
+
+    var id: String { rawValue }
+
     var title: String {
         switch self {
         case .pending: return "Pendiente"
         case .confirmed: return "Confirmada"
+        case .completed: return "Completada"
         case .canceled: return "Cancelada"
         }
     }

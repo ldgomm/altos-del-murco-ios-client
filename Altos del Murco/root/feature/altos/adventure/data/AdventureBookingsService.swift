@@ -41,7 +41,7 @@ final class AdventureBookingsService: AdventureBookingsServiceable {
                 
                 do {
                     let bookings = try snapshot.documents.map { document in
-                        let dto = try document.data(as: AdventureBookingDTO.self)
+                        let dto = try document.data(as: AdventureBookingDto.self)
                         return dto.toDomain(documentId: document.documentID)
                     }
                     onChange(.success(bookings))
@@ -77,7 +77,7 @@ final class AdventureBookingsService: AdventureBookingsServiceable {
         
         let createdAt = Date()
         let bookingRef = db.collection(bookingsCollection).document()
-        let dto = AdventureBookingDTO.from(
+        let dto = AdventureBookingDto.from(
             bookingId: bookingRef.documentID,
             request: request,
             plan: plan,
@@ -106,7 +106,7 @@ final class AdventureBookingsService: AdventureBookingsServiceable {
             throw makeError("Booking not found.")
         }
         
-        let dto = try snapshot.data(as: AdventureBookingDTO.self)
+        let dto = try snapshot.data(as: AdventureBookingDto.self)
         guard dto.nationalId == nationalId else {
             throw makeError("You are not allowed to cancel this booking.")
         }

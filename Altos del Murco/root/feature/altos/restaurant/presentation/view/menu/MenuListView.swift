@@ -26,19 +26,46 @@ struct MenuListView: View {
         AppTheme.palette(for: .restaurant, scheme: colorScheme)
     }
 
-    private var categories: [MenuCategory] {
-        sections.map(\.category)
+    private let categoryDisplayOrder: [String] = [
+        "Entradas",
+        "Sopas",
+        "Platos Fuertes",
+        "Extras",
+        "Postres",
+        "Bebidas",
+        "Bebidas Alcohólicas"
+    ]
+
+    private func categoryRank(for title: String) -> Int {
+        categoryDisplayOrder.firstIndex(of: title) ?? Int.max
     }
 
+    private var orderedSections: [MenuSection] {
+        sections.sorted { lhs, rhs in
+            let lhsRank = categoryRank(for: lhs.category.title)
+            let rhsRank = categoryRank(for: rhs.category.title)
+
+            if lhsRank != rhsRank {
+                return lhsRank < rhsRank
+            }
+
+            return lhs.category.title < rhs.category.title
+        }
+    }
+
+    private var categories: [MenuCategory] {
+        orderedSections.map(\.category)
+    }
+
+    private var filteredSections: [MenuSection] {
+        guard let selectedCategoryId else { return orderedSections }
+        return orderedSections.filter { $0.category.id == selectedCategoryId }
+    }
+    
     private var featuredItems: [MenuItem] {
         sections
             .flatMap(\.items)
             .filter(\.isFeatured)
-    }
-
-    private var filteredSections: [MenuSection] {
-        guard let selectedCategoryId else { return sections }
-        return sections.filter { $0.category.id == selectedCategoryId }
     }
 
     var body: some View {

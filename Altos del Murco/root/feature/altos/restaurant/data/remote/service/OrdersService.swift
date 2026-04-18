@@ -5,10 +5,10 @@
 //  Created by José Ruiz on 12/3/26.
 //
 
-import Foundation
+import Combine
 import FirebaseFirestore
 
-final class FirebaseOrdersService: OrdersServiceable {
+final class OrdersService: OrdersServiceable {
     private lazy var db = Firestore.firestore()
     
     func submit(order: Order) async throws {
@@ -16,44 +16,66 @@ final class FirebaseOrdersService: OrdersServiceable {
             grouping: order.items,
             by: \.menuItemId
         )
-        .compactMapValues { items in
-            let total = items.reduce(0) { $0 + $1.quantity }
-            return total > 0 ? total : nil
+            .compactMapValues { items in
+                let total = items.reduce(0) { $0 + $1.quantity }
+                return total > 0 ? total : nil
+            }
+        
+        let menuItemsToProcess: [(ref: DocumentReference, totalQuantity: Int)] =
+        quantitiesByMenuItemId.map { menuItemId, totalQuantity in
+            (
+                ref: self.db
+                    .collection(FirestoreConstants.restaurant_menu_items)
+                    .document(menuItemId),
+                totalQuantity: totalQuantity
+            )
         }
         
         let _ = try await db.runTransaction { transaction, errorPointer in
             do {
-                for (menuItemId, totalQuantity) in quantitiesByMenuItemId {
-                    let ref = self.db
-                        .collection(FirestoreConstants.restaurant_menu_items)
-                        .document(menuItemId)
-                    
-                    let snapshot = try transaction.getDocument(ref)
+                // 1. Leer TODO primero
+                var loadedItems: [(ref: DocumentReference, dto: MenuItemDto, totalQuantity: Int)] = []
+                
+                for item in menuItemsToProcess {
+                    let snapshot = try transaction.getDocument(item.ref)
                     let dto = try snapshot.data(as: MenuItemDto.self)
                     
-                    guard dto.isAvailable else {
+                    loadedItems.append((
+                        ref: item.ref,
+                        dto: dto,
+                        totalQuantity: item.totalQuantity
+                    ))
+                }
+                
+                // 2. Validar y escribir DESPUÉS
+                for item in loadedItems {
+                    guard item.dto.isAvailable else {
                         throw NSError(
                             domain: "OrdersService",
                             code: 1,
-                            userInfo: [NSLocalizedDescriptionKey: "\(dto.name) no está disponible."]
+                            userInfo: [
+                                NSLocalizedDescriptionKey: "\(item.dto.name) no está disponible."
+                            ]
                         )
                     }
                     
-                    guard dto.remainingQuantity >= totalQuantity else {
+                    guard item.dto.remainingQuantity >= item.totalQuantity else {
                         throw NSError(
                             domain: "OrdersService",
                             code: 2,
-                            userInfo: [NSLocalizedDescriptionKey: "Ya no hay suficiente stock de \(dto.name)."]
+                            userInfo: [
+                                NSLocalizedDescriptionKey: "Ya no hay suficiente stock de \(item.dto.name)."
+                            ]
                         )
                     }
                     
-                    let newRemainingQuantity = dto.remainingQuantity - totalQuantity
+                    let newRemainingQuantity = item.dto.remainingQuantity - item.totalQuantity
                     
                     transaction.updateData([
                         "remainingQuantity": newRemainingQuantity,
                         "isAvailable": newRemainingQuantity > 0,
                         "updatedAt": Timestamp(date: Date())
-                    ], forDocument: ref)
+                    ], forDocument: item.ref)
                 }
                 
                 let dto = OrderDto(from: order)
@@ -64,6 +86,7 @@ final class FirebaseOrdersService: OrdersServiceable {
                     .document(order.id)
                 
                 transaction.setData(orderData, forDocument: orderRef)
+                
             } catch {
                 errorPointer?.pointee = error as NSError
                 return nil
@@ -116,4 +139,3 @@ final class FirebaseOrdersService: OrdersServiceable {
         }
     }
 }
-

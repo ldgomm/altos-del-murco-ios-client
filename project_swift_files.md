@@ -64,7 +64,7 @@ struct AltosDelMurcoApp: App {
 
             _cartManager = StateObject(wrappedValue: sharedCartManager)
 
-            let ordersService: OrdersServiceable = FirebaseOrdersService()
+            let ordersService: OrdersServiceable = OrdersService()
             let observeOrdersUseCase = ObserveOrdersUseCase(service: ordersService)
             let submitOrderUseCase = SubmitOrderUseCase(service: ordersService)
 
@@ -197,7 +197,7 @@ final class FirestoreAdventureListenerToken: AdventureListenerToken {
     }
 }
 
-struct AdventureReservationItemDraftDTO: Codable {
+struct AdventureReservationItemDraftDto: Codable {
     let id: String
     let activity: String
     let durationMinutes: Int
@@ -231,7 +231,7 @@ struct AdventureReservationItemDraftDTO: Codable {
     }
 }
 
-struct ReservationFoodItemDraftDTO: Codable {
+struct ReservationFoodItemDraftDto: Codable {
     let id: String
     let menuItemId: String
     let name: String
@@ -260,14 +260,14 @@ struct ReservationFoodItemDraftDTO: Codable {
     }
 }
 
-struct ReservationFoodDraftDTO: Codable {
-    let items: [ReservationFoodItemDraftDTO]
+struct ReservationFoodDraftDto: Codable {
+    let items: [ReservationFoodItemDraftDto]
     let servingMoment: String
     let servingTime: Timestamp?
     let notes: String?
     
     init(from food: ReservationFoodDraft) {
-        self.items = food.items.map(ReservationFoodItemDraftDTO.init(from:))
+        self.items = food.items.map(ReservationFoodItemDraftDto.init(from:))
         self.servingMoment = food.servingMoment.rawValue
         self.servingTime = food.servingTime.map(Timestamp.init(date:))
         self.notes = food.notes
@@ -283,7 +283,7 @@ struct ReservationFoodDraftDTO: Codable {
     }
 }
 
-struct AdventureBookingBlockDTO: Codable {
+struct AdventureBookingBlockDto: Codable {
     let id: String
     let title: String
     let activity: String
@@ -324,7 +324,7 @@ struct AdventureBookingBlockDTO: Codable {
 }
 
 @MainActor
-struct AdventureBookingDTO: Codable {
+struct AdventureBookingDto: Codable {
     let clientId: String?
     let clientName: String
     let whatsappNumber: String
@@ -336,9 +336,9 @@ struct AdventureBookingDTO: Codable {
     let eventType: String?
     let customEventTitle: String?
     let eventNotes: String?
-    let items: [AdventureReservationItemDraftDTO]
-    let foodReservation: ReservationFoodDraftDTO?
-    let blocks: [AdventureBookingBlockDTO]
+    let items: [AdventureReservationItemDraftDto]
+    let foodReservation: ReservationFoodDraftDto?
+    let blocks: [AdventureBookingBlockDto]
     let adventureSubtotal: Double?
     let foodSubtotal: Double?
     let subtotal: Double
@@ -382,9 +382,10 @@ struct AdventureBookingDTO: Codable {
         bookingId: String,
         request: AdventureBookingRequest,
         plan: AdventureBuildPlan,
-        createdAt: Date
-    ) -> AdventureBookingDTO {
-        AdventureBookingDTO(
+        createdAt: Date,
+        status: AdventureBookingStatus = .pending
+    ) -> AdventureBookingDto {
+        AdventureBookingDto(
             clientId: request.clientId,
             clientName: request.clientName,
             whatsappNumber: request.whatsappNumber,
@@ -396,16 +397,16 @@ struct AdventureBookingDTO: Codable {
             eventType: request.eventType.rawValue,
             customEventTitle: request.customEventTitle,
             eventNotes: request.eventNotes,
-            items: request.items.map(AdventureReservationItemDraftDTO.init(from:)),
-            foodReservation: request.foodReservation.map(ReservationFoodDraftDTO.init(from:)),
-            blocks: plan.blocks.map(AdventureBookingBlockDTO.init(from:)),
+            items: request.items.map(AdventureReservationItemDraftDto.init(from:)),
+            foodReservation: request.foodReservation.map(ReservationFoodDraftDto.init(from:)),
+            blocks: plan.blocks.map(AdventureBookingBlockDto.init(from:)),
             adventureSubtotal: plan.adventureSubtotal,
             foodSubtotal: plan.foodSubtotal,
             subtotal: plan.subtotal,
             discountAmount: plan.discountAmount,
             nightPremium: plan.nightPremium,
             totalAmount: plan.totalAmount,
-            status: AdventureBookingStatus.confirmed.rawValue,
+            status: status.rawValue,
             createdAt: Timestamp(date: createdAt),
             notes: request.notes
         )
@@ -462,7 +463,7 @@ final class AdventureBookingsService: AdventureBookingsServiceable {
                 
                 do {
                     let bookings = try snapshot.documents.map { document in
-                        let dto = try document.data(as: AdventureBookingDTO.self)
+                        let dto = try document.data(as: AdventureBookingDto.self)
                         return dto.toDomain(documentId: document.documentID)
                     }
                     onChange(.success(bookings))
@@ -498,7 +499,7 @@ final class AdventureBookingsService: AdventureBookingsServiceable {
         
         let createdAt = Date()
         let bookingRef = db.collection(bookingsCollection).document()
-        let dto = AdventureBookingDTO.from(
+        let dto = AdventureBookingDto.from(
             bookingId: bookingRef.documentID,
             request: request,
             plan: plan,
@@ -527,7 +528,7 @@ final class AdventureBookingsService: AdventureBookingsServiceable {
             throw makeError("Booking not found.")
         }
         
-        let dto = try snapshot.data(as: AdventureBookingDTO.self)
+        let dto = try snapshot.data(as: AdventureBookingDto.self)
         guard dto.nationalId == nationalId else {
             throw makeError("You are not allowed to cancel this booking.")
         }
@@ -837,15 +838,19 @@ enum AdventureResourceType: String, Codable, Hashable {
     case extremeSlidePeople
 }
 
-enum AdventureBookingStatus: String, Codable, CaseIterable, Hashable {
+enum AdventureBookingStatus: String, Codable, CaseIterable, Hashable, Identifiable {
     case pending
     case confirmed
+    case completed
     case canceled
-    
+
+    var id: String { rawValue }
+
     var title: String {
         switch self {
         case .pending: return "Pendiente"
         case .confirmed: return "Confirmada"
+        case .completed: return "Completada"
         case .canceled: return "Cancelada"
         }
     }
@@ -2077,13 +2082,16 @@ struct AdventureComboBuilderView: View {
     
     var body: some View {
         List {
+            schedulingSection
+            availabilitySection
+            eventSection
+            
             comboSection
             foodSection
-            eventSection
-            schedulingSection
+            
             contactSection
-            availabilitySection
             summarySection
+            
             confirmSection
         }
         .listStyle(.plain)
@@ -2118,6 +2126,25 @@ struct AdventureComboBuilderView: View {
             Button("OK") { adventureComboBuilderViewModel.dismissMessage() }
         } message: {
             Text(adventureComboBuilderViewModel.state.errorMessage ?? adventureComboBuilderViewModel.state.successMessage ?? "")
+        }
+    }
+    
+    private var menuItemsById: [String: MenuItem] {
+        Dictionary(
+            uniqueKeysWithValues: menuViewModel.state.sections
+                .flatMap(\.items)
+                .map { ($0.id, $0) }
+        )
+    }
+
+    private var blockedFoodItemsForToday: [ReservationFoodItemDraft] {
+        guard AdventureDateHelper.calendar.isDateInToday(adventureComboBuilderViewModel.state.selectedDate) else {
+            return []
+        }
+
+        return adventureComboBuilderViewModel.state.foodItems.filter { draft in
+            guard let menuItem = menuItemsById[draft.menuItemId] else { return false }
+            return !menuItem.canBeOrdered
         }
     }
     
@@ -2263,8 +2290,16 @@ struct AdventureComboBuilderView: View {
                 }
                 .buttonStyle(.plain)
                 .sheet(isPresented: $isFoodPickerPresented) {
-                    AdventureFoodPickerSheet(menuSections: menuViewModel.state.sections) { item, quantity, notes in
-                        adventureComboBuilderViewModel.addFoodItem(item, quantity: quantity, notes: notes)
+                    AdventureFoodPickerSheet(
+                        menuSections: menuViewModel.state.sections,
+                        selectedDate: adventureComboBuilderViewModel.state.selectedDate
+                    ) { item, quantity, notes in
+                        adventureComboBuilderViewModel.addFoodItem(
+                            item,
+                            quantity: quantity,
+                            notes: notes,
+                            for: adventureComboBuilderViewModel.state.selectedDate
+                        )
                     }
                 }
                 
@@ -2315,44 +2350,41 @@ struct AdventureComboBuilderView: View {
         @Environment(\.dismiss) private var dismiss
 
         let menuSections: [MenuSection]
+        let selectedDate: Date
         let onAdd: (MenuItem, Int, String?) -> Void
 
         @State private var selectedCategoryId: String? = nil
         @State private var searchText = ""
 
-        private var categories: [MenuCategory] {
-            menuSections.map(\.category)
+        private let categoryDisplayOrder: [String] = [
+            "Entradas",
+            "Sopas",
+            "Platos Fuertes",
+            "Extras",
+            "Postres",
+            "Bebidas",
+            "Bebidas Alcohólicas"
+        ]
+
+        private func categoryRank(for title: String) -> Int {
+            categoryDisplayOrder.firstIndex(of: title) ?? Int.max
         }
 
-        private var filteredSections: [MenuSection] {
-            let categoryFiltered = menuSections.filter { section in
-                selectedCategoryId == nil || section.category.id == selectedCategoryId
-            }
+        private var orderedSections: [MenuSection] {
+            menuSections.sorted { lhs, rhs in
+                let lhsRank = categoryRank(for: lhs.category.title)
+                let rhsRank = categoryRank(for: rhs.category.title)
 
-            guard !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-                return categoryFiltered
-            }
-
-            let query = searchText.lowercased()
-
-            return categoryFiltered.compactMap { section in
-                let items = section.items.filter { item in
-                    item.isAvailable &&
-                    (
-                        item.name.lowercased().contains(query) ||
-                        item.description.lowercased().contains(query) ||
-                        item.ingredients.contains(where: { $0.lowercased().contains(query) })
-                    )
+                if lhsRank != rhsRank {
+                    return lhsRank < rhsRank
                 }
 
-                guard !items.isEmpty else { return nil }
-
-                return MenuSection(
-                    id: section.id,
-                    category: section.category,
-                    items: items
-                )
+                return lhs.category.title < rhs.category.title
             }
+        }
+
+        private var categories: [MenuCategory] {
+            orderedSections.map(\.category)
         }
 
         var body: some View {
@@ -2374,14 +2406,20 @@ struct AdventureComboBuilderView: View {
                                     Text(section.category.title)
                                         .font(.title3.bold())
 
-                                    ForEach(section.items.filter(\.isAvailable)) { item in
+                                    ForEach(section.items) { item in
                                         NavigationLink {
-                                            AdventureFoodDetailView(item: item) { quantity, notes in
+                                            AdventureFoodDetailView(
+                                                item: item,
+                                                selectedDate: selectedDate
+                                            ) { quantity, notes in
                                                 onAdd(item, quantity, notes)
                                                 dismiss()
                                             }
                                         } label: {
-                                            AdventureFoodMenuRow(item: item)
+                                            AdventureFoodMenuRow(
+                                                item: item,
+                                                selectedDate: selectedDate
+                                            )
                                         }
                                         .buttonStyle(.plain)
                                     }
@@ -2443,10 +2481,51 @@ struct AdventureComboBuilderView: View {
             }
             .buttonStyle(.plain)
         }
+        
+        private var isTodayReservation: Bool {
+            AdventureDateHelper.calendar.isDateInToday(selectedDate)
+        }
+
+        private func isBlockedForSelectedDate(_ item: MenuItem) -> Bool {
+            isTodayReservation && !item.canBeOrdered
+        }
+        
+        private var filteredSections: [MenuSection] {
+            let categoryFiltered = orderedSections.filter { section in
+                selectedCategoryId == nil || section.category.id == selectedCategoryId
+            }
+
+            guard !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                return categoryFiltered
+            }
+
+            let query = searchText.lowercased()
+
+            return categoryFiltered.compactMap { section in
+                let items = section.items.filter { item in
+                    item.name.lowercased().contains(query) ||
+                    item.description.lowercased().contains(query) ||
+                    item.ingredients.contains(where: { $0.lowercased().contains(query) })
+                }
+
+                guard !items.isEmpty else { return nil }
+
+                return MenuSection(
+                    id: section.id,
+                    category: section.category,
+                    items: items
+                )
+            }
+        }
     }
 
     private struct AdventureFoodMenuRow: View {
         let item: MenuItem
+        let selectedDate: Date
+
+        private var isBlockedForSelectedDate: Bool {
+            AdventureDateHelper.calendar.isDateInToday(selectedDate) && !item.canBeOrdered
+        }
 
         var body: some View {
             VStack(alignment: .leading, spacing: 10) {
@@ -2479,6 +2558,12 @@ struct AdventureComboBuilderView: View {
                         .font(.subheadline.bold())
                 }
 
+                if isBlockedForSelectedDate {
+                    Text("For today this is out of stock and cannot be ordered")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.red)
+                }
+
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 8) {
                         ForEach(Array(item.ingredients.prefix(4)), id: \.self) { ingredient in
@@ -2506,6 +2591,7 @@ struct AdventureComboBuilderView: View {
                 }
             }
             .appCardStyle(.adventure, emphasized: false)
+            .opacity(isBlockedForSelectedDate ? 0.82 : 1)
         }
     }
 
@@ -2513,7 +2599,12 @@ struct AdventureComboBuilderView: View {
         @Environment(\.dismiss) private var dismiss
 
         let item: MenuItem
+        let selectedDate: Date
         let onAdd: (Int, String?) -> Void
+
+        private var isBlockedForSelectedDate: Bool {
+            AdventureDateHelper.calendar.isDateInToday(selectedDate) && !item.canBeOrdered
+        }
 
         @State private var quantity = 1
         @State private var notes = ""
@@ -2525,6 +2616,20 @@ struct AdventureComboBuilderView: View {
                     descriptionCard
                     ingredientsCard
                     priceCard
+                    if isBlockedForSelectedDate {
+                        VStack(alignment: .leading, spacing: 10) {
+                            BrandSectionHeader(
+                                theme: .adventure,
+                                title: "Availability",
+                                subtitle: "This restriction only applies for today's reservations."
+                            )
+
+                            Text("For today this is out of stock and cannot be ordered. Select tomorrow or another future day to reserve it.")
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                        }
+                        .appCardStyle(.adventure, emphasized: false)
+                    }
                     quantityCard
                     notesCard
 
@@ -2536,6 +2641,7 @@ struct AdventureComboBuilderView: View {
                             .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(BrandPrimaryButtonStyle(theme: .adventure))
+                    .disabled(isBlockedForSelectedDate)
                 }
                 .padding(20)
             }
@@ -2635,7 +2741,7 @@ struct AdventureComboBuilderView: View {
 
                 QuantitySelectorView(
                     quantity: $quantity,
-                    isEnabled: item.isAvailable,
+                    isEnabled: !isBlockedForSelectedDate,
                     theme: .adventure
                 )
             }
@@ -2930,23 +3036,30 @@ struct AdventureComboBuilderView: View {
                         .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
                 Button {
+                    guard blockedFoodItemsForToday.isEmpty else {
+                        adventureComboBuilderViewModel.presentError(
+                            "For today some selected items are out of stock and cannot be ordered. Choose tomorrow or another future day."
+                        )
+                        return
+                    }
+
                     syncProfileFieldsFromSession()
                     adventureComboBuilderViewModel.submit(clientId: authenticatedProfile?.id)
-                    
+
                     withAnimation(.easeInOut(duration: 0.25)) {
                         showAddedMessage = true
                     }
-                    
+
                     DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
                         withAnimation(.easeInOut(duration: 0.25)) {
                             showAddedMessage = false
                         }
-                        
+
                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
                             dismiss()
                         }
                     }
-                    
+
                     dismiss()
                 } label: {
                     if adventureComboBuilderViewModel.state.isSubmitting {
@@ -3224,6 +3337,7 @@ struct AdventureReservationsView: View {
     @EnvironmentObject private var sessionViewModel: AppSessionViewModel
     @Environment(\.colorScheme) private var colorScheme
     @StateObject private var viewModel: AdventureBookingsViewModel
+    @State private var selectedBooking: AdventureBooking?
 
     init(viewModelFactory: @escaping () -> AdventureBookingsViewModel) {
         _viewModel = StateObject(wrappedValue: viewModelFactory())
@@ -3261,6 +3375,14 @@ struct AdventureReservationsView: View {
                 .scrollContentBackground(.hidden)
                 .background(Color.clear)
                 .appScreenStyle(.adventure)
+                .navigationDestination(item: $selectedBooking) { booking in
+                    ReserveViewDetail(
+                        booking: booking,
+                        onCancel: booking.status != .canceled
+                            ? { viewModel.cancelBooking(booking.id) }
+                            : nil
+                    )
+                }
             }
         }
         .navigationTitle("Reservas y eventos")
@@ -3351,19 +3473,48 @@ struct AdventureReservationsView: View {
         } else {
             Section {
                 ForEach(viewModel.state.bookings) { booking in
-                    AdventureReservationRow(booking: booking)
-                        .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
-                        .listRowBackground(Color.clear)
-                        .listRowSeparator(.hidden)
-                        .swipeActions(edge: .trailing) {
-                            if booking.status != .canceled {
-                                Button(role: .destructive) {
-                                    viewModel.cancelBooking(booking.id)
-                                } label: {
-                                    Label("Cancelar", systemImage: "xmark")
-                                }
+//                    NavigationLink {
+//                        ReserveViewDetail(
+//                            booking: booking,
+//                            onCancel: booking.status != .canceled
+//                                ? { viewModel.cancelBooking(booking.id) }
+//                                : nil
+//                        )
+//                    } label: {
+//                        AdventureReservationRow(booking: booking)
+//                    }
+//                    .buttonStyle(.plain)
+//                    .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+//                    .listRowBackground(Color.clear)
+//                    .listRowSeparator(.hidden)
+//                    .swipeActions(edge: .trailing) {
+//                        if booking.status != .canceled {
+//                            Button(role: .destructive) {
+//                                viewModel.cancelBooking(booking.id)
+//                            } label: {
+//                                Label("Cancelar", systemImage: "xmark")
+//                            }
+//                        }
+//                    }
+                    Button {
+                        selectedBooking = booking
+                    } label: {
+                        AdventureReservationRow(booking: booking)
+                    }
+                    .buttonStyle(.plain)
+                    .contentShape(Rectangle())
+                    .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
+                    .swipeActions(edge: .trailing) {
+                        if booking.status != .canceled {
+                            Button(role: .destructive) {
+                                viewModel.cancelBooking(booking.id)
+                            } label: {
+                                Label("Cancelar", systemImage: "xmark")
                             }
                         }
+                    }
                 }
             } header: {
                 Text("Reservas")
@@ -3463,12 +3614,20 @@ private struct AdventureReservationRow: View {
             Divider()
                 .overlay(palette.stroke)
             
-            VStack(spacing: 8) {
+            VStack(spacing: 10) {
                 amountRow("Aventura", booking.adventureSubtotal)
                 amountRow("Comida", booking.foodSubtotal)
                 amountRow("Descuento", -booking.discountAmount)
-//                amountRow("Recargo nocturno", booking.nightPremium)
+            //    amountRow("Recargo nocturno", booking.nightPremium)
                 amountRow("Total", booking.totalAmount, isPrimary: true)
+
+                HStack {
+                    Spacer()
+
+                    Label("Ver detalle", systemImage: "chevron.right")
+                        .font(.caption.bold())
+                        .foregroundStyle(palette.textTertiary)
+                }
             }
         }
         .appCardStyle(.adventure)
@@ -3508,6 +3667,8 @@ private struct AdventureReservationRow: View {
             return palette.warning.opacity(colorScheme == .dark ? 0.22 : 0.14)
         case .confirmed:
             return palette.success.opacity(colorScheme == .dark ? 0.22 : 0.14)
+        case .completed:
+            return palette.success.opacity(colorScheme == .dark ? 0.22 : 0.14)
         case .canceled:
             return palette.destructive.opacity(colorScheme == .dark ? 0.22 : 0.14)
         }
@@ -3519,6 +3680,8 @@ private struct AdventureReservationRow: View {
             return palette.warning.opacity(0.45)
         case .confirmed:
             return palette.success.opacity(0.45)
+        case .completed:
+            return palette.success.opacity(colorScheme == .dark ? 0.22 : 0.14)
         case .canceled:
             return palette.destructive.opacity(0.45)
         }
@@ -3529,6 +3692,8 @@ private struct AdventureReservationRow: View {
         case .pending:
             return palette.warning
         case .confirmed:
+            return palette.success
+        case .completed:
             return palette.success
         case .canceled:
             return palette.destructive
@@ -3679,6 +3844,541 @@ struct ExperiencesView: View {
     
     var body: some View {
         AdventureCatalogView(adventureComboBuilderViewModel: adventureComboBuilderViewModel, menuViewModel: menuViewModel)
+    }
+}
+
+```
+
+---
+
+# Altos del Murco/root/feature/altos/adventure/presentation/view/ReserveViewDetail.swift
+
+```swift
+//
+//  ReserveViewDetail.swift
+//  Altos del Murco
+//
+//  Created by José Ruiz on 18/4/26.
+//
+
+import SwiftUI
+
+struct ReserveViewDetail: View {
+    let booking: AdventureBooking
+    let onCancel: (() -> Void)?
+
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.dismiss) private var dismiss
+
+    @State private var showCancelConfirmation = false
+
+    private var palette: ThemePalette {
+        AppTheme.palette(for: .adventure, scheme: colorScheme)
+    }
+
+    var body: some View {
+        ScrollView(showsIndicators: false) {
+            VStack(spacing: 20) {
+                heroSection
+                scheduleSection
+                contactSection
+
+                if booking.hasActivities {
+                    activitiesSection
+                    timelineSection
+                }
+
+                if let food = booking.foodReservation, !food.items.isEmpty {
+                    foodSection(food)
+                }
+
+                if hasAnyNotes {
+                    notesSection
+                }
+
+                totalsSection
+            }
+            .padding(.horizontal, 20)
+            .padding(.top, 12)
+            .padding(.bottom, 120)
+        }
+        .navigationTitle("Detalle de reserva")
+        .navigationBarTitleDisplayMode(.inline)
+        .appScreenStyle(.adventure)
+        .safeAreaInset(edge: .bottom) {
+            if let onCancel, booking.status != .canceled {
+                bottomBar(onCancel: onCancel)
+            }
+        }
+        .alert("Cancelar reserva", isPresented: $showCancelConfirmation) {
+            Button("No", role: .cancel) { }
+            Button("Sí, cancelar", role: .destructive) {
+                onCancel?()
+                dismiss()
+            }
+        } message: {
+            Text("Esta acción marcará la reserva como cancelada.")
+        }
+    }
+
+    private var heroSection: some View {
+        ZStack(alignment: .topTrailing) {
+            RoundedRectangle(cornerRadius: AppTheme.Radius.xLarge, style: .continuous)
+                .fill(palette.heroGradient)
+                .overlay(
+                    RoundedRectangle(cornerRadius: AppTheme.Radius.xLarge, style: .continuous)
+                        .stroke(Color.white.opacity(colorScheme == .dark ? 0.10 : 0.18), lineWidth: 1)
+                )
+
+            Circle()
+                .fill(Color.white.opacity(colorScheme == .dark ? 0.08 : 0.18))
+                .frame(width: 150, height: 150)
+                .blur(radius: 12)
+                .offset(x: 36, y: -24)
+
+            VStack(alignment: .leading, spacing: 16) {
+                HStack(alignment: .top) {
+                    BrandIconBubble(
+                        theme: .adventure,
+                        systemImage: iconName,
+                        size: 58
+                    )
+
+                    Spacer()
+
+                    statusBadge
+                }
+
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(booking.eventDisplayTitle)
+                        .font(.system(size: 28, weight: .bold, design: .rounded))
+                        .foregroundStyle(.white)
+
+                    Text(booking.visitTypeTitle)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.white.opacity(0.92))
+
+                    Text(
+                        "\(booking.startAt.formatted(date: .abbreviated, time: .shortened)) • \(booking.endAt.formatted(date: .omitted, time: .shortened))"
+                    )
+                    .font(.subheadline)
+                    .foregroundStyle(.white.opacity(0.88))
+                }
+
+                HStack(spacing: 8) {
+                    infoChip("\(booking.guestCount) invitado(s)")
+                    infoChip(booking.status.title)
+                }
+            }
+            .padding(22)
+        }
+        .shadow(
+            color: palette.shadow.opacity(colorScheme == .dark ? 0.30 : 0.14),
+            radius: 22,
+            x: 0,
+            y: 12
+        )
+    }
+
+    private var scheduleSection: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            BrandSectionHeader(
+                theme: .adventure,
+                title: "Horario",
+                subtitle: "Resumen de fecha y duración de la reserva."
+            )
+
+            detailRow("Inicio", booking.startAt.formatted(date: .complete, time: .shortened))
+            detailRow("Fin", booking.endAt.formatted(date: .complete, time: .shortened))
+            detailRow("Creada", booking.createdAt.formatted(date: .abbreviated, time: .shortened))
+            detailRow("Tipo", booking.visitTypeTitle)
+            detailRow("Evento", booking.eventDisplayTitle)
+        }
+        .appCardStyle(.adventure)
+    }
+
+    private var contactSection: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            BrandSectionHeader(
+                theme: .adventure,
+                title: "Cliente",
+                subtitle: "Datos asociados a la reserva."
+            )
+
+            detailRow("Nombre", booking.clientName)
+            detailRow("WhatsApp", booking.whatsappNumber)
+            detailRow("Cédula", booking.nationalId)
+
+            if let clientId = booking.clientId, !clientId.isEmpty {
+                detailRow("Client ID", clientId)
+            }
+        }
+        .appCardStyle(.adventure, emphasized: false)
+    }
+
+    private var activitiesSection: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            BrandSectionHeader(
+                theme: .adventure,
+                title: "Actividades reservadas",
+                subtitle: "Configuración principal del combo."
+            )
+
+            VStack(spacing: 12) {
+                ForEach(booking.items) { item in
+                    HStack(alignment: .top, spacing: 12) {
+                        BrandIconBubble(
+                            theme: .adventure,
+                            systemImage: item.activity.systemImage,
+                            size: 42
+                        )
+
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(item.title)
+                                .font(.headline)
+                                .foregroundStyle(palette.textPrimary)
+
+                            Text(item.summaryText)
+                                .font(.subheadline)
+                                .foregroundStyle(palette.textSecondary)
+
+                            Text(itemPriceText(item))
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(palette.primary)
+                        }
+
+                        Spacer()
+                    }
+                    .padding(14)
+                    .background(
+                        RoundedRectangle(cornerRadius: 18, style: .continuous)
+                            .fill(palette.elevatedCard)
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 18, style: .continuous)
+                            .stroke(palette.stroke, lineWidth: 1)
+                    )
+                }
+            }
+        }
+        .appCardStyle(.adventure)
+    }
+
+    private var timelineSection: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            BrandSectionHeader(
+                theme: .adventure,
+                title: "Itinerario",
+                subtitle: "Bloques reales programados dentro de la reserva."
+            )
+
+            VStack(spacing: 12) {
+                ForEach(booking.blocks) { block in
+                    HStack(alignment: .top, spacing: 12) {
+                        VStack(spacing: 0) {
+                            Circle()
+                                .fill(palette.primary)
+                                .frame(width: 10, height: 10)
+
+                            Rectangle()
+                                .fill(palette.stroke)
+                                .frame(width: 2, height: 42)
+                        }
+
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text(block.title)
+                                .font(.headline)
+                                .foregroundStyle(palette.textPrimary)
+
+                            Text(
+                                "\(block.startAt.formatted(date: .omitted, time: .shortened)) - \(block.endAt.formatted(date: .omitted, time: .shortened))"
+                            )
+                            .font(.subheadline)
+                            .foregroundStyle(palette.textSecondary)
+
+                            Text(unitsText(for: block))
+                                .font(.caption)
+                                .foregroundStyle(palette.textTertiary)
+
+                            if block.subtotal > 0 {
+                                Text(block.subtotal.priceText)
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(palette.primary)
+                            }
+                        }
+
+                        Spacer()
+                    }
+                }
+            }
+        }
+        .appCardStyle(.adventure, emphasized: false)
+    }
+
+    private func foodSection(_ food: ReservationFoodDraft) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            BrandSectionHeader(
+                theme: .adventure,
+                title: "Comida reservada",
+                subtitle: "Platos agregados a esta reserva."
+            )
+
+            VStack(spacing: 12) {
+                ForEach(food.items) { item in
+                    HStack(alignment: .top, spacing: 12) {
+                        BrandIconBubble(theme: .adventure, systemImage: "fork.knife", size: 40)
+
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("\(item.quantity)x \(item.name)")
+                                .font(.headline)
+
+                            Text("Unitario: \(item.unitPrice.priceText)")
+                                .font(.caption)
+                                .foregroundStyle(palette.textSecondary)
+
+                            Text("Subtotal: \(item.subtotal.priceText)")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(palette.primary)
+
+                            if let notes = item.notes, !notes.isEmpty {
+                                Text(notes)
+                                    .font(.caption)
+                                    .foregroundStyle(palette.textTertiary)
+                            }
+                        }
+
+                        Spacer()
+                    }
+                    .padding(14)
+                    .background(
+                        RoundedRectangle(cornerRadius: 18, style: .continuous)
+                            .fill(palette.elevatedCard)
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 18, style: .continuous)
+                            .stroke(palette.stroke, lineWidth: 1)
+                    )
+                }
+            }
+
+            Divider()
+
+            detailRow("Servicio", servingMomentText(food))
+            if let notes = food.notes, !notes.isEmpty {
+                detailRow("Notas cocina", notes)
+            }
+        }
+        .appCardStyle(.adventure)
+    }
+
+    private var notesSection: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            BrandSectionHeader(
+                theme: .adventure,
+                title: "Notas",
+                subtitle: "Indicaciones adicionales asociadas a la reserva."
+            )
+
+            if let eventNotes = booking.eventNotes, !eventNotes.isEmpty {
+                noteCard(title: "Notas del evento", text: eventNotes)
+            }
+
+            if let notes = booking.notes, !notes.isEmpty {
+                noteCard(title: "Notas generales", text: notes)
+            }
+        }
+        .appCardStyle(.adventure, emphasized: false)
+    }
+
+    private var totalsSection: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            BrandSectionHeader(
+                theme: .adventure,
+                title: "Totales",
+                subtitle: "Resumen económico de la reserva."
+            )
+
+            amountRow("Aventura", booking.adventureSubtotal)
+            amountRow("Comida", booking.foodSubtotal)
+            amountRow("Subtotal", booking.subtotal)
+            amountRow("Descuento", -booking.discountAmount)
+            amountRow("Total", booking.totalAmount, isPrimary: true)
+        }
+        .appCardStyle(.adventure)
+    }
+
+    private func bottomBar(onCancel: @escaping () -> Void) -> some View {
+        VStack(spacing: 10) {
+            Button(role: .destructive) {
+                showCancelConfirmation = true
+            } label: {
+                Label("Cancelar reserva", systemImage: "xmark.circle.fill")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(BrandPrimaryButtonStyle(theme: .adventure))
+            .padding(.horizontal, 16)
+            .padding(.top, 10)
+        }
+        .padding(.bottom, 8)
+        .background(.ultraThinMaterial)
+    }
+
+    private func detailRow(_ title: String, _ value: String) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            Text(title)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(palette.textSecondary)
+                .frame(width: 90, alignment: .leading)
+
+            Text(value)
+                .font(.subheadline)
+                .foregroundStyle(palette.textPrimary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    private func amountRow(_ title: String, _ amount: Double, isPrimary: Bool = false) -> some View {
+        HStack {
+            Text(title)
+                .font(isPrimary ? .headline : .subheadline)
+                .foregroundStyle(isPrimary ? palette.textPrimary : palette.textSecondary)
+
+            Spacer()
+
+            Text(amount.priceText)
+                .font(isPrimary ? .headline.bold() : .subheadline.weight(.semibold))
+                .foregroundStyle(isPrimary ? palette.primary : palette.textPrimary)
+        }
+    }
+
+    private func noteCard(title: String, text: String) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(palette.textPrimary)
+
+            Text(text)
+                .font(.subheadline)
+                .foregroundStyle(palette.textSecondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(14)
+        .background(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(palette.elevatedCard)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(palette.stroke, lineWidth: 1)
+        )
+    }
+
+    private func infoChip(_ text: String) -> some View {
+        Text(text)
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(.white.opacity(0.95))
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(Color.white.opacity(colorScheme == .dark ? 0.10 : 0.16))
+            .clipShape(Capsule())
+            .overlay(
+                Capsule()
+                    .stroke(Color.white.opacity(0.16), lineWidth: 1)
+            )
+    }
+
+    private func unitsText(for block: AdventureBookingBlock) -> String {
+        switch block.resourceType {
+        case .offRoadVehicles:
+            return "\(block.reservedUnits) vehículo(s)"
+        case .paintballPeople, .goKartPeople, .shootingPeople, .campingPeople, .extremeSlidePeople:
+            return "\(block.reservedUnits) persona(s)"
+        }
+    }
+
+    private func itemPriceText(_ item: AdventureReservationItemDraft) -> String {
+        AdventurePricingEngine.subtotal(for: item).priceText
+    }
+
+    private func servingMomentText(_ food: ReservationFoodDraft) -> String {
+        switch food.servingMoment {
+        case .onArrival:
+            return "Al llegar"
+        case .afterActivities:
+            return "Después de actividades"
+        case .specificTime:
+            if let time = food.servingTime {
+                return "Hora específica • \(time.formatted(date: .omitted, time: .shortened))"
+            }
+            return "Hora específica"
+        }
+    }
+
+    private var hasAnyNotes: Bool {
+        let eventNotes = booking.eventNotes?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let notes = booking.notes?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return !eventNotes.isEmpty || !notes.isEmpty
+    }
+
+    private var iconName: String {
+        if booking.hasActivities { return "figure.hiking" }
+        if booking.hasFoodReservation { return "fork.knife" }
+        return "calendar"
+    }
+
+    private var statusBadge: some View {
+        Text(booking.status.title)
+            .font(.caption.bold())
+            .foregroundStyle(statusTextColor)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(
+                Capsule()
+                    .fill(statusBackgroundColor)
+            )
+            .overlay(
+                Capsule()
+                    .stroke(statusBorderColor, lineWidth: 1)
+            )
+    }
+
+    private var statusBackgroundColor: Color {
+        switch booking.status {
+        case .pending:
+            return Color.orange.opacity(colorScheme == .dark ? 0.25 : 0.16)
+        case .confirmed:
+            return Color.green.opacity(colorScheme == .dark ? 0.25 : 0.16)
+        case .completed:
+            return Color.blue.opacity(colorScheme == .dark ? 0.25 : 0.16)
+        case .canceled:
+            return Color.red.opacity(colorScheme == .dark ? 0.25 : 0.16)
+        }
+    }
+
+    private var statusBorderColor: Color {
+        switch booking.status {
+        case .pending:
+            return Color.orange.opacity(0.45)
+        case .confirmed:
+            return Color.green.opacity(0.45)
+        case .completed:
+            return Color.blue.opacity(0.45)
+        case .canceled:
+            return Color.red.opacity(0.45)
+        }
+    }
+
+    private var statusTextColor: Color {
+        switch booking.status {
+        case .pending:
+            return .orange
+        case .confirmed:
+            return .green
+        case .completed:
+            return .blue
+        case .canceled:
+            return .red
+        }
     }
 }
 
@@ -4245,9 +4945,16 @@ final class AdventureComboBuilderViewModel: ObservableObject {
     func addFoodItem(
         _ menuItem: MenuItem,
         quantity: Int = 1,
-        notes: String? = nil
+        notes: String? = nil,
+        for selectedDate: Date
     ) {
-        guard menuItem.isAvailable else { return }
+        let isTodayReservation = AdventureDateHelper.calendar.isDateInToday(selectedDate)
+
+        guard !(isTodayReservation && !menuItem.canBeOrdered) else {
+            state.errorMessage = "For today this item is out of stock and cannot be ordered."
+            state.successMessage = nil
+            return
+        }
 
         let trimmedNotes = notes?.trimmingCharacters(in: .whitespacesAndNewlines)
         let finalNotes = (trimmedNotes?.isEmpty == false) ? trimmedNotes : nil
@@ -4344,7 +5051,12 @@ final class AdventureComboBuilderViewModel: ObservableObject {
         state.errorMessage = nil
         state.successMessage = nil
     }
-    
+
+    func presentError(_ message: String) {
+        state.errorMessage = message
+        state.successMessage = nil
+    }
+
     func submit(clientId: String?) {
         Task { await submitReservation(clientId: clientId) }
     }
@@ -6088,7 +6800,7 @@ final class FeaturedFeedRepository: FeaturedFeedRepositoriable {
 
                 do {
                     let posts = try snapshot.documents.compactMap { document in
-                        try document.data(as: FeaturedPostDTO.self).toDomain()
+                        try document.data(as: FeaturedPostDto.self).toDomain()
                     }
 
                     let page = FeaturedFeedPage(
@@ -6112,7 +6824,7 @@ final class FeaturedFeedRepository: FeaturedFeedRepositoriable {
 
         let snapshot = try await query.getDocuments()
         let posts = try snapshot.documents.compactMap { document in
-            try document.data(as: FeaturedPostDTO.self).toDomain()
+            try document.data(as: FeaturedPostDto.self).toDomain()
         }
 
         return FeaturedFeedPage(
@@ -6163,7 +6875,7 @@ enum FeaturedPostCategory: String, Codable, CaseIterable, Identifiable {
     }
 }
 
-struct FeaturedPostMediaDTO: Codable, Hashable, Identifiable {
+struct FeaturedPostMediaDto: Codable, Hashable, Identifiable {
     let id: String
     let downloadURL: String
     let storagePath: String
@@ -6172,11 +6884,11 @@ struct FeaturedPostMediaDTO: Codable, Hashable, Identifiable {
     let position: Int
 }
 
-struct FeaturedPostDTO: Codable {
+struct FeaturedPostDto: Codable {
     @DocumentID var id: String?
     let category: String
     let description: String?
-    let media: [FeaturedPostMediaDTO]
+    let media: [FeaturedPostMediaDto]
     let createdAt: Date
     let updatedAt: Date
     let expiresAt: Date
@@ -6216,7 +6928,7 @@ struct FeaturedPost: Identifiable, Hashable {
     }
 }
 
-extension FeaturedPostDTO {
+extension FeaturedPostDto {
     func toDomain() -> FeaturedPost? {
         guard let id else { return nil }
         guard let category = FeaturedPostCategory(rawValue: category) else { return nil }
@@ -6246,13 +6958,13 @@ extension FeaturedPostDTO {
 }
 
 extension FeaturedPost {
-    func toDTO() -> FeaturedPostDTO {
-        FeaturedPostDTO(
+    func toDto() -> FeaturedPostDto {
+        FeaturedPostDto(
             id: id,
             category: category.rawValue,
             description: description,
             media: orderedMedia.map {
-                FeaturedPostMediaDTO(
+                FeaturedPostMediaDto(
                     id: $0.id,
                     downloadURL: $0.downloadURL?.absoluteString ?? "",
                     storagePath: $0.storagePath,
@@ -9849,43 +10561,77 @@ final class MenuService: MenuServiceable {
 //  Created by José Ruiz on 12/3/26.
 //
 
-import Foundation
+import Combine
 import FirebaseFirestore
 
-final class FirebaseOrdersService: OrdersServiceable {
+final class OrdersService: OrdersServiceable {
     private lazy var db = Firestore.firestore()
     
     func submit(order: Order) async throws {
+        let quantitiesByMenuItemId = Dictionary(
+            grouping: order.items,
+            by: \.menuItemId
+        )
+            .compactMapValues { items in
+                let total = items.reduce(0) { $0 + $1.quantity }
+                return total > 0 ? total : nil
+            }
+        
+        let menuItemsToProcess: [(ref: DocumentReference, totalQuantity: Int)] =
+        quantitiesByMenuItemId.map { menuItemId, totalQuantity in
+            (
+                ref: self.db
+                    .collection(FirestoreConstants.restaurant_menu_items)
+                    .document(menuItemId),
+                totalQuantity: totalQuantity
+            )
+        }
+        
         let _ = try await db.runTransaction { transaction, errorPointer in
             do {
-                for item in order.items {
-                    let ref = self.db
-                        .collection(FirestoreConstants.restaurant_menu_items)
-                        .document(item.menuItemId)
-                    
-                    let snapshot = try transaction.getDocument(ref)
+                // 1. Leer TODO primero
+                var loadedItems: [(ref: DocumentReference, dto: MenuItemDto, totalQuantity: Int)] = []
+                
+                for item in menuItemsToProcess {
+                    let snapshot = try transaction.getDocument(item.ref)
                     let dto = try snapshot.data(as: MenuItemDto.self)
                     
-                    guard dto.isAvailable else {
+                    loadedItems.append((
+                        ref: item.ref,
+                        dto: dto,
+                        totalQuantity: item.totalQuantity
+                    ))
+                }
+                
+                // 2. Validar y escribir DESPUÉS
+                for item in loadedItems {
+                    guard item.dto.isAvailable else {
                         throw NSError(
                             domain: "OrdersService",
                             code: 1,
-                            userInfo: [NSLocalizedDescriptionKey: "\(dto.name) no está disponible."]
+                            userInfo: [
+                                NSLocalizedDescriptionKey: "\(item.dto.name) no está disponible."
+                            ]
                         )
                     }
                     
-                    guard dto.remainingQuantity >= item.quantity else {
+                    guard item.dto.remainingQuantity >= item.totalQuantity else {
                         throw NSError(
                             domain: "OrdersService",
                             code: 2,
-                            userInfo: [NSLocalizedDescriptionKey: "Ya no hay suficiente stock de \(dto.name)."]
+                            userInfo: [
+                                NSLocalizedDescriptionKey: "Ya no hay suficiente stock de \(item.dto.name)."
+                            ]
                         )
                     }
                     
+                    let newRemainingQuantity = item.dto.remainingQuantity - item.totalQuantity
+                    
                     transaction.updateData([
-                        "remainingQuantity": dto.remainingQuantity - item.quantity,
+                        "remainingQuantity": newRemainingQuantity,
+                        "isAvailable": newRemainingQuantity > 0,
                         "updatedAt": Timestamp(date: Date())
-                    ], forDocument: ref)
+                    ], forDocument: item.ref)
                 }
                 
                 let dto = OrderDto(from: order)
@@ -9896,6 +10642,7 @@ final class FirebaseOrdersService: OrdersServiceable {
                     .document(order.id)
                 
                 transaction.setData(orderData, forDocument: orderRef)
+                
             } catch {
                 errorPointer?.pointee = error as NSError
                 return nil
@@ -9948,7 +10695,6 @@ final class FirebaseOrdersService: OrdersServiceable {
         }
     }
 }
-
 
 ```
 
@@ -10831,8 +11577,6 @@ struct RestaurantRootView: View {
                     )
                 }
             }
-            .onAppear { menuViewModel.onAppear() }
-            .onDisappear { menuViewModel.onDisappear() }
         }
     }
 }
@@ -12012,19 +12756,46 @@ struct MenuListView: View {
         AppTheme.palette(for: .restaurant, scheme: colorScheme)
     }
 
-    private var categories: [MenuCategory] {
-        sections.map(\.category)
+    private let categoryDisplayOrder: [String] = [
+        "Entradas",
+        "Sopas",
+        "Platos Fuertes",
+        "Extras",
+        "Postres",
+        "Bebidas",
+        "Bebidas Alcohólicas"
+    ]
+
+    private func categoryRank(for title: String) -> Int {
+        categoryDisplayOrder.firstIndex(of: title) ?? Int.max
     }
 
+    private var orderedSections: [MenuSection] {
+        sections.sorted { lhs, rhs in
+            let lhsRank = categoryRank(for: lhs.category.title)
+            let rhsRank = categoryRank(for: rhs.category.title)
+
+            if lhsRank != rhsRank {
+                return lhsRank < rhsRank
+            }
+
+            return lhs.category.title < rhs.category.title
+        }
+    }
+
+    private var categories: [MenuCategory] {
+        orderedSections.map(\.category)
+    }
+
+    private var filteredSections: [MenuSection] {
+        guard let selectedCategoryId else { return orderedSections }
+        return orderedSections.filter { $0.category.id == selectedCategoryId }
+    }
+    
     private var featuredItems: [MenuItem] {
         sections
             .flatMap(\.items)
             .filter(\.isFeatured)
-    }
-
-    private var filteredSections: [MenuSection] {
-        guard let selectedCategoryId else { return sections }
-        return sections.filter { $0.category.id == selectedCategoryId }
     }
 
     var body: some View {
@@ -13355,7 +14126,7 @@ struct OrderSuccessView: View {
                 InfoRow(title: "Total", value: order.totalAmount.priceText, theme: theme, emphasized: true)
             }
         }
-        .appCardStyle(theme, emphasized: true)
+        .appCardStyle(theme, emphasized: false)
     }
 }
 
@@ -13563,6 +14334,8 @@ struct OrdersView: View {
     @ObservedObject var viewModel: OrdersViewModel
     @Environment(\.colorScheme) private var colorScheme
     
+    @State private var selectedOrder: Order?
+    
     private var palette: ThemePalette {
         AppTheme.palette(for: .restaurant, scheme: colorScheme)
     }
@@ -13655,14 +14428,15 @@ struct OrdersView: View {
             ForEach(groupedOrders, id: \.status) { group in
                 Section {
                     ForEach(group.orders) { order in
-                        NavigationLink {
-                            OrderDetailView(order: order)
+                        Button {
+                            selectedOrder = order
                         } label: {
                             OrderRowView(order: order)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .appListRowStyle(.restaurant)
                         }
                         .buttonStyle(.plain)
+                        .contentShape(Rectangle())
                         .listRowInsets(EdgeInsets(top: 6, leading: 8, bottom: 6, trailing: 8))
                         .listRowBackground(Color.clear)
                     }
@@ -13676,6 +14450,9 @@ struct OrdersView: View {
         .background(Color.clear)
         .refreshable {
             viewModel.onEvent(.refresh)
+        }
+        .navigationDestination(item: $selectedOrder) { order in
+            OrderDetailView(order: order)
         }
     }
 
@@ -14032,6 +14809,8 @@ struct MainTabView: View {
                 }
                 .tag(MainTab.profile)
         }
+        .onAppear { menuViewModel.onAppear() }
+        .onDisappear { menuViewModel.onDisappear() }
         .tint(selectedPalette.primary)
         .animation(.easeInOut(duration: 0.22), value: selectedTab)
     }
