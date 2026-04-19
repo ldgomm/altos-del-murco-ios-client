@@ -9,16 +9,18 @@ import Foundation
 
 struct GetAdventureAvailabilityUseCase {
     let service: AdventureBookingsServiceable
-    
+
     func execute(
         date: Date,
         items: [AdventureReservationItemDraft],
-        foodReservation: ReservationFoodDraft?
+        foodReservation: ReservationFoodDraft?,
+        packageDiscountAmount: Double
     ) async throws -> [AdventureAvailabilitySlot] {
         try await service.fetchAvailability(
             for: date,
             items: items,
-            foodReservation: foodReservation
+            foodReservation: foodReservation,
+            packageDiscountAmount: packageDiscountAmount
         )
     }
 }

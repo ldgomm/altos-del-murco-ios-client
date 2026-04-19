@@ -11,11 +11,16 @@ import FirebaseFirestore
 final class AdventureBookingsService: AdventureBookingsServiceable {
     private let db: Firestore
     private let bookingsCollection = "adventure_bookings"
-    
-    init(db: Firestore = Firestore.firestore()) {
+    private let catalogService: AdventureCatalogServiceable
+
+    init(
+        db: Firestore = Firestore.firestore(),
+        catalogService: AdventureCatalogServiceable
+    ) {
         self.db = db
+        self.catalogService = catalogService
     }
-    
+
     func observeBookings(
         for day: Date,
         nationalId: String,
@@ -23,7 +28,7 @@ final class AdventureBookingsService: AdventureBookingsServiceable {
     ) -> AdventureListenerToken {
         let dayKey = AdventureDateHelper.dayKey(from: day)
         let nationalId = nationalId.trimmingCharacters(in: .whitespacesAndNewlines)
-        
+
         let registration = db.collection(bookingsCollection)
             .whereField("nationalId", isEqualTo: nationalId)
             .whereField("startDayKey", isEqualTo: dayKey)
@@ -33,12 +38,12 @@ final class AdventureBookingsService: AdventureBookingsServiceable {
                     onChange(.failure(error))
                     return
                 }
-                
+
                 guard let snapshot else {
                     onChange(.success([]))
                     return
                 }
-                
+
                 do {
                     let bookings = try snapshot.documents.map { document in
                         let dto = try document.data(as: AdventureBookingDto.self)
@@ -49,32 +54,41 @@ final class AdventureBookingsService: AdventureBookingsServiceable {
                     onChange(.failure(error))
                 }
             }
-        
+
         return FirestoreAdventureListenerToken(registration: registration)
     }
-    
+
     func fetchAvailability(
         for date: Date,
         items: [AdventureReservationItemDraft],
-        foodReservation: ReservationFoodDraft?
+        foodReservation: ReservationFoodDraft?,
+        packageDiscountAmount: Double
     ) async throws -> [AdventureAvailabilitySlot] {
-        AdventurePlanner.buildAvailability(
+        let catalog = try await catalogService.fetchCatalog()
+
+        return AdventurePlanner.buildAvailability(
             day: date,
             items: items,
-            foodReservation: foodReservation
+            foodReservation: foodReservation,
+            packageDiscountAmount: packageDiscountAmount,
+            catalog: catalog
         )
     }
-    
+
     func createBooking(_ request: AdventureBookingRequest) async throws -> AdventureBooking {
+        let catalog = try await catalogService.fetchCatalog()
+
         guard let plan = AdventurePlanner.buildPlan(
             day: request.date,
             startAt: request.selectedStartAt,
             items: request.items,
-            foodReservation: request.foodReservation
+            foodReservation: request.foodReservation,
+            packageDiscountAmount: request.packageDiscountAmount,
+            catalog: catalog
         ) else {
             throw makeError("Invalid reservation configuration.")
         }
-        
+
         let createdAt = Date()
         let bookingRef = db.collection(bookingsCollection).document()
         let dto = AdventureBookingDto.from(
@@ -83,7 +97,7 @@ final class AdventureBookingsService: AdventureBookingsServiceable {
             plan: plan,
             createdAt: createdAt
         )
-        
+
         let encodedBooking = try Firestore.Encoder().encode(dto)
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             bookingRef.setData(encodedBooking) { error in
@@ -94,23 +108,23 @@ final class AdventureBookingsService: AdventureBookingsServiceable {
                 }
             }
         }
-        
+
         return dto.toDomain(documentId: bookingRef.documentID)
     }
-    
+
     func cancelBooking(id: String, nationalId: String) async throws {
         let bookingRef = db.collection(bookingsCollection).document(id)
         let snapshot = try await bookingRef.getDocument()
-        
+
         guard snapshot.exists else {
             throw makeError("Booking not found.")
         }
-        
+
         let dto = try snapshot.data(as: AdventureBookingDto.self)
         guard dto.nationalId == nationalId else {
             throw makeError("You are not allowed to cancel this booking.")
         }
-        
+
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             bookingRef.updateData(
                 ["status": AdventureBookingStatus.canceled.rawValue]
@@ -123,7 +137,7 @@ final class AdventureBookingsService: AdventureBookingsServiceable {
             }
         }
     }
-    
+
     private func makeError(_ message: String) -> NSError {
         NSError(
             domain: "AdventureBookingsService",

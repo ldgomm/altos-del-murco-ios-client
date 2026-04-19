@@ -77,9 +77,15 @@ struct AltosDelMurcoApp: App {
             _ordersViewModel = StateObject(wrappedValue: ordersVM)
             _checkoutViewModel = StateObject(wrappedValue: checkoutVM)
 
-            let adventureService = AdventureBookingsService()
-            self.adventureModuleFactory = AdventureModuleFactory(service: adventureService)
-
+            let adventureCatalogService = AdventureCatalogService()
+            let adventureBookingsService = AdventureBookingsService(
+                catalogService: adventureCatalogService
+            )
+            self.adventureModuleFactory = AdventureModuleFactory(
+                bookingsService: adventureBookingsService,
+                catalogService: adventureCatalogService
+            )
+            
             let authRepository: AuthenticationRepositoriable = AuthenticationRepository()
             let clientProfileRepository: ClientProfileRepositoriable = ClientProfileRepository()
 
@@ -433,11 +439,16 @@ import FirebaseFirestore
 final class AdventureBookingsService: AdventureBookingsServiceable {
     private let db: Firestore
     private let bookingsCollection = "adventure_bookings"
-    
-    init(db: Firestore = Firestore.firestore()) {
+    private let catalogService: AdventureCatalogServiceable
+
+    init(
+        db: Firestore = Firestore.firestore(),
+        catalogService: AdventureCatalogServiceable
+    ) {
         self.db = db
+        self.catalogService = catalogService
     }
-    
+
     func observeBookings(
         for day: Date,
         nationalId: String,
@@ -445,7 +456,7 @@ final class AdventureBookingsService: AdventureBookingsServiceable {
     ) -> AdventureListenerToken {
         let dayKey = AdventureDateHelper.dayKey(from: day)
         let nationalId = nationalId.trimmingCharacters(in: .whitespacesAndNewlines)
-        
+
         let registration = db.collection(bookingsCollection)
             .whereField("nationalId", isEqualTo: nationalId)
             .whereField("startDayKey", isEqualTo: dayKey)
@@ -455,12 +466,12 @@ final class AdventureBookingsService: AdventureBookingsServiceable {
                     onChange(.failure(error))
                     return
                 }
-                
+
                 guard let snapshot else {
                     onChange(.success([]))
                     return
                 }
-                
+
                 do {
                     let bookings = try snapshot.documents.map { document in
                         let dto = try document.data(as: AdventureBookingDto.self)
@@ -471,32 +482,41 @@ final class AdventureBookingsService: AdventureBookingsServiceable {
                     onChange(.failure(error))
                 }
             }
-        
+
         return FirestoreAdventureListenerToken(registration: registration)
     }
-    
+
     func fetchAvailability(
         for date: Date,
         items: [AdventureReservationItemDraft],
-        foodReservation: ReservationFoodDraft?
+        foodReservation: ReservationFoodDraft?,
+        packageDiscountAmount: Double
     ) async throws -> [AdventureAvailabilitySlot] {
-        AdventurePlanner.buildAvailability(
+        let catalog = try await catalogService.fetchCatalog()
+
+        return AdventurePlanner.buildAvailability(
             day: date,
             items: items,
-            foodReservation: foodReservation
+            foodReservation: foodReservation,
+            packageDiscountAmount: packageDiscountAmount,
+            catalog: catalog
         )
     }
-    
+
     func createBooking(_ request: AdventureBookingRequest) async throws -> AdventureBooking {
+        let catalog = try await catalogService.fetchCatalog()
+
         guard let plan = AdventurePlanner.buildPlan(
             day: request.date,
             startAt: request.selectedStartAt,
             items: request.items,
-            foodReservation: request.foodReservation
+            foodReservation: request.foodReservation,
+            packageDiscountAmount: request.packageDiscountAmount,
+            catalog: catalog
         ) else {
             throw makeError("Invalid reservation configuration.")
         }
-        
+
         let createdAt = Date()
         let bookingRef = db.collection(bookingsCollection).document()
         let dto = AdventureBookingDto.from(
@@ -505,7 +525,7 @@ final class AdventureBookingsService: AdventureBookingsServiceable {
             plan: plan,
             createdAt: createdAt
         )
-        
+
         let encodedBooking = try Firestore.Encoder().encode(dto)
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             bookingRef.setData(encodedBooking) { error in
@@ -516,23 +536,23 @@ final class AdventureBookingsService: AdventureBookingsServiceable {
                 }
             }
         }
-        
+
         return dto.toDomain(documentId: bookingRef.documentID)
     }
-    
+
     func cancelBooking(id: String, nationalId: String) async throws {
         let bookingRef = db.collection(bookingsCollection).document(id)
         let snapshot = try await bookingRef.getDocument()
-        
+
         guard snapshot.exists else {
             throw makeError("Booking not found.")
         }
-        
+
         let dto = try snapshot.data(as: AdventureBookingDto.self)
         guard dto.nationalId == nationalId else {
             throw makeError("You are not allowed to cancel this booking.")
         }
-        
+
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             bookingRef.updateData(
                 ["status": AdventureBookingStatus.canceled.rawValue]
@@ -545,12 +565,210 @@ final class AdventureBookingsService: AdventureBookingsServiceable {
             }
         }
     }
-    
+
     private func makeError(_ message: String) -> NSError {
         NSError(
             domain: "AdventureBookingsService",
             code: 1,
             userInfo: [NSLocalizedDescriptionKey: message]
+        )
+    }
+}
+
+```
+
+---
+
+# Altos del Murco/root/feature/altos/adventure/data/AdventureCatalogDtos.swift
+
+```swift
+//
+//  AdventureCatalogDtos.swift
+//  Altos del Murco
+//
+//  Created by José Ruiz on 19/4/26.
+//
+
+import Foundation
+import FirebaseFirestore
+
+struct AdventureActivityDefaultsDto: Codable {
+    let durationMinutes: Int
+    let peopleCount: Int
+    let vehicleCount: Int
+    let offRoadRiderCount: Int
+    let nights: Int
+
+    func toDomain() -> AdventureActivityDefaults {
+        AdventureActivityDefaults(
+            durationMinutes: durationMinutes,
+            peopleCount: peopleCount,
+            vehicleCount: vehicleCount,
+            offRoadRiderCount: offRoadRiderCount,
+            nights: nights
+        )
+    }
+}
+
+struct AdventureActivityCatalogDto: Codable {
+    let id: String
+    let title: String
+    let systemImage: String
+    let shortDescription: String
+    let fullDescription: String
+    let includes: [String]
+    let durationOptions: [Int]
+    let pricingMode: String
+    let basePrice: Double
+    let discountAmount: Double
+    let currency: String
+    let defaults: AdventureActivityDefaultsDto
+    let isActive: Bool
+    let sortOrder: Int
+    let updatedAt: Timestamp
+
+    func toDomain() -> AdventureActivityCatalogItem? {
+        guard let activityType = AdventureActivityType(rawValue: id),
+              let pricingMode = AdventurePricingMode(rawValue: pricingMode) else {
+            return nil
+        }
+
+        return AdventureActivityCatalogItem(
+            id: id,
+            activityType: activityType,
+            title: title,
+            systemImage: systemImage,
+            shortDescription: shortDescription,
+            fullDescription: fullDescription,
+            includes: includes,
+            durationOptions: durationOptions,
+            pricingMode: pricingMode,
+            basePrice: basePrice,
+            discountAmount: discountAmount,
+            currency: currency,
+            defaults: defaults.toDomain(),
+            isActive: isActive,
+            sortOrder: sortOrder,
+            updatedAt: updatedAt.dateValue()
+        )
+    }
+}
+
+struct AdventureFeaturedPackageItemDto: Codable {
+    let activity: String
+    let durationMinutes: Int
+    let peopleCount: Int
+    let vehicleCount: Int
+    let offRoadRiderCount: Int
+    let nights: Int
+
+    func toDomain() -> AdventureReservationItemDraft? {
+        guard let activity = AdventureActivityType(rawValue: activity) else {
+            return nil
+        }
+
+        return AdventureReservationItemDraft(
+            activity: activity,
+            durationMinutes: durationMinutes,
+            peopleCount: peopleCount,
+            vehicleCount: vehicleCount,
+            offRoadRiderCount: offRoadRiderCount,
+            nights: nights
+        )
+    }
+}
+
+struct AdventureFeaturedPackageDto: Codable {
+    let id: String
+    let title: String
+    let subtitle: String
+    let badge: String?
+    let isActive: Bool
+    let sortOrder: Int
+    let packageDiscountAmount: Double
+    let items: [AdventureFeaturedPackageItemDto]
+    let updatedAt: Timestamp
+}
+
+```
+
+---
+
+# Altos del Murco/root/feature/altos/adventure/data/AdventureCatalogService.swift
+
+```swift
+//
+//  AdventureCatalogService.swift
+//  Altos del Murco
+//
+//  Created by José Ruiz on 19/4/26.
+//
+
+import Foundation
+import FirebaseFirestore
+
+final class AdventureCatalogService: AdventureCatalogServiceable {
+    private let db: Firestore
+    private let activitiesCollection = "adventure_activities"
+    private let packagesCollection = "adventure_featured_packages"
+
+    init(db: Firestore = Firestore.firestore()) {
+        self.db = db
+    }
+
+    func fetchCatalog() async throws -> AdventureCatalogSnapshot {
+        async let activitiesTask = db.collection(activitiesCollection).getDocuments()
+        async let packagesTask = db.collection(packagesCollection).getDocuments()
+
+        let activitiesSnapshot = try await activitiesTask
+        let packagesSnapshot = try await packagesTask
+
+        let activities = try activitiesSnapshot.documents.compactMap { document -> AdventureActivityCatalogItem? in
+            let dto = try document.data(as: AdventureActivityCatalogDto.self)
+            return dto.toDomain()
+        }
+
+        let activitiesByType = Dictionary(uniqueKeysWithValues: activities.map { ($0.activityType, $0) })
+
+        let packages: [AdventureFeaturedPackage] = try packagesSnapshot.documents.compactMap { document in
+            let dto = try document.data(as: AdventureFeaturedPackageDto.self)
+
+            guard dto.isActive else { return nil }
+
+            let items = dto.items.compactMap { $0.toDomain() }
+
+            // Safe behavior:
+            // Hide the full package if any item references an unknown activity
+            // or an inactive activity, so package semantics stay predictable.
+            guard items.count == dto.items.count else { return nil }
+
+            let allItemsActive = items.allSatisfy { item in
+                activitiesByType[item.activity]?.isActive == true
+            }
+            guard allItemsActive else { return nil }
+
+            return AdventureFeaturedPackage(
+                id: dto.id,
+                title: dto.title,
+                subtitle: dto.subtitle,
+                badge: dto.badge,
+                isActive: dto.isActive,
+                sortOrder: dto.sortOrder,
+                packageDiscountAmount: dto.packageDiscountAmount,
+                items: items,
+                updatedAt: dto.updatedAt.dateValue()
+            )
+        }
+
+        return AdventureCatalogSnapshot(
+            activities: activities.sorted {
+                if $0.sortOrder != $1.sortOrder { return $0.sortOrder < $1.sortOrder }
+                return $0.title < $1.title
+            },
+            featuredPackages: packages.sorted {
+                if $0.sortOrder != $1.sortOrder { return $0.sortOrder < $1.sortOrder }
+                return $0.title < $1.title
+            }
         )
     }
 }
@@ -696,16 +914,178 @@ protocol AdventureBookingsServiceable {
         nationalId: String,
         onChange: @escaping (Result<[AdventureBooking], Error>) -> Void
     ) -> AdventureListenerToken
-    
+
     func fetchAvailability(
         for date: Date,
         items: [AdventureReservationItemDraft],
-        foodReservation: ReservationFoodDraft?
+        foodReservation: ReservationFoodDraft?,
+        packageDiscountAmount: Double
     ) async throws -> [AdventureAvailabilitySlot]
-    
+
     func createBooking(_ request: AdventureBookingRequest) async throws -> AdventureBooking
-    
+
     func cancelBooking(id: String, nationalId: String) async throws
+}
+
+```
+
+---
+
+# Altos del Murco/root/feature/altos/adventure/domain/AdventureCatalogModels.swift
+
+```swift
+//
+//  AdventureCatalogModels.swift
+//  Altos del Murco
+//
+//  Created by José Ruiz on 19/4/26.
+//
+
+import Foundation
+
+enum AdventurePricingMode: String, Codable, Hashable {
+    case perHourPerVehicle
+    case per30MinPerPerson
+    case perNightPerPerson
+    case fixedPerPerson
+}
+
+struct AdventureActivityDefaults: Codable, Hashable {
+    let durationMinutes: Int
+    let peopleCount: Int
+    let vehicleCount: Int
+    let offRoadRiderCount: Int
+    let nights: Int
+}
+
+struct AdventureActivityCatalogItem: Identifiable, Codable, Hashable {
+    let id: String
+    let activityType: AdventureActivityType
+    let title: String
+    let systemImage: String
+    let shortDescription: String
+    let fullDescription: String
+    let includes: [String]
+    let durationOptions: [Int]
+    let pricingMode: AdventurePricingMode
+    let basePrice: Double
+    let discountAmount: Double
+    let currency: String
+    let defaults: AdventureActivityDefaults
+    let isActive: Bool
+    let sortOrder: Int
+    let updatedAt: Date
+
+    var finalUnitPrice: Double {
+        max(0, basePrice - discountAmount)
+    }
+
+    var hasDiscount: Bool {
+        discountAmount > 0
+    }
+
+    var defaultDraft: AdventureReservationItemDraft {
+        AdventureReservationItemDraft(
+            activity: activityType,
+            durationMinutes: defaults.durationMinutes,
+            peopleCount: defaults.peopleCount,
+            vehicleCount: defaults.vehicleCount,
+            offRoadRiderCount: defaults.offRoadRiderCount,
+            nights: defaults.nights
+        )
+    }
+}
+
+struct AdventureFeaturedPackage: Identifiable, Codable, Hashable {
+    let id: String
+    let title: String
+    let subtitle: String
+    let badge: String?
+    let isActive: Bool
+    let sortOrder: Int
+    let packageDiscountAmount: Double
+    let items: [AdventureReservationItemDraft]
+    let updatedAt: Date
+}
+
+struct AdventureCatalogSnapshot: Hashable {
+    let activities: [AdventureActivityCatalogItem]
+    let featuredPackages: [AdventureFeaturedPackage]
+
+    var activitiesByType: [AdventureActivityType: AdventureActivityCatalogItem] {
+        Dictionary(uniqueKeysWithValues: activities.map { ($0.activityType, $0) })
+    }
+
+    func activity(for activity: AdventureActivityType) -> AdventureActivityCatalogItem? {
+        activitiesByType[activity]
+    }
+
+    var activeActivitiesSorted: [AdventureActivityCatalogItem] {
+        activities
+            .filter(\.isActive)
+            .sorted {
+                if $0.sortOrder != $1.sortOrder { return $0.sortOrder < $1.sortOrder }
+                return $0.title < $1.title
+            }
+    }
+
+    var activePackagesSorted: [AdventureFeaturedPackage] {
+        featuredPackages
+            .filter(\.isActive)
+            .sorted {
+                if $0.sortOrder != $1.sortOrder { return $0.sortOrder < $1.sortOrder }
+                return $0.title < $1.title
+            }
+    }
+
+    static let empty = AdventureCatalogSnapshot(
+        activities: [],
+        featuredPackages: []
+    )
+}
+
+```
+
+---
+
+# Altos del Murco/root/feature/altos/adventure/domain/AdventureCatalogServiceable.swift
+
+```swift
+//
+//  AdventureCatalogServiceable.swift
+//  Altos del Murco
+//
+//  Created by José Ruiz on 19/4/26.
+//
+
+import Foundation
+
+protocol AdventureCatalogServiceable {
+    func fetchCatalog() async throws -> AdventureCatalogSnapshot
+}
+
+```
+
+---
+
+# Altos del Murco/root/feature/altos/adventure/domain/AdventureCatalogUseCases.swift
+
+```swift
+//
+//  AdventureCatalogUseCases.swift
+//  Altos del Murco
+//
+//  Created by José Ruiz on 19/4/26.
+//
+
+import Foundation
+
+struct FetchAdventureCatalogUseCase {
+    let service: AdventureCatalogServiceable
+
+    func execute() async throws -> AdventureCatalogSnapshot {
+        try await service.fetchCatalog()
+    }
 }
 
 ```
@@ -731,10 +1111,10 @@ enum AdventureActivityType: String, Codable, CaseIterable, Identifiable, Hashabl
     case shootingRange
     case camping
     case extremeSlide
-    
+
     var id: String { rawValue }
-    
-    var title: String {
+
+    var legacyTitle: String {
         switch self {
         case .offRoad: return "Off-road 4x4"
         case .paintball: return "Paintball"
@@ -744,8 +1124,8 @@ enum AdventureActivityType: String, Codable, CaseIterable, Identifiable, Hashabl
         case .extremeSlide: return "Resbaladera extrema"
         }
     }
-    
-    var systemImage: String {
+
+    var legacySystemImage: String {
         switch self {
         case .offRoad: return "car.fill"
         case .paintball: return "shield.lefthalf.filled"
@@ -755,8 +1135,8 @@ enum AdventureActivityType: String, Codable, CaseIterable, Identifiable, Hashabl
         case .extremeSlide: return "figure.fall"
         }
     }
-    
-    var durationOptions: [Int] {
+
+    var legacyDurationOptions: [Int] {
         switch self {
         case .offRoad:
             return [60, 120, 180]
@@ -768,7 +1148,7 @@ enum AdventureActivityType: String, Codable, CaseIterable, Identifiable, Hashabl
             return []
         }
     }
-    
+
     static func defaultDraft(for activity: AdventureActivityType) -> AdventureReservationItemDraft {
         switch activity {
         case .offRoad:
@@ -826,6 +1206,18 @@ enum AdventureActivityType: String, Codable, CaseIterable, Identifiable, Hashabl
                 nights: 0
             )
         }
+    }
+
+    static func defaultDraft(
+        for activity: AdventureActivityType,
+        catalog: AdventureCatalogSnapshot?
+    ) -> AdventureReservationItemDraft {
+        guard let catalog,
+              let config = catalog.activity(for: activity) else {
+            return defaultDraft(for: activity)
+        }
+
+        return config.defaultDraft
     }
 }
 
@@ -902,7 +1294,7 @@ struct AdventureReservationItemDraft: Identifiable, Codable, Hashable {
     var vehicleCount: Int
     var offRoadRiderCount: Int
     var nights: Int
-    
+
     init(
         id: String = UUID().uuidString,
         activity: AdventureActivityType,
@@ -920,9 +1312,9 @@ struct AdventureReservationItemDraft: Identifiable, Codable, Hashable {
         self.offRoadRiderCount = offRoadRiderCount
         self.nights = nights
     }
-    
-    var title: String { activity.title }
-    
+
+    var title: String { activity.legacyTitle }
+
     var summaryText: String {
         switch activity {
         case .offRoad:
@@ -1041,8 +1433,9 @@ struct AdventureBookingRequest: Hashable {
     let eventNotes: String?
     let items: [AdventureReservationItemDraft]
     let foodReservation: ReservationFoodDraft?
+    let packageDiscountAmount: Double
     let notes: String?
-    
+
     var hasActivities: Bool { !items.isEmpty }
     var hasFoodReservation: Bool { !(foodReservation?.isEmpty ?? true) }
 }
@@ -1092,14 +1485,6 @@ struct AdventureBooking: Identifiable, Hashable {
         case (false, false): return "Reserva"
         }
     }
-}
-
-struct AdventureTemplate: Identifiable, Hashable {
-    let id: String
-    let title: String
-    let subtitle: String
-    let badge: String?
-    let items: [AdventureReservationItemDraft]
 }
 
 enum AdventureSchedule {
@@ -1187,51 +1572,97 @@ enum AdventureDateHelper {
 enum AdventurePricingEngine {
     static let nightPremiumRate = 0.25
 
-    static func subtotal(for item: AdventureReservationItemDraft) -> Double {
+    static func finalUnitPrice(for config: AdventureActivityCatalogItem) -> Double {
+        max(0, config.basePrice - config.discountAmount)
+    }
+
+    static func lineBaseSubtotal(
+        for item: AdventureReservationItemDraft,
+        config: AdventureActivityCatalogItem
+    ) -> Double {
         switch item.activity {
         case .offRoad:
             let hours = Double(item.durationMinutes) / 60
-            return 20 * hours * Double(item.vehicleCount)
-        case .paintball:
-            return 5 * Double(item.durationMinutes / 30) * Double(item.peopleCount)
-        case .goKarts:
-            return 5 * Double(item.durationMinutes / 30) * Double(item.peopleCount)
-        case .shootingRange:
-            return 5 * Double(item.durationMinutes / 30) * Double(item.peopleCount)
+            return config.basePrice * hours * Double(item.vehicleCount)
+
+        case .paintball, .goKarts, .shootingRange:
+            let blocks = Double(item.durationMinutes) / 30
+            return config.basePrice * blocks * Double(item.peopleCount)
+
         case .camping:
-            return 30 * Double(item.peopleCount) * Double(item.nights)
+            return config.basePrice * Double(item.peopleCount) * Double(item.nights)
+
         case .extremeSlide:
-            return 15 * Double(item.peopleCount)
+            return config.basePrice * Double(item.peopleCount)
         }
     }
 
-    static func estimatedSubtotal(items: [AdventureReservationItemDraft]) -> Double {
-        items.reduce(0) { $0 + subtotal(for: $1) }
+    static func subtotal(
+        for item: AdventureReservationItemDraft,
+        config: AdventureActivityCatalogItem
+    ) -> Double {
+        switch item.activity {
+        case .offRoad:
+            let hours = Double(item.durationMinutes) / 60
+            return finalUnitPrice(for: config) * hours * Double(item.vehicleCount)
+
+        case .paintball, .goKarts, .shootingRange:
+            let blocks = Double(item.durationMinutes) / 30
+            return finalUnitPrice(for: config) * blocks * Double(item.peopleCount)
+
+        case .camping:
+            return finalUnitPrice(for: config) * Double(item.peopleCount) * Double(item.nights)
+
+        case .extremeSlide:
+            return finalUnitPrice(for: config) * Double(item.peopleCount)
+        }
     }
 
-    static func discount(for subtotal: Double) -> Double {
-        let completeTenDollarSteps = Int(subtotal / 10)
-        return Double(completeTenDollarSteps) * 0.5
+    static func subtotal(
+        for item: AdventureReservationItemDraft,
+        catalog: AdventureCatalogSnapshot
+    ) -> Double {
+        guard let config = catalog.activity(for: item.activity) else { return 0 }
+        return subtotal(for: item, config: config)
+    }
+
+    static func lineDiscountAmount(
+        for item: AdventureReservationItemDraft,
+        catalog: AdventureCatalogSnapshot
+    ) -> Double {
+        guard let config = catalog.activity(for: item.activity) else { return 0 }
+        return max(0, lineBaseSubtotal(for: item, config: config) - subtotal(for: item, config: config))
+    }
+
+    static func estimatedSubtotal(
+        items: [AdventureReservationItemDraft],
+        catalog: AdventureCatalogSnapshot
+    ) -> Double {
+        items.reduce(0) { partial, item in
+            partial + subtotal(for: item, catalog: catalog)
+        }
+    }
+
+    static func estimatedDiscountAmount(
+        items: [AdventureReservationItemDraft],
+        catalog: AdventureCatalogSnapshot
+    ) -> Double {
+        items.reduce(0) { partial, item in
+            partial + lineDiscountAmount(for: item, catalog: catalog)
+        }
     }
 
     static func foodSubtotal(for foodReservation: ReservationFoodDraft?) -> Double {
         foodReservation?.subtotal ?? 0
     }
-    
-    static func discountedSubtotal(for subtotal: Double) -> Double {
-        max(0, subtotal - discount(for: subtotal))
-    }
 
-    static func estimatedDiscountedSubtotal(items: [AdventureReservationItemDraft]) -> Double {
-        discountedSubtotal(for: estimatedSubtotal(items: items))
-    }
-
-    static func estimatedNightPremium(items: [AdventureReservationItemDraft]) -> Double {
-        let hasCamping = items.contains { $0.activity == .camping }
-        guard hasCamping else { return 0 }
-
-        let discounted = estimatedDiscountedSubtotal(items: items)
-        return discounted * nightPremiumRate
+    static func packageTotal(
+        items: [AdventureReservationItemDraft],
+        packageDiscountAmount: Double,
+        catalog: AdventureCatalogSnapshot
+    ) -> Double {
+        let subtotal = estimatedSubtotal(items: items, catalog: catalog)
+        return max(0, subtotal - packageDiscountAmount)
     }
 }
 
@@ -1240,11 +1671,13 @@ enum AdventurePlanner {
         day: Date,
         startAt: Date,
         items: [AdventureReservationItemDraft],
-        foodReservation: ReservationFoodDraft?
+        foodReservation: ReservationFoodDraft?,
+        packageDiscountAmount: Double,
+        catalog: AdventureCatalogSnapshot
     ) -> AdventureBuildPlan? {
         let hasFood = !(foodReservation?.isEmpty ?? true)
         guard !items.isEmpty || hasFood else { return nil }
-        
+
         let foodSubtotal = AdventurePricingEngine.foodSubtotal(for: foodReservation)
         let dayStart = AdventureDateHelper.date(
             on: day,
@@ -1256,13 +1689,16 @@ enum AdventurePlanner {
             hour: AdventureSchedule.daytimeEndHour,
             minute: 0
         )
-        
+
         guard startAt >= dayStart else { return nil }
-        
+
         if items.isEmpty {
-            let end = AdventureDateHelper.addMinutes(AdventureSchedule.foodOnlyDefaultDurationMinutes, to: startAt)
+            let end = AdventureDateHelper.addMinutes(
+                AdventureSchedule.foodOnlyDefaultDurationMinutes,
+                to: startAt
+            )
             guard end <= dayEnd else { return nil }
-            
+
             return AdventureBuildPlan(
                 startAt: startAt,
                 endAt: end,
@@ -1276,28 +1712,36 @@ enum AdventurePlanner {
                 hasNightPremium: false
             )
         }
-        
+
         var cursor = startAt
         var blocks: [AdventureBookingBlock] = []
-        var adventureSubtotal = 0.0
-        
+        var discountedAdventureSubtotal = 0.0
+        var activityDiscountAmount = 0.0
+
         for (index, item) in items.enumerated() {
+            guard catalog.activity(for: item.activity)?.isActive == true else {
+                return nil
+            }
+
             switch item.activity {
             case .offRoad:
                 guard item.vehicleCount > 0 else { return nil }
                 guard item.offRoadRiderCount > 0 else { return nil }
                 guard item.offRoadRiderCount <= item.vehicleCount * AdventureSchedule.offRoadPeoplePerVehicle else { return nil }
-                
+
                 let end = AdventureDateHelper.addMinutes(item.durationMinutes, to: cursor)
                 guard end <= dayEnd else { return nil }
-                
-                let lineSubtotal = AdventurePricingEngine.subtotal(for: item)
-                adventureSubtotal += lineSubtotal
-                
+
+                let lineSubtotal = AdventurePricingEngine.subtotal(for: item, catalog: catalog)
+                let lineDiscount = AdventurePricingEngine.lineDiscountAmount(for: item, catalog: catalog)
+
+                discountedAdventureSubtotal += lineSubtotal
+                activityDiscountAmount += lineDiscount
+
                 blocks.append(
                     AdventureBookingBlock(
                         id: UUID().uuidString,
-                        title: "Off-Road 4x4",
+                        title: catalog.activity(for: .offRoad)?.title ?? "Off-Road 4x4",
                         activity: .offRoad,
                         resourceType: .offRoadVehicles,
                         startAt: cursor,
@@ -1307,18 +1751,21 @@ enum AdventurePlanner {
                     )
                 )
                 cursor = end
-                
+
             case .paintball:
                 let end = AdventureDateHelper.addMinutes(item.durationMinutes, to: cursor)
                 guard end <= dayEnd else { return nil }
-                
-                let lineSubtotal = AdventurePricingEngine.subtotal(for: item)
-                adventureSubtotal += lineSubtotal
-                
+
+                let lineSubtotal = AdventurePricingEngine.subtotal(for: item, catalog: catalog)
+                let lineDiscount = AdventurePricingEngine.lineDiscountAmount(for: item, catalog: catalog)
+
+                discountedAdventureSubtotal += lineSubtotal
+                activityDiscountAmount += lineDiscount
+
                 blocks.append(
                     AdventureBookingBlock(
                         id: UUID().uuidString,
-                        title: "Paintball",
+                        title: catalog.activity(for: .paintball)?.title ?? "Paintball",
                         activity: .paintball,
                         resourceType: .paintballPeople,
                         startAt: cursor,
@@ -1328,18 +1775,21 @@ enum AdventurePlanner {
                     )
                 )
                 cursor = end
-                
+
             case .goKarts:
                 let end = AdventureDateHelper.addMinutes(item.durationMinutes, to: cursor)
                 guard end <= dayEnd else { return nil }
-                
-                let lineSubtotal = AdventurePricingEngine.subtotal(for: item)
-                adventureSubtotal += lineSubtotal
-                
+
+                let lineSubtotal = AdventurePricingEngine.subtotal(for: item, catalog: catalog)
+                let lineDiscount = AdventurePricingEngine.lineDiscountAmount(for: item, catalog: catalog)
+
+                discountedAdventureSubtotal += lineSubtotal
+                activityDiscountAmount += lineDiscount
+
                 blocks.append(
                     AdventureBookingBlock(
                         id: UUID().uuidString,
-                        title: "Go Karts",
+                        title: catalog.activity(for: .goKarts)?.title ?? "Go Karts",
                         activity: .goKarts,
                         resourceType: .goKartPeople,
                         startAt: cursor,
@@ -1349,18 +1799,21 @@ enum AdventurePlanner {
                     )
                 )
                 cursor = end
-                
+
             case .shootingRange:
                 let end = AdventureDateHelper.addMinutes(item.durationMinutes, to: cursor)
                 guard end <= dayEnd else { return nil }
-                
-                let lineSubtotal = AdventurePricingEngine.subtotal(for: item)
-                adventureSubtotal += lineSubtotal
-                
+
+                let lineSubtotal = AdventurePricingEngine.subtotal(for: item, catalog: catalog)
+                let lineDiscount = AdventurePricingEngine.lineDiscountAmount(for: item, catalog: catalog)
+
+                discountedAdventureSubtotal += lineSubtotal
+                activityDiscountAmount += lineDiscount
+
                 blocks.append(
                     AdventureBookingBlock(
                         id: UUID().uuidString,
-                        title: "Campo de tiro",
+                        title: catalog.activity(for: .shootingRange)?.title ?? "Campo de tiro",
                         activity: .shootingRange,
                         resourceType: .shootingPeople,
                         startAt: cursor,
@@ -1370,17 +1823,17 @@ enum AdventurePlanner {
                     )
                 )
                 cursor = end
-                
+
             case .extremeSlide:
                 let transportVehicles = max(
                     1,
                     Int(ceil(Double(item.peopleCount) / Double(AdventureSchedule.offRoadPeoplePerVehicle)))
                 )
-                
+
                 let transportEnd = AdventureDateHelper.addMinutes(30, to: cursor)
                 let slideEnd = AdventureDateHelper.addMinutes(30, to: transportEnd)
                 guard slideEnd <= dayEnd else { return nil }
-                
+
                 blocks.append(
                     AdventureBookingBlock(
                         id: UUID().uuidString,
@@ -1393,14 +1846,17 @@ enum AdventurePlanner {
                         subtotal: 0
                     )
                 )
-                
-                let lineSubtotal = AdventurePricingEngine.subtotal(for: item)
-                adventureSubtotal += lineSubtotal
-                
+
+                let lineSubtotal = AdventurePricingEngine.subtotal(for: item, catalog: catalog)
+                let lineDiscount = AdventurePricingEngine.lineDiscountAmount(for: item, catalog: catalog)
+
+                discountedAdventureSubtotal += lineSubtotal
+                activityDiscountAmount += lineDiscount
+
                 blocks.append(
                     AdventureBookingBlock(
                         id: UUID().uuidString,
-                        title: "Extreme Slide",
+                        title: catalog.activity(for: .extremeSlide)?.title ?? "Extreme Slide",
                         activity: .extremeSlide,
                         resourceType: .extremeSlidePeople,
                         startAt: transportEnd,
@@ -1410,22 +1866,37 @@ enum AdventurePlanner {
                     )
                 )
                 cursor = slideEnd
-                
+
             case .camping:
                 guard index == items.count - 1 else { return nil }
                 let campingStart = AdventureDateHelper.date(on: day, hour: 19, minute: 0)
                 guard cursor <= campingStart else { return nil }
-                
+
+                let config = catalog.activity(for: .camping)
+
                 for night in 0..<max(1, item.nights) {
                     let start = AdventureDateHelper.addDays(night, to: campingStart)
                     let end = AdventureDateHelper.addMinutes(12 * 60, to: start)
-                    let nightSubtotal = 30 * Double(item.peopleCount)
-                    adventureSubtotal += nightSubtotal
-                    
+
+                    let nightItem = AdventureReservationItemDraft(
+                        activity: .camping,
+                        durationMinutes: 0,
+                        peopleCount: item.peopleCount,
+                        vehicleCount: 0,
+                        offRoadRiderCount: 0,
+                        nights: 1
+                    )
+
+                    let nightSubtotal = AdventurePricingEngine.subtotal(for: nightItem, catalog: catalog)
+                    let nightDiscount = AdventurePricingEngine.lineDiscountAmount(for: nightItem, catalog: catalog)
+
+                    discountedAdventureSubtotal += nightSubtotal
+                    activityDiscountAmount += nightDiscount
+
                     blocks.append(
                         AdventureBookingBlock(
                             id: UUID().uuidString,
-                            title: "Camping Night \(night + 1)",
+                            title: "\(config?.title ?? "Camping") Night \(night + 1)",
                             activity: .camping,
                             resourceType: .campingPeople,
                             startAt: start,
@@ -1435,46 +1906,36 @@ enum AdventurePlanner {
                         )
                     )
                 }
+
                 cursor = blocks.last?.endAt ?? cursor
             }
         }
-        
-        //Later off-road
-//        let hasMisalignedOffRoadBlock = blocks.contains {
-//            $0.activity == .offRoad &&
-//            AdventureDateHelper.calendar.component(.minute, from: $0.startAt) != 0
-//        }
-        
-//        guard !hasMisalignedOffRoadBlock else { return nil }
+
         guard let last = blocks.last else { return nil }
-        
+
         let hasNightPremium =
             items.contains(where: { $0.activity == .camping }) ||
             blocks.contains { AdventureDateHelper.isNightPremiumTime($0.startAt, $0.endAt) }
-        
-        let discountAmount = AdventurePricingEngine.discount(for: adventureSubtotal)
-        let discountedAdventureSubtotal = AdventurePricingEngine.discountedSubtotal(for: adventureSubtotal)
-        
-        //Later premium
-//        let premium = hasNightPremium ? discountedAdventureSubtotal * AdventurePricingEngine.nightPremiumRate : 0
-        
-        let totalSubtotal = adventureSubtotal + foodSubtotal
-        let totalAmount = discountedAdventureSubtotal + foodSubtotal// + premium
-        
+
+        let totalDiscountAmount = activityDiscountAmount + max(0, packageDiscountAmount)
+        let packageAdjustedAdventureSubtotal = max(0, discountedAdventureSubtotal - max(0, packageDiscountAmount))
+        let totalSubtotal = discountedAdventureSubtotal + foodSubtotal
+        let totalAmount = packageAdjustedAdventureSubtotal + foodSubtotal
+
         return AdventureBuildPlan(
             startAt: startAt,
             endAt: last.endAt,
             blocks: blocks,
-            adventureSubtotal: adventureSubtotal,
+            adventureSubtotal: discountedAdventureSubtotal,
             foodSubtotal: foodSubtotal,
             subtotal: totalSubtotal,
-            discountAmount: discountAmount,
+            discountAmount: totalDiscountAmount,
             nightPremium: 0,
             totalAmount: totalAmount,
             hasNightPremium: hasNightPremium
         )
     }
-    
+
     static func affectedDayKeys(
         day: Date,
         items: [AdventureReservationItemDraft]
@@ -1485,15 +1946,17 @@ enum AdventurePlanner {
             AdventureDateHelper.dayKey(from: AdventureDateHelper.addDays($0, to: day))
         }
     }
-    
+
     static func buildAvailability(
         day: Date,
         items: [AdventureReservationItemDraft],
-        foodReservation: ReservationFoodDraft?
+        foodReservation: ReservationFoodDraft?,
+        packageDiscountAmount: Double,
+        catalog: AdventureCatalogSnapshot
     ) -> [AdventureAvailabilitySlot] {
         let hasFood = !(foodReservation?.isEmpty ?? true)
         guard !items.isEmpty || hasFood else { return [] }
-        
+
         let startWindow = AdventureDateHelper.date(
             on: day,
             hour: AdventureSchedule.daytimeStartHour,
@@ -1504,20 +1967,22 @@ enum AdventurePlanner {
             hour: AdventureSchedule.daytimeEndHour,
             minute: 0
         )
-        
+
         let now = Date()
         let isToday = AdventureDateHelper.calendar.isDate(day, inSameDayAs: now)
-        
+
         var current = startWindow
         var slots: [AdventureAvailabilitySlot] = []
-        
+
         while current <= endWindow {
             if !(isToday && current < now),
                let plan = buildPlan(
                     day: day,
                     startAt: current,
                     items: items,
-                    foodReservation: foodReservation
+                    foodReservation: foodReservation,
+                    packageDiscountAmount: packageDiscountAmount,
+                    catalog: catalog
                ) {
                 slots.append(
                     AdventureAvailabilitySlot(
@@ -1534,94 +1999,12 @@ enum AdventurePlanner {
                     )
                 )
             }
-            
+
             current = AdventureDateHelper.addMinutes(AdventureSchedule.slotMinutes, to: current)
         }
-        
+
         return slots
     }
-}
-
-enum AdventureCatalogTemplates {
-    static let featured: [AdventureTemplate] = [
-        AdventureTemplate(
-            id: "off-road-duo",
-            title: "Off-road dúo",
-            subtitle: "1 hora de off-road para 2 personas",
-            badge: "Popular",
-            items: [
-                AdventureReservationItemDraft(
-                    activity: .offRoad,
-                    durationMinutes: 60,
-                    peopleCount: 0,
-                    vehicleCount: 1,
-                    offRoadRiderCount: 2,
-                    nights: 0
-                )
-            ]
-        ),
-        AdventureTemplate(
-            id: "adrenaline-mix",
-            title: "Mix de adrenalina",
-            subtitle: "1 hora de off-road + 30 min de karts + 30 min de paintball",
-            badge: "Destacado",
-            items: [
-                AdventureReservationItemDraft(
-                    activity: .offRoad,
-                    durationMinutes: 60,
-                    peopleCount: 0,
-                    vehicleCount: 2,
-                    offRoadRiderCount: 4,
-                    nights: 0
-                ),
-                AdventureActivityType.defaultDraft(for: .goKarts),
-                AdventureActivityType.defaultDraft(for: .paintball)
-            ]
-        ),
-        AdventureTemplate(
-            id: "full-adventure",
-            title: "Aventura completa",
-            subtitle: "2h off-road + 1h karts + 30m paintball + 30m tiro",
-            badge: "Más vendido",
-            items: [
-                AdventureReservationItemDraft(
-                    activity: .offRoad,
-                    durationMinutes: 120,
-                    peopleCount: 0,
-                    vehicleCount: 2,
-                    offRoadRiderCount: 4,
-                    nights: 0
-                ),
-                AdventureReservationItemDraft(
-                    activity: .goKarts,
-                    durationMinutes: 60,
-                    peopleCount: 4,
-                    vehicleCount: 0,
-                    offRoadRiderCount: 0,
-                    nights: 0
-                ),
-                AdventureActivityType.defaultDraft(for: .paintball),
-                AdventureActivityType.defaultDraft(for: .shootingRange)
-            ]
-        ),
-        AdventureTemplate(
-            id: "camp-night",
-            title: "Noche de camping",
-            subtitle: "Actividades del día + noche de camping",
-            badge: "Diversión nocturna",
-            items: [
-                AdventureReservationItemDraft(
-                    activity: .offRoad,
-                    durationMinutes: 60,
-                    peopleCount: 0,
-                    vehicleCount: 1,
-                    offRoadRiderCount: 2,
-                    nights: 0
-                ),
-                AdventureActivityType.defaultDraft(for: .camping)
-            ]
-        )
-    ]
 }
 
 ```
@@ -1641,26 +2024,40 @@ enum AdventureCatalogTemplates {
 import Foundation
 
 final class AdventureModuleFactory {
-    private let service: AdventureBookingsServiceable
-    
-    init(service: AdventureBookingsServiceable = AdventureBookingsService()) {
-        self.service = service
+    private let bookingsService: AdventureBookingsServiceable
+    private let catalogService: AdventureCatalogServiceable
+
+    init(
+        bookingsService: AdventureBookingsServiceable,
+        catalogService: AdventureCatalogServiceable
+    ) {
+        self.bookingsService = bookingsService
+        self.catalogService = catalogService
     }
-    
+
     func makeBuilderViewModel(
-        prefilledItems: [AdventureReservationItemDraft] = []
+        prefilledItems: [AdventureReservationItemDraft] = [],
+        packageDiscountAmount: Double = 0
     ) -> AdventureComboBuilderViewModel {
         AdventureComboBuilderViewModel(
             prefilledItems: prefilledItems,
-            getAvailabilityUseCase: GetAdventureAvailabilityUseCase(service: service),
-            createBookingUseCase: CreateAdventureBookingUseCase(service: service)
+            initialPackageDiscountAmount: packageDiscountAmount,
+            getAvailabilityUseCase: GetAdventureAvailabilityUseCase(service: bookingsService),
+            createBookingUseCase: CreateAdventureBookingUseCase(service: bookingsService),
+            fetchAdventureCatalogUseCase: FetchAdventureCatalogUseCase(service: catalogService)
         )
     }
-    
+
     func makeBookingsViewModel() -> AdventureBookingsViewModel {
         AdventureBookingsViewModel(
-            observeBookingsUseCase: ObserveAdventureBookingsUseCase(service: service),
-            cancelBookingUseCase: CancelAdventureBookingUseCase(service: service)
+            observeBookingsUseCase: ObserveAdventureBookingsUseCase(service: bookingsService),
+            cancelBookingUseCase: CancelAdventureBookingUseCase(service: bookingsService)
+        )
+    }
+
+    func makeCatalogViewModel() -> AdventureCatalogViewModel {
+        AdventureCatalogViewModel(
+            fetchAdventureCatalogUseCase: FetchAdventureCatalogUseCase(service: catalogService)
         )
     }
 }
@@ -1683,16 +2080,18 @@ import Foundation
 
 struct GetAdventureAvailabilityUseCase {
     let service: AdventureBookingsServiceable
-    
+
     func execute(
         date: Date,
         items: [AdventureReservationItemDraft],
-        foodReservation: ReservationFoodDraft?
+        foodReservation: ReservationFoodDraft?,
+        packageDiscountAmount: Double
     ) async throws -> [AdventureAvailabilitySlot] {
         try await service.fetchAvailability(
             for: date,
             items: items,
-            foodReservation: foodReservation
+            foodReservation: foodReservation,
+            packageDiscountAmount: packageDiscountAmount
         )
     }
 }
@@ -1748,22 +2147,40 @@ import SwiftUI
 struct AdventureCatalogView: View {
     @ObservedObject var adventureComboBuilderViewModel: AdventureComboBuilderViewModel
     @ObservedObject var menuViewModel: MenuViewModel
+    @StateObject private var catalogViewModel = AdventureCatalogViewModel(
+        fetchAdventureCatalogUseCase: FetchAdventureCatalogUseCase(
+            service: AdventureCatalogService()
+        )
+    )
+
     @Environment(\.colorScheme) private var colorScheme
-    
-    private let singles = AdventureActivityType.allCases.map(AdventureActivityType.defaultDraft(for:))
-    
+
     private var palette: ThemePalette {
         AppTheme.palette(for: .adventure, scheme: colorScheme)
     }
-    
+
     var body: some View {
         NavigationStack {
             ScrollView(showsIndicators: false) {
                 LazyVStack(alignment: .leading, spacing: 24) {
                     heroSection
-                    featuredSection
-                    singlesSection
-                    customComboSection
+
+                    if catalogViewModel.state.isLoading && catalogViewModel.state.catalog.activities.isEmpty {
+                        ProgressView("Cargando actividades...")
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 32)
+                    } else if let error = catalogViewModel.state.errorMessage,
+                              catalogViewModel.state.catalog.activities.isEmpty {
+                        ContentUnavailableView(
+                            "No se pudo cargar el catálogo",
+                            systemImage: "wifi.exclamationmark",
+                            description: Text(error)
+                        )
+                    } else {
+                        featuredSection
+                        singlesSection
+                        customComboSection
+                    }
                 }
                 .padding(.horizontal, 20)
                 .padding(.top, 8)
@@ -1773,8 +2190,11 @@ struct AdventureCatalogView: View {
             .navigationBarTitleDisplayMode(.large)
         }
         .appScreenStyle(.adventure)
+        .onAppear {
+            catalogViewModel.onAppear()
+        }
     }
-    
+
     private var heroSection: some View {
         ZStack(alignment: .topTrailing) {
             RoundedRectangle(cornerRadius: AppTheme.Radius.xLarge, style: .continuous)
@@ -1789,52 +2209,32 @@ struct AdventureCatalogView: View {
                     x: 0,
                     y: 12
                 )
-            
-            Circle()
-                .fill(Color.white.opacity(colorScheme == .dark ? 0.10 : 0.18))
-                .frame(width: 160, height: 160)
-                .blur(radius: 10)
-                .offset(x: 40, y: -30)
-            
-            Circle()
-                .fill(palette.accent.opacity(colorScheme == .dark ? 0.26 : 0.20))
-                .frame(width: 120, height: 120)
-                .blur(radius: 18)
-                .offset(x: 10, y: 55)
-            
+
             VStack(alignment: .leading, spacing: 16) {
                 HStack(alignment: .top) {
                     BrandIconBubble(theme: .adventure, systemImage: "mountain.2.fill", size: 56)
-                    
                     Spacer()
-                    
                     BrandBadge(theme: .adventure, title: "Outdoor", selected: true)
                 }
-                
+
                 VStack(alignment: .leading, spacing: 10) {
                     Text("Construye tu combo perfecto")
                         .font(.system(size: 30, weight: .bold, design: .rounded))
                         .foregroundStyle(Color.white)
-                    
-                    Text("Mezcla off-road, paintball, go karts, campo de tiro, camping y columpio extremo con una experiencia con identidad propia.")
+
+                    Text("Ahora el catálogo y los paquetes destacados se cargan desde Firestore.")
                         .font(.subheadline)
                         .foregroundStyle(Color.white.opacity(0.92))
                 }
-                
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 8) {
-                        heroChip("Off-road")
-                        heroChip("Paintball")
-                        heroChip("Go karts")
-                        heroChip("Camping")
-                    }
-                }
-                
+
                 NavigationLink {
-                    AdventureComboBuilderView(adventureComboBuilderViewModel: adventureComboBuilderViewModel, menuViewModel: menuViewModel)
-                        .onAppear {
-                            adventureComboBuilderViewModel.reset()
-                        }
+                    AdventureComboBuilderView(
+                        adventureComboBuilderViewModel: adventureComboBuilderViewModel,
+                        menuViewModel: menuViewModel
+                    )
+                    .onAppear {
+                        adventureComboBuilderViewModel.reset()
+                    }
                 } label: {
                     HStack(spacing: 10) {
                         Image(systemName: "plus.circle.fill")
@@ -1846,51 +2246,75 @@ struct AdventureCatalogView: View {
             .padding(22)
         }
     }
-    
+
     private var featuredSection: some View {
         VStack(alignment: .leading, spacing: 16) {
             BrandSectionHeader(
                 theme: .adventure,
                 title: "Paquetes destacados",
-                subtitle: "Combos sugeridos para reservar más rápido."
+                subtitle: "Combos sugeridos cargados desde Firestore."
             )
-            
-            ForEach(AdventureCatalogTemplates.featured) { template in
-                NavigationLink {
-                    AdventureComboBuilderView(adventureComboBuilderViewModel: adventureComboBuilderViewModel, menuViewModel: menuViewModel)
+
+            let packages = catalogViewModel.state.catalog.activePackagesSorted
+
+            if packages.isEmpty {
+                Text("No hay paquetes destacados disponibles por ahora.")
+                    .font(.subheadline)
+                    .foregroundStyle(palette.textSecondary)
+                    .appCardStyle(.adventure, emphasized: false)
+            } else {
+                ForEach(packages) { package in
+                    NavigationLink {
+                        AdventureComboBuilderView(
+                            adventureComboBuilderViewModel: adventureComboBuilderViewModel,
+                            menuViewModel: menuViewModel
+                        )
                         .onAppear {
-                            adventureComboBuilderViewModel.replaceItems(with: template.items)
+                            adventureComboBuilderViewModel.replaceItems(
+                                with: package.items,
+                                packageDiscountAmount: package.packageDiscountAmount
+                            )
                         }
-                } label: {
-                    TemplateCard(template: template)
+                    } label: {
+                        FeaturedPackageCard(
+                            package: package,
+                            catalog: catalogViewModel.state.catalog
+                        )
+                    }
+                    .buttonStyle(.plain)
                 }
-                .buttonStyle(.plain)
             }
         }
     }
-    
+
     private var singlesSection: some View {
         VStack(alignment: .leading, spacing: 16) {
             BrandSectionHeader(
                 theme: .adventure,
                 title: "Actividades individuales",
-                subtitle: "Reserva una sola experiencia de forma directa."
+                subtitle: "Actividades activas ordenadas por sortOrder."
             )
-            
-            ForEach(singles, id: \.id) { item in
+
+            ForEach(catalogViewModel.state.catalog.activeActivitiesSorted) { activity in
                 NavigationLink {
-                    AdventureComboBuilderView(adventureComboBuilderViewModel: adventureComboBuilderViewModel, menuViewModel: menuViewModel)
-                        .onAppear {
-                            adventureComboBuilderViewModel.replaceItems(with: [item])
-                        }
+                    AdventureComboBuilderView(
+                        adventureComboBuilderViewModel: adventureComboBuilderViewModel,
+                        menuViewModel: menuViewModel
+                    )
+                    .onAppear {
+                        adventureComboBuilderViewModel.replaceItems(
+                            with: [activity.defaultDraft],
+                            packageDiscountAmount: 0
+                        )
+                    }
                 } label: {
-                    SingleActivityCard(item: item)
+                    SingleActivityCatalogCard(activity: activity)
                 }
                 .buttonStyle(.plain)
             }
         }
     }
-    
+
     private var customComboSection: some View {
         VStack(alignment: .leading, spacing: 14) {
             BrandSectionHeader(
@@ -1898,17 +2322,20 @@ struct AdventureCatalogView: View {
                 title: "¿Necesitas algo diferente?",
                 subtitle: "Crea una combinación a medida con tiempos y cantidades personalizadas."
             )
-            
+
             VStack(alignment: .leading, spacing: 14) {
-                Text("Puedes arrastrar para reordenar las actividades y establecer diferentes duraciones y número de personas por actividad.")
+                Text("Las reglas de agenda siguen en código, pero el catálogo y precios vienen de Firestore.")
                     .font(.subheadline)
                     .foregroundStyle(palette.textSecondary)
-                
+
                 NavigationLink {
-                    AdventureComboBuilderView(adventureComboBuilderViewModel: adventureComboBuilderViewModel, menuViewModel: menuViewModel)
-                        .onAppear {
-                            adventureComboBuilderViewModel.reset()
-                        }
+                    AdventureComboBuilderView(
+                        adventureComboBuilderViewModel: adventureComboBuilderViewModel,
+                        menuViewModel: menuViewModel
+                    )
+                    .onAppear {
+                        adventureComboBuilderViewModel.reset()
+                    }
                 } label: {
                     HStack(spacing: 10) {
                         Image(systemName: "sparkles")
@@ -1920,68 +2347,62 @@ struct AdventureCatalogView: View {
             .appCardStyle(.adventure)
         }
     }
-    
-    private func heroChip(_ title: String) -> some View {
-        Text(title)
-            .font(.caption.weight(.semibold))
-            .foregroundStyle(Color.white.opacity(0.95))
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .background(Color.white.opacity(colorScheme == .dark ? 0.12 : 0.16))
-            .overlay(
-                Capsule()
-                    .stroke(Color.white.opacity(0.14), lineWidth: 1)
-            )
-            .clipShape(Capsule())
-    }
 }
 
-private struct TemplateCard: View {
-    let template: AdventureTemplate
+private struct FeaturedPackageCard: View {
+    let package: AdventureFeaturedPackage
+    let catalog: AdventureCatalogSnapshot
+
     @Environment(\.colorScheme) private var colorScheme
-    
+
     private var palette: ThemePalette {
         AppTheme.palette(for: .adventure, scheme: colorScheme)
     }
-    
-    private var priceText: String {
-        String(format: "%.2f", AdventurePricingEngine.estimatedDiscountedSubtotal(items: template.items))
+
+    private var subtotal: Double {
+        AdventurePricingEngine.estimatedSubtotal(items: package.items, catalog: catalog)
     }
-    
+
+    private var total: Double {
+        max(0, subtotal - package.packageDiscountAmount)
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .top, spacing: 12) {
-                BrandIconBubble(
-                    theme: .adventure,
-                    systemImage: "figure.hiking",
-                    size: 50
-                )
-                
+                BrandIconBubble(theme: .adventure, systemImage: "figure.hiking", size: 50)
+
                 VStack(alignment: .leading, spacing: 6) {
-                    Text(template.title)
+                    Text(package.title)
                         .font(.headline)
                         .foregroundStyle(palette.textPrimary)
-                    
-                    Text(template.subtitle)
+
+                    Text(package.subtitle)
                         .font(.subheadline)
                         .foregroundStyle(palette.textSecondary)
                         .multilineTextAlignment(.leading)
                 }
-                
+
                 Spacer()
-                
-                if let badge = template.badge {
+
+                if let badge = package.badge, !badge.isEmpty {
                     BrandBadge(theme: .adventure, title: badge)
                 }
             }
-            
+
+            if package.packageDiscountAmount > 0 {
+                Text("Descuento del paquete: \(package.packageDiscountAmount.priceText)")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(palette.primary)
+            }
+
             HStack {
-                Label("Desde $\(priceText)", systemImage: "dollarsign.circle.fill")
+                Label("Desde \(total.priceText)", systemImage: "dollarsign.circle.fill")
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(palette.primary)
-                
+
                 Spacer()
-                
+
                 Label("Ver combo", systemImage: "arrow.right")
                     .font(.caption.weight(.bold))
                     .foregroundStyle(palette.textSecondary)
@@ -1991,48 +2412,54 @@ private struct TemplateCard: View {
     }
 }
 
-private struct SingleActivityCard: View {
-    let item: AdventureReservationItemDraft
+private struct SingleActivityCatalogCard: View {
+    let activity: AdventureActivityCatalogItem
+
     @Environment(\.colorScheme) private var colorScheme
-    
+
     private var palette: ThemePalette {
         AppTheme.palette(for: .adventure, scheme: colorScheme)
     }
-    
-    private var basePrice: Double {
-        AdventurePricingEngine.subtotal(for: item)
-    }
-    
+
     var body: some View {
         HStack(spacing: 14) {
             BrandIconBubble(
                 theme: .adventure,
-                systemImage: item.activity.systemImage,
+                systemImage: activity.systemImage,
                 size: 56
             )
-            
+
             VStack(alignment: .leading, spacing: 6) {
-                Text(item.activity.title)
+                Text(activity.title)
                     .font(.headline)
                     .foregroundStyle(palette.textPrimary)
-                
-                Text(item.summaryText)
+
+                Text(activity.shortDescription)
                     .font(.subheadline)
                     .foregroundStyle(palette.textSecondary)
                     .lineLimit(2)
-                
-                Text("Desde $\(basePrice, specifier: "%.2f")")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(palette.primary)
+
+                HStack(spacing: 8) {
+                    Text("Desde \(activity.finalUnitPrice.priceText)")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(palette.primary)
+
+                    if activity.hasDiscount {
+                        Text("Antes \(activity.basePrice.priceText)")
+                            .font(.caption)
+                            .foregroundStyle(palette.textTertiary)
+                            .strikethrough()
+                    }
+                }
             }
-            
+
             Spacer(minLength: 8)
-            
+
             VStack(alignment: .trailing, spacing: 8) {
                 Image(systemName: "arrow.up.right.circle.fill")
                     .font(.title3)
                     .foregroundStyle(palette.primary)
-                
+
                 Text("Reservar")
                     .font(.caption.bold())
                     .foregroundStyle(palette.textSecondary)
@@ -2112,7 +2539,14 @@ struct AdventureComboBuilderView: View {
             syncProfileFieldsFromSession()
         }
         .sheet(item: $editingItem) { item in
-            AdventureItemEditorView(item: item) { updated in
+            AdventureItemEditorView(
+                item: item,
+                config: adventureComboBuilderViewModel.config(for: item.activity),
+                linePrice: AdventurePricingEngine.subtotal(
+                    for: item,
+                    catalog: adventureComboBuilderViewModel.state.catalog
+                )
+            ) { updated in
                 adventureComboBuilderViewModel.updateItem(updated)
             }
         }
@@ -2207,7 +2641,9 @@ struct AdventureComboBuilderView: View {
                         .disabled(true)
                 } else {
                     ForEach(adventureComboBuilderViewModel.availableActivitiesToAdd) { activity in
-                        Button(activity.title) {
+                        Button(
+                            adventureComboBuilderViewModel.config(for: activity)?.title ?? activity.legacyTitle
+                        ) {
                             adventureComboBuilderViewModel.addItem(activity)
                         }
                     }
@@ -2996,21 +3432,14 @@ struct AdventureComboBuilderView: View {
                     summaryRow("Comida", "$\(slot.foodSubtotal.priceText)")
                     summaryRow("Subtotal", "$\(slot.subtotal.priceText)")
                     summaryRow("Descuento aventura", "-$\(slot.discountAmount.priceText)")
-//                    summaryRow("Recargo nocturno", "$\(slot.nightPremium.priceText)")
                     Divider()
                     summaryRow("Total", "$\(slot.totalAmount.priceText)", bold: true)
                 } else {
-                    let estimatedSubtotal = AdventurePricingEngine.estimatedSubtotal(items: adventureComboBuilderViewModel.state.items)
-                    let estimatedDiscount = AdventurePricingEngine.discount(for: estimatedSubtotal)
-//                    let estimatedNightPremium = AdventurePricingEngine.estimatedNightPremium(items: viewModel.state.items)
-                    let estimatedTotal =
-                        AdventurePricingEngine.discountedSubtotal(for: estimatedSubtotal) //+ estimatedNightPremium
-
-                    summaryRow("Subtotal estimado", "$\(estimatedSubtotal.priceText)")
-                    summaryRow("Descuento estimado", "-$\(estimatedDiscount.priceText)")
-//                    summaryRow("Recargo nocturno estimado", "$\(estimatedNightPremium.priceText)")
+                    summaryRow("Aventura estimada", adventureComboBuilderViewModel.estimatedAdventureSubtotal.priceText)
+                    summaryRow("Comida estimada", adventureComboBuilderViewModel.estimatedFoodSubtotal.priceText)
+                    summaryRow("Descuento estimado", "-\(adventureComboBuilderViewModel.estimatedDiscountAmount.priceText)")
                     Divider()
-                    summaryRow("Total estimado", "$\(estimatedTotal.priceText)", bold: true)
+                    summaryRow("Total estimado", adventureComboBuilderViewModel.estimatedTotal.priceText, bold: true)
                 }
             }
             .appCardStyle(.adventure)
@@ -3094,27 +3523,25 @@ struct AdventureComboBuilderView: View {
 
 private struct ComboItemCard: View {
     let item: AdventureReservationItemDraft
-    
+
+    @EnvironmentObject private var sessionViewModel: AppSessionViewModel
+
     var body: some View {
         HStack(spacing: 14) {
-            BrandIconBubble(theme: .adventure, systemImage: item.activity.systemImage, size: 52)
-            
+            BrandIconBubble(theme: .adventure, systemImage: item.activity.legacySystemImage, size: 52)
+
             VStack(alignment: .leading, spacing: 6) {
                 Text(item.title)
                     .font(.headline)
                     .foregroundStyle(.primary)
-                
+
                 Text(item.summaryText)
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
-                
-                Text("$\(AdventurePricingEngine.subtotal(for: item), specifier: "%.2f")")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
             }
-            
+
             Spacer()
-            
+
             Image(systemName: "line.3.horizontal")
                 .foregroundStyle(.tertiary)
         }
@@ -3233,73 +3660,98 @@ private struct AdventureSlotCard: View {
 
 private struct AdventureItemEditorView: View {
     @Environment(\.dismiss) private var dismiss
+
     @State private var item: AdventureReservationItemDraft
+    let config: AdventureActivityCatalogItem?
+    let linePrice: Double
     let onSave: (AdventureReservationItemDraft) -> Void
-    
-    init(item: AdventureReservationItemDraft, onSave: @escaping (AdventureReservationItemDraft) -> Void) {
+
+    init(
+        item: AdventureReservationItemDraft,
+        config: AdventureActivityCatalogItem?,
+        linePrice: Double,
+        onSave: @escaping (AdventureReservationItemDraft) -> Void
+    ) {
         _item = State(initialValue: item)
+        self.config = config
+        self.linePrice = linePrice
         self.onSave = onSave
     }
-    
+
+    private var durationOptions: [Int] {
+        config?.durationOptions ?? item.activity.legacyDurationOptions
+    }
+
+    private var activityTitle: String {
+        config?.title ?? item.activity.legacyTitle
+    }
+
     var body: some View {
         NavigationStack {
             Form {
                 Section("Actividad") {
-                    Text(item.activity.title)
+                    Text(activityTitle)
                 }
-                
+
                 switch item.activity {
                 case .offRoad:
                     Section("Off-road") {
                         Picker("Duración", selection: $item.durationMinutes) {
-                            ForEach(item.activity.durationOptions, id: \.self) { minutes in
+                            ForEach(durationOptions, id: \.self) { minutes in
                                 Text("\(minutes / 60) hora(s)").tag(minutes)
                             }
                         }
-                        
-                        Stepper("Vehículos: \(item.vehicleCount)", value: $item.vehicleCount, in: 1...10)
-                        Stepper("Personas: \(item.offRoadRiderCount)", value: $item.offRoadRiderCount, in: 1...20)
-                        
-                        Text("Cada vehículo admite 1 o 2 personas. Ejemplo: 6 personas pueden usar 4 vehículos.")
+
+                        Stepper("Vehículos: \(item.vehicleCount)", value: $item.vehicleCount, in: 1...50)
+                        Stepper("Personas: \(item.offRoadRiderCount)", value: $item.offRoadRiderCount, in: 1...100)
+
+                        Text("Cada vehículo admite 1 o 2 personas. El precio es por vehículo.")
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                     }
-                    
+
                 case .paintball, .goKarts, .shootingRange:
                     Section("Configuración") {
                         Picker("Duración", selection: $item.durationMinutes) {
-                            ForEach(item.activity.durationOptions, id: \.self) { minutes in
+                            ForEach(durationOptions, id: \.self) { minutes in
                                 Text("\(minutes) min").tag(minutes)
                             }
                         }
-                        Stepper("Personas: \(item.peopleCount)", value: $item.peopleCount, in: 1...20)
+                        Stepper("Personas: \(item.peopleCount)", value: $item.peopleCount, in: 1...100)
                     }
-                    
+
                 case .camping:
                     Section("Camping") {
-                        Stepper("Personas: \(item.peopleCount)", value: $item.peopleCount, in: 1...20)
-                        Stepper("Noches: \(item.nights)", value: $item.nights, in: 1...7)
-                        Text("El camping se programa de 7:00 PM a 7:00 AM y debe mantenerse al final del combo.")
+                        Stepper("Personas: \(item.peopleCount)", value: $item.peopleCount, in: 1...100)
+                        Stepper("Noches: \(item.nights)", value: $item.nights, in: 1...30)
+                        Text("El camping se mantiene al final del combo.")
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                     }
-                    
+
                 case .extremeSlide:
                     Section("Resbaladera extrema") {
-                        Stepper("Personas: \(item.peopleCount)", value: $item.peopleCount, in: 1...20)
-                        Text("Incluye 30 minutos de transporte off-road más la sesión de la resbaladera.")
+                        Stepper("Personas: \(item.peopleCount)", value: $item.peopleCount, in: 1...100)
+                        Text("Incluye transporte off-road en la lógica del planificador.")
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                     }
                 }
-                
+
                 Section("Precio") {
-                    Text("$\(AdventurePricingEngine.subtotal(for: item), specifier: "%.2f")")
-                        .font(.headline)
+                    if let config {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("Base: \(config.basePrice.priceText)")
+                            Text("Descuento unitario: \(config.discountAmount.priceText)")
+                            Text("Precio final: \(linePrice.priceText)")
+                                .font(.headline)
+                        }
+                    } else {
+                        Text(linePrice.priceText)
+                            .font(.headline)
+                    }
                 }
             }
-            .scrollContentBackground(.hidden)
-            .appScreenStyle(.adventure)
             .navigationTitle("Editar actividad")
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
@@ -4029,7 +4481,7 @@ struct ReserveViewDetail: View {
                     HStack(alignment: .top, spacing: 12) {
                         BrandIconBubble(
                             theme: .adventure,
-                            systemImage: item.activity.systemImage,
+                            systemImage: item.activity.legacySystemImage,
                             size: 42
                         )
 
@@ -4042,9 +4494,12 @@ struct ReserveViewDetail: View {
                                 .font(.subheadline)
                                 .foregroundStyle(palette.textSecondary)
 
-                            Text(itemPriceText(item))
-                                .font(.caption.weight(.semibold))
-                                .foregroundStyle(palette.primary)
+                            let priceText = itemPriceText(item)
+                            if !priceText.isEmpty {
+                                Text(priceText)
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(palette.primary)
+                            }
                         }
 
                         Spacer()
@@ -4297,7 +4752,10 @@ struct ReserveViewDetail: View {
     }
 
     private func itemPriceText(_ item: AdventureReservationItemDraft) -> String {
-        AdventurePricingEngine.subtotal(for: item).priceText
+        if let block = booking.blocks.first(where: { $0.activity == item.activity && $0.subtotal > 0 }) {
+            return block.subtotal.priceText
+        }
+        return ""
     }
 
     private func servingMomentText(_ food: ReservationFoodDraft) -> String {
@@ -4828,6 +5286,65 @@ final class AdventureBookingsViewModel: ObservableObject {
 
 ---
 
+# Altos del Murco/root/feature/altos/adventure/presentation/viewmodel/AdventureCatalogViewModel.swift
+
+```swift
+//
+//  AdventureCatalogViewModel.swift
+//  Altos del Murco
+//
+//  Created by José Ruiz on 19/4/26.
+//
+
+import Combine
+import Foundation
+
+struct AdventureCatalogState {
+    var catalog: AdventureCatalogSnapshot = .empty
+    var isLoading = false
+    var errorMessage: String?
+}
+
+@MainActor
+final class AdventureCatalogViewModel: ObservableObject {
+    @Published private(set) var state = AdventureCatalogState()
+
+    private let fetchAdventureCatalogUseCase: FetchAdventureCatalogUseCase
+    private var hasLoadedOnce = false
+
+    init(fetchAdventureCatalogUseCase: FetchAdventureCatalogUseCase) {
+        self.fetchAdventureCatalogUseCase = fetchAdventureCatalogUseCase
+    }
+
+    func onAppear() {
+        guard !hasLoadedOnce else { return }
+        hasLoadedOnce = true
+        Task { await load() }
+    }
+
+    func refresh() {
+        Task { await load() }
+    }
+
+    private func load() async {
+        state.isLoading = true
+        state.errorMessage = nil
+
+        do {
+            let catalog = try await fetchAdventureCatalogUseCase.execute()
+            state.catalog = catalog
+        } catch {
+            state.errorMessage = error.localizedDescription
+        }
+
+        state.isLoading = false
+    }
+}
+
+```
+
+---
+
 # Altos del Murco/root/feature/altos/adventure/presentation/viewmodel/AdventureComboBuilderViewModel.swift
 
 ```swift
@@ -4844,25 +5361,29 @@ import SwiftUI
 struct AdventureComboBuilderState {
     var selectedDate: Date = Date()
     var items: [AdventureReservationItemDraft]
-    
+
     var guestCount: Int = 2
     var eventType: ReservationEventType = .regularVisit
     var customEventTitle: String = ""
     var eventNotes: String = ""
-    
+
     var foodItems: [ReservationFoodItemDraft] = []
     var foodServingMoment: ReservationServingMoment = .afterActivities
     var foodServingTime: Date = Date()
     var foodNotes: String = ""
-    
+
     var clientName: String = ""
     var whatsappNumber: String = ""
     var nationalId: String = ""
     var notes: String = ""
-    
+
+    var packageDiscountAmount: Double = 0
+    var catalog: AdventureCatalogSnapshot = .empty
+
     var availableSlots: [AdventureAvailabilitySlot] = []
     var selectedSlot: AdventureAvailabilitySlot?
-    
+
+    var isLoadingCatalog = false
     var isLoadingAvailability = false
     var isSubmitting = false
     var errorMessage: String?
@@ -4872,54 +5393,69 @@ struct AdventureComboBuilderState {
 @MainActor
 final class AdventureComboBuilderViewModel: ObservableObject {
     @Published private(set) var state: AdventureComboBuilderState
-    
+
     private let getAvailabilityUseCase: GetAdventureAvailabilityUseCase
     private let createBookingUseCase: CreateAdventureBookingUseCase
-    
-    var estimatedNightPremium: Double {
-        AdventurePricingEngine.estimatedNightPremium(items: state.items)
-    }
-    
+    private let fetchAdventureCatalogUseCase: FetchAdventureCatalogUseCase
+    private var hasLoadedCatalog = false
+
     init(
         prefilledItems: [AdventureReservationItemDraft],
+        initialPackageDiscountAmount: Double,
         getAvailabilityUseCase: GetAdventureAvailabilityUseCase,
-        createBookingUseCase: CreateAdventureBookingUseCase
+        createBookingUseCase: CreateAdventureBookingUseCase,
+        fetchAdventureCatalogUseCase: FetchAdventureCatalogUseCase
     ) {
         self.state = AdventureComboBuilderState(
-            items: prefilledItems.isEmpty ? [AdventureActivityType.defaultDraft(for: .offRoad)] : prefilledItems
+            items: prefilledItems.isEmpty ? [AdventureActivityType.defaultDraft(for: .offRoad)] : prefilledItems,
+            packageDiscountAmount: max(0, initialPackageDiscountAmount)
         )
         self.getAvailabilityUseCase = getAvailabilityUseCase
         self.createBookingUseCase = createBookingUseCase
-        
+        self.fetchAdventureCatalogUseCase = fetchAdventureCatalogUseCase
+
         keepCampingAtEnd()
     }
-    
+
     func onAppear() {
-        Task { await loadAvailability() }
+        Task {
+            await loadCatalogIfNeeded()
+            await loadAvailability()
+        }
     }
-    
+
+    var activeActivityConfigs: [AdventureActivityCatalogItem] {
+        state.catalog.activeActivitiesSorted
+    }
+
+    var availableActivitiesToAdd: [AdventureActivityType] {
+        activeActivityConfigs
+            .map(\.activityType)
+            .filter { canAddItem($0) }
+    }
+
+    func config(for activity: AdventureActivityType) -> AdventureActivityCatalogItem? {
+        state.catalog.activity(for: activity)
+    }
+
     func canAddItem(_ activity: AdventureActivityType) -> Bool {
         !state.items.contains(where: { $0.activity == activity })
     }
-    
-    var availableActivitiesToAdd: [AdventureActivityType] {
-        AdventureActivityType.allCases.filter { activity in
-            canAddItem(activity)
-        }
-    }
-    
+
     func addItem(_ activity: AdventureActivityType) {
         guard canAddItem(activity) else {
-            state.errorMessage = "\(activity.title) ya fue agregada a esta reserva."
+            state.errorMessage = "\(activity.legacyTitle) ya fue agregada a esta reserva."
             return
         }
-        
-        state.items.append(AdventureActivityType.defaultDraft(for: activity))
+
+        state.items.append(
+            AdventureActivityType.defaultDraft(for: activity, catalog: state.catalog)
+        )
         keepCampingAtEnd()
         state.selectedSlot = nil
         Task { await loadAvailability() }
     }
-    
+
     func updateItem(_ item: AdventureReservationItemDraft) {
         guard let index = state.items.firstIndex(where: { $0.id == item.id }) else { return }
         state.items[index] = item
@@ -4927,21 +5463,21 @@ final class AdventureComboBuilderViewModel: ObservableObject {
         state.selectedSlot = nil
         Task { await loadAvailability() }
     }
-    
+
     func removeItem(at offsets: IndexSet) {
         state.items.remove(atOffsets: offsets)
         keepCampingAtEnd()
         state.selectedSlot = nil
         Task { await loadAvailability() }
     }
-    
+
     func moveItems(from source: IndexSet, to destination: Int) {
         state.items.move(fromOffsets: source, toOffset: destination)
         keepCampingAtEnd()
         state.selectedSlot = nil
         Task { await loadAvailability() }
     }
-    
+
     func addFoodItem(
         _ menuItem: MenuItem,
         quantity: Int = 1,
@@ -4977,76 +5513,76 @@ final class AdventureComboBuilderViewModel: ObservableObject {
         state.selectedSlot = nil
         Task { await loadAvailability() }
     }
-    
+
     func increaseFoodQuantity(_ id: String) {
         guard let index = state.foodItems.firstIndex(where: { $0.id == id }) else { return }
         state.foodItems[index].quantity += 1
         state.selectedSlot = nil
         Task { await loadAvailability() }
     }
-    
+
     func decreaseFoodQuantity(_ id: String) {
         guard let index = state.foodItems.firstIndex(where: { $0.id == id }) else { return }
-        
+
         let nextValue = state.foodItems[index].quantity - 1
         if nextValue <= 0 {
             state.foodItems.remove(at: index)
         } else {
             state.foodItems[index].quantity = nextValue
         }
-        
+
         state.selectedSlot = nil
         Task { await loadAvailability() }
     }
-    
+
     func removeFoodItem(_ id: String) {
         state.foodItems.removeAll { $0.id == id }
         state.selectedSlot = nil
         Task { await loadAvailability() }
     }
-    
+
     func setDate(_ date: Date) {
         state.selectedDate = date
         state.selectedSlot = nil
         Task { await loadAvailability() }
     }
-    
+
     func setGuestCount(_ value: Int) {
         state.guestCount = max(1, value)
     }
-    
+
     func setEventType(_ value: ReservationEventType) {
         state.eventType = value
         if value != .custom {
             state.customEventTitle = ""
         }
     }
-    
+
     func setCustomEventTitle(_ value: String) { state.customEventTitle = value }
     func setEventNotes(_ value: String) { state.eventNotes = value }
-    
+
     func setFoodServingMoment(_ value: ReservationServingMoment) {
         state.foodServingMoment = value
         state.selectedSlot = nil
         Task { await loadAvailability() }
     }
-    
+
     func setFoodServingTime(_ value: Date) {
         state.foodServingTime = value
         state.selectedSlot = nil
         Task { await loadAvailability() }
     }
-    
+
     func setFoodNotes(_ value: String) { state.foodNotes = value }
     func setClientName(_ value: String) { state.clientName = value }
     func setWhatsapp(_ value: String) { state.whatsappNumber = value }
     func setNationalId(_ value: String) { state.nationalId = value }
     func setNotes(_ value: String) { state.notes = value }
-    
+
     func selectSlot(_ slot: AdventureAvailabilitySlot) {
         state.selectedSlot = slot
     }
-    
+
     func dismissMessage() {
         state.errorMessage = nil
         state.successMessage = nil
@@ -5060,66 +5596,127 @@ final class AdventureComboBuilderViewModel: ObservableObject {
     func submit(clientId: String?) {
         Task { await submitReservation(clientId: clientId) }
     }
-    
+
     var estimatedAdventureSubtotal: Double {
-        AdventurePricingEngine.estimatedSubtotal(items: state.items)
+        AdventurePricingEngine.estimatedSubtotal(
+            items: state.items,
+            catalog: state.catalog
+        )
     }
-    
+
     var estimatedFoodSubtotal: Double {
         state.foodItems.reduce(0) { $0 + $1.subtotal }
     }
-    
+
+    var estimatedDiscountAmount: Double {
+        AdventurePricingEngine.estimatedDiscountAmount(
+            items: state.items,
+            catalog: state.catalog
+        ) + state.packageDiscountAmount
+    }
+
+    var estimatedTotal: Double {
+        max(0, estimatedAdventureSubtotal - state.packageDiscountAmount) + estimatedFoodSubtotal
+    }
+
     func reset() {
         state = AdventureComboBuilderState(
-            items: [AdventureActivityType.defaultDraft(for: .offRoad)]
+            items: [AdventureActivityType.defaultDraft(for: .offRoad, catalog: state.catalog)],
+            packageDiscountAmount: 0,
+            catalog: state.catalog
         )
         keepCampingAtEnd()
         Task { await loadAvailability() }
     }
-    
+
     func resetForFoodOnly() {
-        state = AdventureComboBuilderState(items: [])
+        state = AdventureComboBuilderState(
+            items: [],
+            packageDiscountAmount: 0,
+            catalog: state.catalog
+        )
         Task { await loadAvailability() }
     }
-    
-    func replaceItems(with items: [AdventureReservationItemDraft]) {
+
+    func replaceItems(with items: [AdventureReservationItemDraft], packageDiscountAmount: Double = 0) {
         let uniqueItems = items.reduce(into: [AdventureReservationItemDraft]()) { result, item in
             guard !result.contains(where: { $0.activity == item.activity }) else { return }
             result.append(item)
         }
-        
+
         state.items = uniqueItems.isEmpty ? [] : uniqueItems
+        state.packageDiscountAmount = max(0, packageDiscountAmount)
         keepCampingAtEnd()
         state.selectedSlot = nil
         state.errorMessage = nil
         state.successMessage = nil
         Task { await loadAvailability() }
     }
-    
+
+    private func loadCatalogIfNeeded() async {
+        guard !hasLoadedCatalog else { return }
+        hasLoadedCatalog = true
+
+        state.isLoadingCatalog = true
+        do {
+            let catalog = try await fetchAdventureCatalogUseCase.execute()
+            state.catalog = catalog
+
+            state.items = state.items.map { current in
+                if let config = catalog.activity(for: current.activity) {
+                    return AdventureReservationItemDraft(
+                        id: current.id,
+                        activity: current.activity,
+                        durationMinutes: normalizeDuration(current.durationMinutes, for: config),
+                        peopleCount: max(current.peopleCount, config.defaults.peopleCount),
+                        vehicleCount: max(current.vehicleCount, config.defaults.vehicleCount),
+                        offRoadRiderCount: max(current.offRoadRiderCount, config.defaults.offRoadRiderCount),
+                        nights: max(current.nights, config.defaults.nights)
+                    )
+                }
+                return current
+            }
+
+            keepCampingAtEnd()
+        } catch {
+            state.errorMessage = error.localizedDescription
+        }
+        state.isLoadingCatalog = false
+    }
+
+    private func normalizeDuration(_ value: Int, for config: AdventureActivityCatalogItem) -> Int {
+        guard !config.durationOptions.isEmpty else { return value }
+        if config.durationOptions.contains(value) { return value }
+        return config.defaults.durationMinutes
+    }
+
     private func loadAvailability() async {
         state.isLoadingAvailability = true
         state.errorMessage = nil
-        
+
         let foodDraft = buildFoodDraft()
         let hasFood = !(foodDraft?.isEmpty ?? true)
         let hasActivities = !state.items.isEmpty
-        
+
         guard hasActivities || hasFood else {
             state.availableSlots = []
             state.selectedSlot = nil
             state.isLoadingAvailability = false
             return
         }
-        
+
         do {
             let slots = try await getAvailabilityUseCase.execute(
                 date: state.selectedDate,
                 items: state.items,
-                foodReservation: foodDraft
+                foodReservation: foodDraft,
+                packageDiscountAmount: state.packageDiscountAmount
             )
             state.availableSlots = slots
             if let selected = state.selectedSlot {
-                state.selectedSlot = slots.first(where: { $0.startAt == selected.startAt && $0.endAt == selected.endAt })
+                state.selectedSlot = slots.first(where: {
+                    $0.startAt == selected.startAt && $0.endAt == selected.endAt
+                })
             } else {
                 state.selectedSlot = slots.first
             }
@@ -5128,60 +5725,60 @@ final class AdventureComboBuilderViewModel: ObservableObject {
             state.selectedSlot = nil
             state.errorMessage = error.localizedDescription
         }
-        
+
         state.isLoadingAvailability = false
     }
-    
+
     private func submitReservation(clientId: String?) async {
         let foodDraft = buildFoodDraft()
         let hasFood = !(foodDraft?.isEmpty ?? true)
         let hasActivities = !state.items.isEmpty
-        
+
         guard hasActivities || hasFood else {
             state.errorMessage = "Add at least one activity or one food item."
             return
         }
-        
+
         guard !state.clientName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             state.errorMessage = "Please enter the client name."
             return
         }
-        
+
         let whatsappDigits = state.whatsappNumber.filter(\.isNumber)
         guard whatsappDigits.count >= 7 else {
             state.errorMessage = "Please enter a valid WhatsApp number."
             return
         }
-        
+
         let nationalIdDigits = state.nationalId.filter(\.isNumber)
         guard nationalIdDigits.count >= 8 else {
             state.errorMessage = "Please enter a valid national ID."
             return
         }
-        
+
         guard state.guestCount > 0 else {
             state.errorMessage = "Please enter at least one guest."
             return
         }
-        
+
         if state.eventType == .custom,
            state.customEventTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             state.errorMessage = "Please enter the custom event title."
             return
         }
-        
+
         guard let slot = state.selectedSlot else {
             state.errorMessage = "Please choose an available start time."
             return
         }
-        
+
         state.isSubmitting = true
         state.errorMessage = nil
-        
+
         let cleanNotes = state.notes.trimmingCharacters(in: .whitespacesAndNewlines)
         let cleanEventNotes = state.eventNotes.trimmingCharacters(in: .whitespacesAndNewlines)
         let cleanCustomEventTitle = state.customEventTitle.trimmingCharacters(in: .whitespacesAndNewlines)
-        
+
         let request = AdventureBookingRequest(
             clientId: clientId,
             clientName: state.clientName.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -5195,9 +5792,10 @@ final class AdventureComboBuilderViewModel: ObservableObject {
             eventNotes: cleanEventNotes.isEmpty ? nil : cleanEventNotes,
             items: state.items,
             foodReservation: foodDraft,
+            packageDiscountAmount: state.packageDiscountAmount,
             notes: cleanNotes.isEmpty ? nil : cleanNotes
         )
-        
+
         do {
             let booking = try await createBookingUseCase.execute(request)
             state.successMessage = "Reservation confirmed for \(booking.clientName) at \(AdventureDateHelper.timeText(booking.startAt))."
@@ -5205,19 +5803,19 @@ final class AdventureComboBuilderViewModel: ObservableObject {
         } catch {
             state.errorMessage = error.localizedDescription
         }
-        
+
         state.isSubmitting = false
     }
-    
+
     private func keepCampingAtEnd() {
         let campingItems = state.items.filter { $0.activity == .camping }
         let otherItems = state.items.filter { $0.activity != .camping }
         state.items = otherItems + campingItems
     }
-    
+
     private func buildFoodDraft() -> ReservationFoodDraft? {
         guard !state.foodItems.isEmpty else { return nil }
-        
+
         let trimmedNotes = state.foodNotes.trimmingCharacters(in: .whitespacesAndNewlines)
         return ReservationFoodDraft(
             items: state.foodItems,
@@ -5226,10 +5824,10 @@ final class AdventureComboBuilderViewModel: ObservableObject {
             notes: trimmedNotes.isEmpty ? nil : trimmedNotes
         )
     }
-    
+
     private func combinedServingTime() -> Date? {
         guard state.foodServingMoment == .specificTime else { return nil }
-        
+
         let calendar = AdventureDateHelper.calendar
         let timeComponents = calendar.dateComponents([.hour, .minute], from: state.foodServingTime)
         return calendar.date(

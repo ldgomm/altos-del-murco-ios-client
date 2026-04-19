@@ -173,7 +173,7 @@ struct ReserveViewDetail: View {
                     HStack(alignment: .top, spacing: 12) {
                         BrandIconBubble(
                             theme: .adventure,
-                            systemImage: item.activity.systemImage,
+                            systemImage: item.activity.legacySystemImage,
                             size: 42
                         )
 
@@ -186,9 +186,12 @@ struct ReserveViewDetail: View {
                                 .font(.subheadline)
                                 .foregroundStyle(palette.textSecondary)
 
-                            Text(itemPriceText(item))
-                                .font(.caption.weight(.semibold))
-                                .foregroundStyle(palette.primary)
+                            let priceText = itemPriceText(item)
+                            if !priceText.isEmpty {
+                                Text(priceText)
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(palette.primary)
+                            }
                         }
 
                         Spacer()
@@ -441,7 +444,10 @@ struct ReserveViewDetail: View {
     }
 
     private func itemPriceText(_ item: AdventureReservationItemDraft) -> String {
-        AdventurePricingEngine.subtotal(for: item).priceText
+        if let block = booking.blocks.first(where: { $0.activity == item.activity && $0.subtotal > 0 }) {
+            return block.subtotal.priceText
+        }
+        return ""
     }
 
     private func servingMomentText(_ food: ReservationFoodDraft) -> String {

@@ -13,14 +13,15 @@ protocol AdventureBookingsServiceable {
         nationalId: String,
         onChange: @escaping (Result<[AdventureBooking], Error>) -> Void
     ) -> AdventureListenerToken
-    
+
     func fetchAvailability(
         for date: Date,
         items: [AdventureReservationItemDraft],
-        foodReservation: ReservationFoodDraft?
+        foodReservation: ReservationFoodDraft?,
+        packageDiscountAmount: Double
     ) async throws -> [AdventureAvailabilitySlot]
-    
+
     func createBooking(_ request: AdventureBookingRequest) async throws -> AdventureBooking
-    
+
     func cancelBooking(id: String, nationalId: String) async throws
 }

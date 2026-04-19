@@ -8,26 +8,40 @@
 import Foundation
 
 final class AdventureModuleFactory {
-    private let service: AdventureBookingsServiceable
-    
-    init(service: AdventureBookingsServiceable = AdventureBookingsService()) {
-        self.service = service
+    private let bookingsService: AdventureBookingsServiceable
+    private let catalogService: AdventureCatalogServiceable
+
+    init(
+        bookingsService: AdventureBookingsServiceable,
+        catalogService: AdventureCatalogServiceable
+    ) {
+        self.bookingsService = bookingsService
+        self.catalogService = catalogService
     }
-    
+
     func makeBuilderViewModel(
-        prefilledItems: [AdventureReservationItemDraft] = []
+        prefilledItems: [AdventureReservationItemDraft] = [],
+        packageDiscountAmount: Double = 0
     ) -> AdventureComboBuilderViewModel {
         AdventureComboBuilderViewModel(
             prefilledItems: prefilledItems,
-            getAvailabilityUseCase: GetAdventureAvailabilityUseCase(service: service),
-            createBookingUseCase: CreateAdventureBookingUseCase(service: service)
+            initialPackageDiscountAmount: packageDiscountAmount,
+            getAvailabilityUseCase: GetAdventureAvailabilityUseCase(service: bookingsService),
+            createBookingUseCase: CreateAdventureBookingUseCase(service: bookingsService),
+            fetchAdventureCatalogUseCase: FetchAdventureCatalogUseCase(service: catalogService)
         )
     }
-    
+
     func makeBookingsViewModel() -> AdventureBookingsViewModel {
         AdventureBookingsViewModel(
-            observeBookingsUseCase: ObserveAdventureBookingsUseCase(service: service),
-            cancelBookingUseCase: CancelAdventureBookingUseCase(service: service)
+            observeBookingsUseCase: ObserveAdventureBookingsUseCase(service: bookingsService),
+            cancelBookingUseCase: CancelAdventureBookingUseCase(service: bookingsService)
+        )
+    }
+
+    func makeCatalogViewModel() -> AdventureCatalogViewModel {
+        AdventureCatalogViewModel(
+            fetchAdventureCatalogUseCase: FetchAdventureCatalogUseCase(service: catalogService)
         )
     }
 }

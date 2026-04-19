@@ -61,7 +61,14 @@ struct AdventureComboBuilderView: View {
             syncProfileFieldsFromSession()
         }
         .sheet(item: $editingItem) { item in
-            AdventureItemEditorView(item: item) { updated in
+            AdventureItemEditorView(
+                item: item,
+                config: adventureComboBuilderViewModel.config(for: item.activity),
+                linePrice: AdventurePricingEngine.subtotal(
+                    for: item,
+                    catalog: adventureComboBuilderViewModel.state.catalog
+                )
+            ) { updated in
                 adventureComboBuilderViewModel.updateItem(updated)
             }
         }
@@ -156,7 +163,9 @@ struct AdventureComboBuilderView: View {
                         .disabled(true)
                 } else {
                     ForEach(adventureComboBuilderViewModel.availableActivitiesToAdd) { activity in
-                        Button(activity.title) {
+                        Button(
+                            adventureComboBuilderViewModel.config(for: activity)?.title ?? activity.legacyTitle
+                        ) {
                             adventureComboBuilderViewModel.addItem(activity)
                         }
                     }
@@ -945,21 +954,14 @@ struct AdventureComboBuilderView: View {
                     summaryRow("Comida", "$\(slot.foodSubtotal.priceText)")
                     summaryRow("Subtotal", "$\(slot.subtotal.priceText)")
                     summaryRow("Descuento aventura", "-$\(slot.discountAmount.priceText)")
-//                    summaryRow("Recargo nocturno", "$\(slot.nightPremium.priceText)")
                     Divider()
                     summaryRow("Total", "$\(slot.totalAmount.priceText)", bold: true)
                 } else {
-                    let estimatedSubtotal = AdventurePricingEngine.estimatedSubtotal(items: adventureComboBuilderViewModel.state.items)
-                    let estimatedDiscount = AdventurePricingEngine.discount(for: estimatedSubtotal)
-//                    let estimatedNightPremium = AdventurePricingEngine.estimatedNightPremium(items: viewModel.state.items)
-                    let estimatedTotal =
-                        AdventurePricingEngine.discountedSubtotal(for: estimatedSubtotal) //+ estimatedNightPremium
-
-                    summaryRow("Subtotal estimado", "$\(estimatedSubtotal.priceText)")
-                    summaryRow("Descuento estimado", "-$\(estimatedDiscount.priceText)")
-//                    summaryRow("Recargo nocturno estimado", "$\(estimatedNightPremium.priceText)")
+                    summaryRow("Aventura estimada", adventureComboBuilderViewModel.estimatedAdventureSubtotal.priceText)
+                    summaryRow("Comida estimada", adventureComboBuilderViewModel.estimatedFoodSubtotal.priceText)
+                    summaryRow("Descuento estimado", "-\(adventureComboBuilderViewModel.estimatedDiscountAmount.priceText)")
                     Divider()
-                    summaryRow("Total estimado", "$\(estimatedTotal.priceText)", bold: true)
+                    summaryRow("Total estimado", adventureComboBuilderViewModel.estimatedTotal.priceText, bold: true)
                 }
             }
             .appCardStyle(.adventure)
@@ -1043,27 +1045,25 @@ struct AdventureComboBuilderView: View {
 
 private struct ComboItemCard: View {
     let item: AdventureReservationItemDraft
-    
+
+    @EnvironmentObject private var sessionViewModel: AppSessionViewModel
+
     var body: some View {
         HStack(spacing: 14) {
-            BrandIconBubble(theme: .adventure, systemImage: item.activity.systemImage, size: 52)
-            
+            BrandIconBubble(theme: .adventure, systemImage: item.activity.legacySystemImage, size: 52)
+
             VStack(alignment: .leading, spacing: 6) {
                 Text(item.title)
                     .font(.headline)
                     .foregroundStyle(.primary)
-                
+
                 Text(item.summaryText)
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
-                
-                Text("$\(AdventurePricingEngine.subtotal(for: item), specifier: "%.2f")")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
             }
-            
+
             Spacer()
-            
+
             Image(systemName: "line.3.horizontal")
                 .foregroundStyle(.tertiary)
         }
@@ -1182,73 +1182,98 @@ private struct AdventureSlotCard: View {
 
 private struct AdventureItemEditorView: View {
     @Environment(\.dismiss) private var dismiss
+
     @State private var item: AdventureReservationItemDraft
+    let config: AdventureActivityCatalogItem?
+    let linePrice: Double
     let onSave: (AdventureReservationItemDraft) -> Void
-    
-    init(item: AdventureReservationItemDraft, onSave: @escaping (AdventureReservationItemDraft) -> Void) {
+
+    init(
+        item: AdventureReservationItemDraft,
+        config: AdventureActivityCatalogItem?,
+        linePrice: Double,
+        onSave: @escaping (AdventureReservationItemDraft) -> Void
+    ) {
         _item = State(initialValue: item)
+        self.config = config
+        self.linePrice = linePrice
         self.onSave = onSave
     }
-    
+
+    private var durationOptions: [Int] {
+        config?.durationOptions ?? item.activity.legacyDurationOptions
+    }
+
+    private var activityTitle: String {
+        config?.title ?? item.activity.legacyTitle
+    }
+
     var body: some View {
         NavigationStack {
             Form {
                 Section("Actividad") {
-                    Text(item.activity.title)
+                    Text(activityTitle)
                 }
-                
+
                 switch item.activity {
                 case .offRoad:
                     Section("Off-road") {
                         Picker("Duración", selection: $item.durationMinutes) {
-                            ForEach(item.activity.durationOptions, id: \.self) { minutes in
+                            ForEach(durationOptions, id: \.self) { minutes in
                                 Text("\(minutes / 60) hora(s)").tag(minutes)
                             }
                         }
-                        
-                        Stepper("Vehículos: \(item.vehicleCount)", value: $item.vehicleCount, in: 1...10)
-                        Stepper("Personas: \(item.offRoadRiderCount)", value: $item.offRoadRiderCount, in: 1...20)
-                        
-                        Text("Cada vehículo admite 1 o 2 personas. Ejemplo: 6 personas pueden usar 4 vehículos.")
+
+                        Stepper("Vehículos: \(item.vehicleCount)", value: $item.vehicleCount, in: 1...50)
+                        Stepper("Personas: \(item.offRoadRiderCount)", value: $item.offRoadRiderCount, in: 1...100)
+
+                        Text("Cada vehículo admite 1 o 2 personas. El precio es por vehículo.")
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                     }
-                    
+
                 case .paintball, .goKarts, .shootingRange:
                     Section("Configuración") {
                         Picker("Duración", selection: $item.durationMinutes) {
-                            ForEach(item.activity.durationOptions, id: \.self) { minutes in
+                            ForEach(durationOptions, id: \.self) { minutes in
                                 Text("\(minutes) min").tag(minutes)
                             }
                         }
-                        Stepper("Personas: \(item.peopleCount)", value: $item.peopleCount, in: 1...20)
+                        Stepper("Personas: \(item.peopleCount)", value: $item.peopleCount, in: 1...100)
                     }
-                    
+
                 case .camping:
                     Section("Camping") {
-                        Stepper("Personas: \(item.peopleCount)", value: $item.peopleCount, in: 1...20)
-                        Stepper("Noches: \(item.nights)", value: $item.nights, in: 1...7)
-                        Text("El camping se programa de 7:00 PM a 7:00 AM y debe mantenerse al final del combo.")
+                        Stepper("Personas: \(item.peopleCount)", value: $item.peopleCount, in: 1...100)
+                        Stepper("Noches: \(item.nights)", value: $item.nights, in: 1...30)
+                        Text("El camping se mantiene al final del combo.")
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                     }
-                    
+
                 case .extremeSlide:
                     Section("Resbaladera extrema") {
-                        Stepper("Personas: \(item.peopleCount)", value: $item.peopleCount, in: 1...20)
-                        Text("Incluye 30 minutos de transporte off-road más la sesión de la resbaladera.")
+                        Stepper("Personas: \(item.peopleCount)", value: $item.peopleCount, in: 1...100)
+                        Text("Incluye transporte off-road en la lógica del planificador.")
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                     }
                 }
-                
+
                 Section("Precio") {
-                    Text("$\(AdventurePricingEngine.subtotal(for: item), specifier: "%.2f")")
-                        .font(.headline)
+                    if let config {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("Base: \(config.basePrice.priceText)")
+                            Text("Descuento unitario: \(config.discountAmount.priceText)")
+                            Text("Precio final: \(linePrice.priceText)")
+                                .font(.headline)
+                        }
+                    } else {
+                        Text(linePrice.priceText)
+                            .font(.headline)
+                    }
                 }
             }
-            .scrollContentBackground(.hidden)
-            .appScreenStyle(.adventure)
             .navigationTitle("Editar actividad")
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {

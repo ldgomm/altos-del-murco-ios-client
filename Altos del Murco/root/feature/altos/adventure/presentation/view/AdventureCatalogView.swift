@@ -11,22 +11,40 @@ import SwiftUI
 struct AdventureCatalogView: View {
     @ObservedObject var adventureComboBuilderViewModel: AdventureComboBuilderViewModel
     @ObservedObject var menuViewModel: MenuViewModel
+    @StateObject private var catalogViewModel = AdventureCatalogViewModel(
+        fetchAdventureCatalogUseCase: FetchAdventureCatalogUseCase(
+            service: AdventureCatalogService()
+        )
+    )
+
     @Environment(\.colorScheme) private var colorScheme
-    
-    private let singles = AdventureActivityType.allCases.map(AdventureActivityType.defaultDraft(for:))
-    
+
     private var palette: ThemePalette {
         AppTheme.palette(for: .adventure, scheme: colorScheme)
     }
-    
+
     var body: some View {
         NavigationStack {
             ScrollView(showsIndicators: false) {
                 LazyVStack(alignment: .leading, spacing: 24) {
                     heroSection
-                    featuredSection
-                    singlesSection
-                    customComboSection
+
+                    if catalogViewModel.state.isLoading && catalogViewModel.state.catalog.activities.isEmpty {
+                        ProgressView("Cargando actividades...")
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 32)
+                    } else if let error = catalogViewModel.state.errorMessage,
+                              catalogViewModel.state.catalog.activities.isEmpty {
+                        ContentUnavailableView(
+                            "No se pudo cargar el catálogo",
+                            systemImage: "wifi.exclamationmark",
+                            description: Text(error)
+                        )
+                    } else {
+                        featuredSection
+                        singlesSection
+                        customComboSection
+                    }
                 }
                 .padding(.horizontal, 20)
                 .padding(.top, 8)
@@ -36,8 +54,11 @@ struct AdventureCatalogView: View {
             .navigationBarTitleDisplayMode(.large)
         }
         .appScreenStyle(.adventure)
+        .onAppear {
+            catalogViewModel.onAppear()
+        }
     }
-    
+
     private var heroSection: some View {
         ZStack(alignment: .topTrailing) {
             RoundedRectangle(cornerRadius: AppTheme.Radius.xLarge, style: .continuous)
@@ -52,52 +73,32 @@ struct AdventureCatalogView: View {
                     x: 0,
                     y: 12
                 )
-            
-            Circle()
-                .fill(Color.white.opacity(colorScheme == .dark ? 0.10 : 0.18))
-                .frame(width: 160, height: 160)
-                .blur(radius: 10)
-                .offset(x: 40, y: -30)
-            
-            Circle()
-                .fill(palette.accent.opacity(colorScheme == .dark ? 0.26 : 0.20))
-                .frame(width: 120, height: 120)
-                .blur(radius: 18)
-                .offset(x: 10, y: 55)
-            
+
             VStack(alignment: .leading, spacing: 16) {
                 HStack(alignment: .top) {
                     BrandIconBubble(theme: .adventure, systemImage: "mountain.2.fill", size: 56)
-                    
                     Spacer()
-                    
                     BrandBadge(theme: .adventure, title: "Outdoor", selected: true)
                 }
-                
+
                 VStack(alignment: .leading, spacing: 10) {
                     Text("Construye tu combo perfecto")
                         .font(.system(size: 30, weight: .bold, design: .rounded))
                         .foregroundStyle(Color.white)
-                    
-                    Text("Mezcla off-road, paintball, go karts, campo de tiro, camping y columpio extremo con una experiencia con identidad propia.")
+
+                    Text("Ahora el catálogo y los paquetes destacados se cargan desde Firestore.")
                         .font(.subheadline)
                         .foregroundStyle(Color.white.opacity(0.92))
                 }
-                
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 8) {
-                        heroChip("Off-road")
-                        heroChip("Paintball")
-                        heroChip("Go karts")
-                        heroChip("Camping")
-                    }
-                }
-                
+
                 NavigationLink {
-                    AdventureComboBuilderView(adventureComboBuilderViewModel: adventureComboBuilderViewModel, menuViewModel: menuViewModel)
-                        .onAppear {
-                            adventureComboBuilderViewModel.reset()
-                        }
+                    AdventureComboBuilderView(
+                        adventureComboBuilderViewModel: adventureComboBuilderViewModel,
+                        menuViewModel: menuViewModel
+                    )
+                    .onAppear {
+                        adventureComboBuilderViewModel.reset()
+                    }
                 } label: {
                     HStack(spacing: 10) {
                         Image(systemName: "plus.circle.fill")
@@ -109,51 +110,75 @@ struct AdventureCatalogView: View {
             .padding(22)
         }
     }
-    
+
     private var featuredSection: some View {
         VStack(alignment: .leading, spacing: 16) {
             BrandSectionHeader(
                 theme: .adventure,
                 title: "Paquetes destacados",
-                subtitle: "Combos sugeridos para reservar más rápido."
+                subtitle: "Combos sugeridos cargados desde Firestore."
             )
-            
-            ForEach(AdventureCatalogTemplates.featured) { template in
-                NavigationLink {
-                    AdventureComboBuilderView(adventureComboBuilderViewModel: adventureComboBuilderViewModel, menuViewModel: menuViewModel)
+
+            let packages = catalogViewModel.state.catalog.activePackagesSorted
+
+            if packages.isEmpty {
+                Text("No hay paquetes destacados disponibles por ahora.")
+                    .font(.subheadline)
+                    .foregroundStyle(palette.textSecondary)
+                    .appCardStyle(.adventure, emphasized: false)
+            } else {
+                ForEach(packages) { package in
+                    NavigationLink {
+                        AdventureComboBuilderView(
+                            adventureComboBuilderViewModel: adventureComboBuilderViewModel,
+                            menuViewModel: menuViewModel
+                        )
                         .onAppear {
-                            adventureComboBuilderViewModel.replaceItems(with: template.items)
+                            adventureComboBuilderViewModel.replaceItems(
+                                with: package.items,
+                                packageDiscountAmount: package.packageDiscountAmount
+                            )
                         }
-                } label: {
-                    TemplateCard(template: template)
+                    } label: {
+                        FeaturedPackageCard(
+                            package: package,
+                            catalog: catalogViewModel.state.catalog
+                        )
+                    }
+                    .buttonStyle(.plain)
                 }
-                .buttonStyle(.plain)
             }
         }
     }
-    
+
     private var singlesSection: some View {
         VStack(alignment: .leading, spacing: 16) {
             BrandSectionHeader(
                 theme: .adventure,
                 title: "Actividades individuales",
-                subtitle: "Reserva una sola experiencia de forma directa."
+                subtitle: "Actividades activas ordenadas por sortOrder."
             )
-            
-            ForEach(singles, id: \.id) { item in
+
+            ForEach(catalogViewModel.state.catalog.activeActivitiesSorted) { activity in
                 NavigationLink {
-                    AdventureComboBuilderView(adventureComboBuilderViewModel: adventureComboBuilderViewModel, menuViewModel: menuViewModel)
-                        .onAppear {
-                            adventureComboBuilderViewModel.replaceItems(with: [item])
-                        }
+                    AdventureComboBuilderView(
+                        adventureComboBuilderViewModel: adventureComboBuilderViewModel,
+                        menuViewModel: menuViewModel
+                    )
+                    .onAppear {
+                        adventureComboBuilderViewModel.replaceItems(
+                            with: [activity.defaultDraft],
+                            packageDiscountAmount: 0
+                        )
+                    }
                 } label: {
-                    SingleActivityCard(item: item)
+                    SingleActivityCatalogCard(activity: activity)
                 }
                 .buttonStyle(.plain)
             }
         }
     }
-    
+
     private var customComboSection: some View {
         VStack(alignment: .leading, spacing: 14) {
             BrandSectionHeader(
@@ -161,17 +186,20 @@ struct AdventureCatalogView: View {
                 title: "¿Necesitas algo diferente?",
                 subtitle: "Crea una combinación a medida con tiempos y cantidades personalizadas."
             )
-            
+
             VStack(alignment: .leading, spacing: 14) {
-                Text("Puedes arrastrar para reordenar las actividades y establecer diferentes duraciones y número de personas por actividad.")
+                Text("Las reglas de agenda siguen en código, pero el catálogo y precios vienen de Firestore.")
                     .font(.subheadline)
                     .foregroundStyle(palette.textSecondary)
-                
+
                 NavigationLink {
-                    AdventureComboBuilderView(adventureComboBuilderViewModel: adventureComboBuilderViewModel, menuViewModel: menuViewModel)
-                        .onAppear {
-                            adventureComboBuilderViewModel.reset()
-                        }
+                    AdventureComboBuilderView(
+                        adventureComboBuilderViewModel: adventureComboBuilderViewModel,
+                        menuViewModel: menuViewModel
+                    )
+                    .onAppear {
+                        adventureComboBuilderViewModel.reset()
+                    }
                 } label: {
                     HStack(spacing: 10) {
                         Image(systemName: "sparkles")
@@ -183,68 +211,62 @@ struct AdventureCatalogView: View {
             .appCardStyle(.adventure)
         }
     }
-    
-    private func heroChip(_ title: String) -> some View {
-        Text(title)
-            .font(.caption.weight(.semibold))
-            .foregroundStyle(Color.white.opacity(0.95))
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .background(Color.white.opacity(colorScheme == .dark ? 0.12 : 0.16))
-            .overlay(
-                Capsule()
-                    .stroke(Color.white.opacity(0.14), lineWidth: 1)
-            )
-            .clipShape(Capsule())
-    }
 }
 
-private struct TemplateCard: View {
-    let template: AdventureTemplate
+private struct FeaturedPackageCard: View {
+    let package: AdventureFeaturedPackage
+    let catalog: AdventureCatalogSnapshot
+
     @Environment(\.colorScheme) private var colorScheme
-    
+
     private var palette: ThemePalette {
         AppTheme.palette(for: .adventure, scheme: colorScheme)
     }
-    
-    private var priceText: String {
-        String(format: "%.2f", AdventurePricingEngine.estimatedDiscountedSubtotal(items: template.items))
+
+    private var subtotal: Double {
+        AdventurePricingEngine.estimatedSubtotal(items: package.items, catalog: catalog)
     }
-    
+
+    private var total: Double {
+        max(0, subtotal - package.packageDiscountAmount)
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .top, spacing: 12) {
-                BrandIconBubble(
-                    theme: .adventure,
-                    systemImage: "figure.hiking",
-                    size: 50
-                )
-                
+                BrandIconBubble(theme: .adventure, systemImage: "figure.hiking", size: 50)
+
                 VStack(alignment: .leading, spacing: 6) {
-                    Text(template.title)
+                    Text(package.title)
                         .font(.headline)
                         .foregroundStyle(palette.textPrimary)
-                    
-                    Text(template.subtitle)
+
+                    Text(package.subtitle)
                         .font(.subheadline)
                         .foregroundStyle(palette.textSecondary)
                         .multilineTextAlignment(.leading)
                 }
-                
+
                 Spacer()
-                
-                if let badge = template.badge {
+
+                if let badge = package.badge, !badge.isEmpty {
                     BrandBadge(theme: .adventure, title: badge)
                 }
             }
-            
+
+            if package.packageDiscountAmount > 0 {
+                Text("Descuento del paquete: \(package.packageDiscountAmount.priceText)")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(palette.primary)
+            }
+
             HStack {
-                Label("Desde $\(priceText)", systemImage: "dollarsign.circle.fill")
+                Label("Desde \(total.priceText)", systemImage: "dollarsign.circle.fill")
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(palette.primary)
-                
+
                 Spacer()
-                
+
                 Label("Ver combo", systemImage: "arrow.right")
                     .font(.caption.weight(.bold))
                     .foregroundStyle(palette.textSecondary)
@@ -254,48 +276,54 @@ private struct TemplateCard: View {
     }
 }
 
-private struct SingleActivityCard: View {
-    let item: AdventureReservationItemDraft
+private struct SingleActivityCatalogCard: View {
+    let activity: AdventureActivityCatalogItem
+
     @Environment(\.colorScheme) private var colorScheme
-    
+
     private var palette: ThemePalette {
         AppTheme.palette(for: .adventure, scheme: colorScheme)
     }
-    
-    private var basePrice: Double {
-        AdventurePricingEngine.subtotal(for: item)
-    }
-    
+
     var body: some View {
         HStack(spacing: 14) {
             BrandIconBubble(
                 theme: .adventure,
-                systemImage: item.activity.systemImage,
+                systemImage: activity.systemImage,
                 size: 56
             )
-            
+
             VStack(alignment: .leading, spacing: 6) {
-                Text(item.activity.title)
+                Text(activity.title)
                     .font(.headline)
                     .foregroundStyle(palette.textPrimary)
-                
-                Text(item.summaryText)
+
+                Text(activity.shortDescription)
                     .font(.subheadline)
                     .foregroundStyle(palette.textSecondary)
                     .lineLimit(2)
-                
-                Text("Desde $\(basePrice, specifier: "%.2f")")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(palette.primary)
+
+                HStack(spacing: 8) {
+                    Text("Desde \(activity.finalUnitPrice.priceText)")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(palette.primary)
+
+                    if activity.hasDiscount {
+                        Text("Antes \(activity.basePrice.priceText)")
+                            .font(.caption)
+                            .foregroundStyle(palette.textTertiary)
+                            .strikethrough()
+                    }
+                }
             }
-            
+
             Spacer(minLength: 8)
-            
+
             VStack(alignment: .trailing, spacing: 8) {
                 Image(systemName: "arrow.up.right.circle.fill")
                     .font(.title3)
                     .foregroundStyle(palette.primary)
-                
+
                 Text("Reservar")
                     .font(.caption.bold())
                     .foregroundStyle(palette.textSecondary)

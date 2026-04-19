@@ -74,9 +74,15 @@ struct AltosDelMurcoApp: App {
             _ordersViewModel = StateObject(wrappedValue: ordersVM)
             _checkoutViewModel = StateObject(wrappedValue: checkoutVM)
 
-            let adventureService = AdventureBookingsService()
-            self.adventureModuleFactory = AdventureModuleFactory(service: adventureService)
-
+            let adventureCatalogService = AdventureCatalogService()
+            let adventureBookingsService = AdventureBookingsService(
+                catalogService: adventureCatalogService
+            )
+            self.adventureModuleFactory = AdventureModuleFactory(
+                bookingsService: adventureBookingsService,
+                catalogService: adventureCatalogService
+            )
+            
             let authRepository: AuthenticationRepositoriable = AuthenticationRepository()
             let clientProfileRepository: ClientProfileRepositoriable = ClientProfileRepository()
 

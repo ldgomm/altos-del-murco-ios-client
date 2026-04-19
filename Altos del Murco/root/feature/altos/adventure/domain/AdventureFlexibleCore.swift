@@ -14,10 +14,10 @@ enum AdventureActivityType: String, Codable, CaseIterable, Identifiable, Hashabl
     case shootingRange
     case camping
     case extremeSlide
-    
+
     var id: String { rawValue }
-    
-    var title: String {
+
+    var legacyTitle: String {
         switch self {
         case .offRoad: return "Off-road 4x4"
         case .paintball: return "Paintball"
@@ -27,8 +27,8 @@ enum AdventureActivityType: String, Codable, CaseIterable, Identifiable, Hashabl
         case .extremeSlide: return "Resbaladera extrema"
         }
     }
-    
-    var systemImage: String {
+
+    var legacySystemImage: String {
         switch self {
         case .offRoad: return "car.fill"
         case .paintball: return "shield.lefthalf.filled"
@@ -38,8 +38,8 @@ enum AdventureActivityType: String, Codable, CaseIterable, Identifiable, Hashabl
         case .extremeSlide: return "figure.fall"
         }
     }
-    
-    var durationOptions: [Int] {
+
+    var legacyDurationOptions: [Int] {
         switch self {
         case .offRoad:
             return [60, 120, 180]
@@ -51,7 +51,7 @@ enum AdventureActivityType: String, Codable, CaseIterable, Identifiable, Hashabl
             return []
         }
     }
-    
+
     static func defaultDraft(for activity: AdventureActivityType) -> AdventureReservationItemDraft {
         switch activity {
         case .offRoad:
@@ -109,6 +109,18 @@ enum AdventureActivityType: String, Codable, CaseIterable, Identifiable, Hashabl
                 nights: 0
             )
         }
+    }
+
+    static func defaultDraft(
+        for activity: AdventureActivityType,
+        catalog: AdventureCatalogSnapshot?
+    ) -> AdventureReservationItemDraft {
+        guard let catalog,
+              let config = catalog.activity(for: activity) else {
+            return defaultDraft(for: activity)
+        }
+
+        return config.defaultDraft
     }
 }
 
@@ -185,7 +197,7 @@ struct AdventureReservationItemDraft: Identifiable, Codable, Hashable {
     var vehicleCount: Int
     var offRoadRiderCount: Int
     var nights: Int
-    
+
     init(
         id: String = UUID().uuidString,
         activity: AdventureActivityType,
@@ -203,9 +215,9 @@ struct AdventureReservationItemDraft: Identifiable, Codable, Hashable {
         self.offRoadRiderCount = offRoadRiderCount
         self.nights = nights
     }
-    
-    var title: String { activity.title }
-    
+
+    var title: String { activity.legacyTitle }
+
     var summaryText: String {
         switch activity {
         case .offRoad:
@@ -324,8 +336,9 @@ struct AdventureBookingRequest: Hashable {
     let eventNotes: String?
     let items: [AdventureReservationItemDraft]
     let foodReservation: ReservationFoodDraft?
+    let packageDiscountAmount: Double
     let notes: String?
-    
+
     var hasActivities: Bool { !items.isEmpty }
     var hasFoodReservation: Bool { !(foodReservation?.isEmpty ?? true) }
 }
@@ -375,14 +388,6 @@ struct AdventureBooking: Identifiable, Hashable {
         case (false, false): return "Reserva"
         }
     }
-}
-
-struct AdventureTemplate: Identifiable, Hashable {
-    let id: String
-    let title: String
-    let subtitle: String
-    let badge: String?
-    let items: [AdventureReservationItemDraft]
 }
 
 enum AdventureSchedule {
@@ -470,51 +475,97 @@ enum AdventureDateHelper {
 enum AdventurePricingEngine {
     static let nightPremiumRate = 0.25
 
-    static func subtotal(for item: AdventureReservationItemDraft) -> Double {
+    static func finalUnitPrice(for config: AdventureActivityCatalogItem) -> Double {
+        max(0, config.basePrice - config.discountAmount)
+    }
+
+    static func lineBaseSubtotal(
+        for item: AdventureReservationItemDraft,
+        config: AdventureActivityCatalogItem
+    ) -> Double {
         switch item.activity {
         case .offRoad:
             let hours = Double(item.durationMinutes) / 60
-            return 20 * hours * Double(item.vehicleCount)
-        case .paintball:
-            return 5 * Double(item.durationMinutes / 30) * Double(item.peopleCount)
-        case .goKarts:
-            return 5 * Double(item.durationMinutes / 30) * Double(item.peopleCount)
-        case .shootingRange:
-            return 5 * Double(item.durationMinutes / 30) * Double(item.peopleCount)
+            return config.basePrice * hours * Double(item.vehicleCount)
+
+        case .paintball, .goKarts, .shootingRange:
+            let blocks = Double(item.durationMinutes) / 30
+            return config.basePrice * blocks * Double(item.peopleCount)
+
         case .camping:
-            return 30 * Double(item.peopleCount) * Double(item.nights)
+            return config.basePrice * Double(item.peopleCount) * Double(item.nights)
+
         case .extremeSlide:
-            return 15 * Double(item.peopleCount)
+            return config.basePrice * Double(item.peopleCount)
         }
     }
-    
-    static func estimatedSubtotal(items: [AdventureReservationItemDraft]) -> Double {
-        items.reduce(0) { $0 + subtotal(for: $1) }
+
+    static func subtotal(
+        for item: AdventureReservationItemDraft,
+        config: AdventureActivityCatalogItem
+    ) -> Double {
+        switch item.activity {
+        case .offRoad:
+            let hours = Double(item.durationMinutes) / 60
+            return finalUnitPrice(for: config) * hours * Double(item.vehicleCount)
+
+        case .paintball, .goKarts, .shootingRange:
+            let blocks = Double(item.durationMinutes) / 30
+            return finalUnitPrice(for: config) * blocks * Double(item.peopleCount)
+
+        case .camping:
+            return finalUnitPrice(for: config) * Double(item.peopleCount) * Double(item.nights)
+
+        case .extremeSlide:
+            return finalUnitPrice(for: config) * Double(item.peopleCount)
+        }
     }
 
-    static func discount(for subtotal: Double) -> Double {
-        let completeTenDollarSteps = Int(subtotal / 10)
-        return Double(completeTenDollarSteps) * 0.5
+    static func subtotal(
+        for item: AdventureReservationItemDraft,
+        catalog: AdventureCatalogSnapshot
+    ) -> Double {
+        guard let config = catalog.activity(for: item.activity) else { return 0 }
+        return subtotal(for: item, config: config)
+    }
+
+    static func lineDiscountAmount(
+        for item: AdventureReservationItemDraft,
+        catalog: AdventureCatalogSnapshot
+    ) -> Double {
+        guard let config = catalog.activity(for: item.activity) else { return 0 }
+        return max(0, lineBaseSubtotal(for: item, config: config) - subtotal(for: item, config: config))
+    }
+
+    static func estimatedSubtotal(
+        items: [AdventureReservationItemDraft],
+        catalog: AdventureCatalogSnapshot
+    ) -> Double {
+        items.reduce(0) { partial, item in
+            partial + subtotal(for: item, catalog: catalog)
+        }
+    }
+
+    static func estimatedDiscountAmount(
+        items: [AdventureReservationItemDraft],
+        catalog: AdventureCatalogSnapshot
+    ) -> Double {
+        items.reduce(0) { partial, item in
+            partial + lineDiscountAmount(for: item, catalog: catalog)
+        }
     }
 
     static func foodSubtotal(for foodReservation: ReservationFoodDraft?) -> Double {
         foodReservation?.subtotal ?? 0
     }
-    
-    static func discountedSubtotal(for subtotal: Double) -> Double {
-        max(0, subtotal - discount(for: subtotal))
-    }
 
-    static func estimatedDiscountedSubtotal(items: [AdventureReservationItemDraft]) -> Double {
-        discountedSubtotal(for: estimatedSubtotal(items: items))
-    }
-
-    static func estimatedNightPremium(items: [AdventureReservationItemDraft]) -> Double {
-        let hasCamping = items.contains { $0.activity == .camping }
-        guard hasCamping else { return 0 }
-
-        let discounted = estimatedDiscountedSubtotal(items: items)
-        return discounted * nightPremiumRate
+    static func packageTotal(
+        items: [AdventureReservationItemDraft],
+        packageDiscountAmount: Double,
+        catalog: AdventureCatalogSnapshot
+    ) -> Double {
+        let subtotal = estimatedSubtotal(items: items, catalog: catalog)
+        return max(0, subtotal - packageDiscountAmount)
     }
 }
 
@@ -523,11 +574,13 @@ enum AdventurePlanner {
         day: Date,
         startAt: Date,
         items: [AdventureReservationItemDraft],
-        foodReservation: ReservationFoodDraft?
+        foodReservation: ReservationFoodDraft?,
+        packageDiscountAmount: Double,
+        catalog: AdventureCatalogSnapshot
     ) -> AdventureBuildPlan? {
         let hasFood = !(foodReservation?.isEmpty ?? true)
         guard !items.isEmpty || hasFood else { return nil }
-        
+
         let foodSubtotal = AdventurePricingEngine.foodSubtotal(for: foodReservation)
         let dayStart = AdventureDateHelper.date(
             on: day,
@@ -539,13 +592,16 @@ enum AdventurePlanner {
             hour: AdventureSchedule.daytimeEndHour,
             minute: 0
         )
-        
+
         guard startAt >= dayStart else { return nil }
-        
+
         if items.isEmpty {
-            let end = AdventureDateHelper.addMinutes(AdventureSchedule.foodOnlyDefaultDurationMinutes, to: startAt)
+            let end = AdventureDateHelper.addMinutes(
+                AdventureSchedule.foodOnlyDefaultDurationMinutes,
+                to: startAt
+            )
             guard end <= dayEnd else { return nil }
-            
+
             return AdventureBuildPlan(
                 startAt: startAt,
                 endAt: end,
@@ -559,28 +615,36 @@ enum AdventurePlanner {
                 hasNightPremium: false
             )
         }
-        
+
         var cursor = startAt
         var blocks: [AdventureBookingBlock] = []
-        var adventureSubtotal = 0.0
-        
+        var discountedAdventureSubtotal = 0.0
+        var activityDiscountAmount = 0.0
+
         for (index, item) in items.enumerated() {
+            guard catalog.activity(for: item.activity)?.isActive == true else {
+                return nil
+            }
+
             switch item.activity {
             case .offRoad:
                 guard item.vehicleCount > 0 else { return nil }
                 guard item.offRoadRiderCount > 0 else { return nil }
                 guard item.offRoadRiderCount <= item.vehicleCount * AdventureSchedule.offRoadPeoplePerVehicle else { return nil }
-                
+
                 let end = AdventureDateHelper.addMinutes(item.durationMinutes, to: cursor)
                 guard end <= dayEnd else { return nil }
-                
-                let lineSubtotal = AdventurePricingEngine.subtotal(for: item)
-                adventureSubtotal += lineSubtotal
-                
+
+                let lineSubtotal = AdventurePricingEngine.subtotal(for: item, catalog: catalog)
+                let lineDiscount = AdventurePricingEngine.lineDiscountAmount(for: item, catalog: catalog)
+
+                discountedAdventureSubtotal += lineSubtotal
+                activityDiscountAmount += lineDiscount
+
                 blocks.append(
                     AdventureBookingBlock(
                         id: UUID().uuidString,
-                        title: "Off-Road 4x4",
+                        title: catalog.activity(for: .offRoad)?.title ?? "Off-Road 4x4",
                         activity: .offRoad,
                         resourceType: .offRoadVehicles,
                         startAt: cursor,
@@ -590,18 +654,21 @@ enum AdventurePlanner {
                     )
                 )
                 cursor = end
-                
+
             case .paintball:
                 let end = AdventureDateHelper.addMinutes(item.durationMinutes, to: cursor)
                 guard end <= dayEnd else { return nil }
-                
-                let lineSubtotal = AdventurePricingEngine.subtotal(for: item)
-                adventureSubtotal += lineSubtotal
-                
+
+                let lineSubtotal = AdventurePricingEngine.subtotal(for: item, catalog: catalog)
+                let lineDiscount = AdventurePricingEngine.lineDiscountAmount(for: item, catalog: catalog)
+
+                discountedAdventureSubtotal += lineSubtotal
+                activityDiscountAmount += lineDiscount
+
                 blocks.append(
                     AdventureBookingBlock(
                         id: UUID().uuidString,
-                        title: "Paintball",
+                        title: catalog.activity(for: .paintball)?.title ?? "Paintball",
                         activity: .paintball,
                         resourceType: .paintballPeople,
                         startAt: cursor,
@@ -611,18 +678,21 @@ enum AdventurePlanner {
                     )
                 )
                 cursor = end
-                
+
             case .goKarts:
                 let end = AdventureDateHelper.addMinutes(item.durationMinutes, to: cursor)
                 guard end <= dayEnd else { return nil }
-                
-                let lineSubtotal = AdventurePricingEngine.subtotal(for: item)
-                adventureSubtotal += lineSubtotal
-                
+
+                let lineSubtotal = AdventurePricingEngine.subtotal(for: item, catalog: catalog)
+                let lineDiscount = AdventurePricingEngine.lineDiscountAmount(for: item, catalog: catalog)
+
+                discountedAdventureSubtotal += lineSubtotal
+                activityDiscountAmount += lineDiscount
+
                 blocks.append(
                     AdventureBookingBlock(
                         id: UUID().uuidString,
-                        title: "Go Karts",
+                        title: catalog.activity(for: .goKarts)?.title ?? "Go Karts",
                         activity: .goKarts,
                         resourceType: .goKartPeople,
                         startAt: cursor,
@@ -632,18 +702,21 @@ enum AdventurePlanner {
                     )
                 )
                 cursor = end
-                
+
             case .shootingRange:
                 let end = AdventureDateHelper.addMinutes(item.durationMinutes, to: cursor)
                 guard end <= dayEnd else { return nil }
-                
-                let lineSubtotal = AdventurePricingEngine.subtotal(for: item)
-                adventureSubtotal += lineSubtotal
-                
+
+                let lineSubtotal = AdventurePricingEngine.subtotal(for: item, catalog: catalog)
+                let lineDiscount = AdventurePricingEngine.lineDiscountAmount(for: item, catalog: catalog)
+
+                discountedAdventureSubtotal += lineSubtotal
+                activityDiscountAmount += lineDiscount
+
                 blocks.append(
                     AdventureBookingBlock(
                         id: UUID().uuidString,
-                        title: "Campo de tiro",
+                        title: catalog.activity(for: .shootingRange)?.title ?? "Campo de tiro",
                         activity: .shootingRange,
                         resourceType: .shootingPeople,
                         startAt: cursor,
@@ -653,17 +726,17 @@ enum AdventurePlanner {
                     )
                 )
                 cursor = end
-                
+
             case .extremeSlide:
                 let transportVehicles = max(
                     1,
                     Int(ceil(Double(item.peopleCount) / Double(AdventureSchedule.offRoadPeoplePerVehicle)))
                 )
-                
+
                 let transportEnd = AdventureDateHelper.addMinutes(30, to: cursor)
                 let slideEnd = AdventureDateHelper.addMinutes(30, to: transportEnd)
                 guard slideEnd <= dayEnd else { return nil }
-                
+
                 blocks.append(
                     AdventureBookingBlock(
                         id: UUID().uuidString,
@@ -676,14 +749,17 @@ enum AdventurePlanner {
                         subtotal: 0
                     )
                 )
-                
-                let lineSubtotal = AdventurePricingEngine.subtotal(for: item)
-                adventureSubtotal += lineSubtotal
-                
+
+                let lineSubtotal = AdventurePricingEngine.subtotal(for: item, catalog: catalog)
+                let lineDiscount = AdventurePricingEngine.lineDiscountAmount(for: item, catalog: catalog)
+
+                discountedAdventureSubtotal += lineSubtotal
+                activityDiscountAmount += lineDiscount
+
                 blocks.append(
                     AdventureBookingBlock(
                         id: UUID().uuidString,
-                        title: "Extreme Slide",
+                        title: catalog.activity(for: .extremeSlide)?.title ?? "Extreme Slide",
                         activity: .extremeSlide,
                         resourceType: .extremeSlidePeople,
                         startAt: transportEnd,
@@ -693,22 +769,37 @@ enum AdventurePlanner {
                     )
                 )
                 cursor = slideEnd
-                
+
             case .camping:
                 guard index == items.count - 1 else { return nil }
                 let campingStart = AdventureDateHelper.date(on: day, hour: 19, minute: 0)
                 guard cursor <= campingStart else { return nil }
-                
+
+                let config = catalog.activity(for: .camping)
+
                 for night in 0..<max(1, item.nights) {
                     let start = AdventureDateHelper.addDays(night, to: campingStart)
                     let end = AdventureDateHelper.addMinutes(12 * 60, to: start)
-                    let nightSubtotal = 30 * Double(item.peopleCount)
-                    adventureSubtotal += nightSubtotal
-                    
+
+                    let nightItem = AdventureReservationItemDraft(
+                        activity: .camping,
+                        durationMinutes: 0,
+                        peopleCount: item.peopleCount,
+                        vehicleCount: 0,
+                        offRoadRiderCount: 0,
+                        nights: 1
+                    )
+
+                    let nightSubtotal = AdventurePricingEngine.subtotal(for: nightItem, catalog: catalog)
+                    let nightDiscount = AdventurePricingEngine.lineDiscountAmount(for: nightItem, catalog: catalog)
+
+                    discountedAdventureSubtotal += nightSubtotal
+                    activityDiscountAmount += nightDiscount
+
                     blocks.append(
                         AdventureBookingBlock(
                             id: UUID().uuidString,
-                            title: "Camping Night \(night + 1)",
+                            title: "\(config?.title ?? "Camping") Night \(night + 1)",
                             activity: .camping,
                             resourceType: .campingPeople,
                             startAt: start,
@@ -718,46 +809,36 @@ enum AdventurePlanner {
                         )
                     )
                 }
+
                 cursor = blocks.last?.endAt ?? cursor
             }
         }
-        
-        //Later off-road
-//        let hasMisalignedOffRoadBlock = blocks.contains {
-//            $0.activity == .offRoad &&
-//            AdventureDateHelper.calendar.component(.minute, from: $0.startAt) != 0
-//        }
-        
-//        guard !hasMisalignedOffRoadBlock else { return nil }
+
         guard let last = blocks.last else { return nil }
-        
+
         let hasNightPremium =
             items.contains(where: { $0.activity == .camping }) ||
             blocks.contains { AdventureDateHelper.isNightPremiumTime($0.startAt, $0.endAt) }
-        
-        let discountAmount = AdventurePricingEngine.discount(for: adventureSubtotal)
-        let discountedAdventureSubtotal = AdventurePricingEngine.discountedSubtotal(for: adventureSubtotal)
-        
-        //Later premium
-//        let premium = hasNightPremium ? discountedAdventureSubtotal * AdventurePricingEngine.nightPremiumRate : 0
-        
-        let totalSubtotal = adventureSubtotal + foodSubtotal
-        let totalAmount = discountedAdventureSubtotal + foodSubtotal// + premium
-        
+
+        let totalDiscountAmount = activityDiscountAmount + max(0, packageDiscountAmount)
+        let packageAdjustedAdventureSubtotal = max(0, discountedAdventureSubtotal - max(0, packageDiscountAmount))
+        let totalSubtotal = discountedAdventureSubtotal + foodSubtotal
+        let totalAmount = packageAdjustedAdventureSubtotal + foodSubtotal
+
         return AdventureBuildPlan(
             startAt: startAt,
             endAt: last.endAt,
             blocks: blocks,
-            adventureSubtotal: adventureSubtotal,
+            adventureSubtotal: discountedAdventureSubtotal,
             foodSubtotal: foodSubtotal,
             subtotal: totalSubtotal,
-            discountAmount: discountAmount,
+            discountAmount: totalDiscountAmount,
             nightPremium: 0,
             totalAmount: totalAmount,
             hasNightPremium: hasNightPremium
         )
     }
-    
+
     static func affectedDayKeys(
         day: Date,
         items: [AdventureReservationItemDraft]
@@ -768,15 +849,17 @@ enum AdventurePlanner {
             AdventureDateHelper.dayKey(from: AdventureDateHelper.addDays($0, to: day))
         }
     }
-    
+
     static func buildAvailability(
         day: Date,
         items: [AdventureReservationItemDraft],
-        foodReservation: ReservationFoodDraft?
+        foodReservation: ReservationFoodDraft?,
+        packageDiscountAmount: Double,
+        catalog: AdventureCatalogSnapshot
     ) -> [AdventureAvailabilitySlot] {
         let hasFood = !(foodReservation?.isEmpty ?? true)
         guard !items.isEmpty || hasFood else { return [] }
-        
+
         let startWindow = AdventureDateHelper.date(
             on: day,
             hour: AdventureSchedule.daytimeStartHour,
@@ -787,20 +870,22 @@ enum AdventurePlanner {
             hour: AdventureSchedule.daytimeEndHour,
             minute: 0
         )
-        
+
         let now = Date()
         let isToday = AdventureDateHelper.calendar.isDate(day, inSameDayAs: now)
-        
+
         var current = startWindow
         var slots: [AdventureAvailabilitySlot] = []
-        
+
         while current <= endWindow {
             if !(isToday && current < now),
                let plan = buildPlan(
                     day: day,
                     startAt: current,
                     items: items,
-                    foodReservation: foodReservation
+                    foodReservation: foodReservation,
+                    packageDiscountAmount: packageDiscountAmount,
+                    catalog: catalog
                ) {
                 slots.append(
                     AdventureAvailabilitySlot(
@@ -817,92 +902,10 @@ enum AdventurePlanner {
                     )
                 )
             }
-            
+
             current = AdventureDateHelper.addMinutes(AdventureSchedule.slotMinutes, to: current)
         }
-        
+
         return slots
     }
-}
-
-enum AdventureCatalogTemplates {
-    static let featured: [AdventureTemplate] = [
-        AdventureTemplate(
-            id: "off-road-duo",
-            title: "Off-road dúo",
-            subtitle: "1 hora de off-road para 2 personas",
-            badge: "Popular",
-            items: [
-                AdventureReservationItemDraft(
-                    activity: .offRoad,
-                    durationMinutes: 60,
-                    peopleCount: 0,
-                    vehicleCount: 1,
-                    offRoadRiderCount: 2,
-                    nights: 0
-                )
-            ]
-        ),
-        AdventureTemplate(
-            id: "adrenaline-mix",
-            title: "Mix de adrenalina",
-            subtitle: "1 hora de off-road + 30 min de karts + 30 min de paintball",
-            badge: "Destacado",
-            items: [
-                AdventureReservationItemDraft(
-                    activity: .offRoad,
-                    durationMinutes: 60,
-                    peopleCount: 0,
-                    vehicleCount: 2,
-                    offRoadRiderCount: 4,
-                    nights: 0
-                ),
-                AdventureActivityType.defaultDraft(for: .goKarts),
-                AdventureActivityType.defaultDraft(for: .paintball)
-            ]
-        ),
-        AdventureTemplate(
-            id: "full-adventure",
-            title: "Aventura completa",
-            subtitle: "2h off-road + 1h karts + 30m paintball + 30m tiro",
-            badge: "Más vendido",
-            items: [
-                AdventureReservationItemDraft(
-                    activity: .offRoad,
-                    durationMinutes: 120,
-                    peopleCount: 0,
-                    vehicleCount: 2,
-                    offRoadRiderCount: 4,
-                    nights: 0
-                ),
-                AdventureReservationItemDraft(
-                    activity: .goKarts,
-                    durationMinutes: 60,
-                    peopleCount: 4,
-                    vehicleCount: 0,
-                    offRoadRiderCount: 0,
-                    nights: 0
-                ),
-                AdventureActivityType.defaultDraft(for: .paintball),
-                AdventureActivityType.defaultDraft(for: .shootingRange)
-            ]
-        ),
-        AdventureTemplate(
-            id: "camp-night",
-            title: "Noche de camping",
-            subtitle: "Actividades del día + noche de camping",
-            badge: "Diversión nocturna",
-            items: [
-                AdventureReservationItemDraft(
-                    activity: .offRoad,
-                    durationMinutes: 60,
-                    peopleCount: 0,
-                    vehicleCount: 1,
-                    offRoadRiderCount: 2,
-                    nights: 0
-                ),
-                AdventureActivityType.defaultDraft(for: .camping)
-            ]
-        )
-    ]
 }

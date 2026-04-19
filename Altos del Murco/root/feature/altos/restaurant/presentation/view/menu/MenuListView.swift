@@ -71,8 +71,6 @@ struct MenuListView: View {
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 24) {
-                headerSection
-                
                 if !featuredItems.isEmpty {
                     featuredCarousel
                 }
@@ -154,44 +152,6 @@ struct MenuListView: View {
                 OrderSuccessView(order: order, path: $path)
             }
         }
-    }
-    
-    private var headerSection: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            VStack(alignment: .leading, spacing: 10) {
-                Text("Flavors from Altos del Murco")
-                    .font(.title2.bold())
-                    .foregroundStyle(palette.textPrimary)
-                
-                Text("Explore our charcoal-grilled dishes, house specials, drinks, and more.")
-                    .font(.subheadline)
-                    .foregroundStyle(palette.textSecondary)
-            }
-            
-            NavigationLink(value: Route.reservationBuilder) {
-                HStack(spacing: 12) {
-                    BrandIconBubble(theme: .restaurant, systemImage: "calendar.badge.plus")
-                    
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Reservar comida o evento")
-                            .font(.headline)
-                            .foregroundStyle(palette.textPrimary)
-                        Text("Cumpleaños, reuniones y comida para una visita futura.")
-                            .font(.subheadline)
-                            .foregroundStyle(palette.textSecondary)
-                    }
-                    
-                    Spacer()
-                    
-                    Image(systemName: "chevron.right")
-                        .foregroundStyle(palette.textTertiary)
-                }
-                .appCardStyle(.restaurant)
-            }
-            .buttonStyle(.plain)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .appCardStyle(.restaurant, emphasized: false)
     }
     
     private var featuredCarousel: some View {
