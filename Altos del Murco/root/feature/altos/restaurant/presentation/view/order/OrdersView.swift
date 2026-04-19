@@ -132,7 +132,7 @@ struct OrdersView: View {
             OrderDetailView(order: order)
         }
     }
-
+ 
     private var summarySection: some View {
         Section {
             OrdersSummaryView(orders: viewModel.state.orders)

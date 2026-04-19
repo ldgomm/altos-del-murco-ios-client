@@ -487,7 +487,7 @@ enum AdventurePricingEngine {
             return 15 * Double(item.peopleCount)
         }
     }
-
+    
     static func estimatedSubtotal(items: [AdventureReservationItemDraft]) -> Double {
         items.reduce(0) { $0 + subtotal(for: $1) }
     }
