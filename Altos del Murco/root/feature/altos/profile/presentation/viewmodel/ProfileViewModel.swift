@@ -7,11 +7,16 @@
 
 import Combine
 import AuthenticationServices
+import Foundation
+import UIKit
 
 @MainActor
 final class ProfileViewModel: ObservableObject {
     @Published private(set) var profile: ClientProfile
     @Published private(set) var stats: ProfileStats = .empty
+    @Published var avatarImage: UIImage?
+    @Published private(set) var isLoadingStats = false
+    @Published private(set) var isUploadingProfileImage = false
 
     @Published var isShowingEditProfile = false
     @Published var isShowingDeleteAccountSheet = false
@@ -21,6 +26,8 @@ final class ProfileViewModel: ObservableObject {
     private let appPreferences: AppPreferences
     private let completeClientProfileUseCase: CompleteClientProfileUseCase
     private let deleteCurrentAccountUseCase: DeleteCurrentAccountUseCase
+    private let profileImageStorageService: ProfileImageStorageService
+    private let profileStatsService: ProfileStatsService
     private let onProfileUpdated: @MainActor (ClientProfile) -> Void
     private let onSignOut: @MainActor () -> Void
     private let onAccountDeleted: @MainActor () -> Void
@@ -32,6 +39,8 @@ final class ProfileViewModel: ObservableObject {
         appPreferences: AppPreferences,
         completeClientProfileUseCase: CompleteClientProfileUseCase,
         deleteCurrentAccountUseCase: DeleteCurrentAccountUseCase,
+        profileImageStorageService: ProfileImageStorageService,
+        profileStatsService: ProfileStatsService,
         onProfileUpdated: @escaping @MainActor (ClientProfile) -> Void,
         onSignOut: @escaping @MainActor () -> Void,
         onAccountDeleted: @escaping @MainActor () -> Void
@@ -40,9 +49,16 @@ final class ProfileViewModel: ObservableObject {
         self.appPreferences = appPreferences
         self.completeClientProfileUseCase = completeClientProfileUseCase
         self.deleteCurrentAccountUseCase = deleteCurrentAccountUseCase
+        self.profileImageStorageService = profileImageStorageService
+        self.profileStatsService = profileStatsService
         self.onProfileUpdated = onProfileUpdated
         self.onSignOut = onSignOut
         self.onAccountDeleted = onAccountDeleted
+
+        Task {
+            await loadAvatar()
+            await refreshStats()
+        }
     }
 
     var displayName: String {
@@ -77,6 +93,14 @@ final class ProfileViewModel: ObservableObject {
         appPreferences.appearance
     }
 
+    var hasProfileImage: Bool {
+        profile.hasProfileImage || avatarImage != nil
+    }
+
+    func onAppear() {
+        Task { await refreshStats() }
+    }
+
     func updateAppearance(_ appearance: AppAppearance) {
         appPreferences.appearance = appearance
         objectWillChange.send()
@@ -97,6 +121,11 @@ final class ProfileViewModel: ObservableObject {
     func handleProfileSaved(_ updatedProfile: ClientProfile) {
         profile = updatedProfile
         onProfileUpdated(updatedProfile)
+
+        Task {
+            await loadAvatar()
+            await refreshStats()
+        }
     }
 
     func makeEditProfileViewModel() -> EditProfileViewModel {
@@ -107,6 +136,140 @@ final class ProfileViewModel: ObservableObject {
                 self?.handleProfileSaved(updatedProfile)
             }
         )
+    }
+
+    func refreshStats() async {
+        let nationalId = profile.nationalId.filter(\.isNumber)
+        guard !nationalId.isEmpty else {
+            stats = .empty
+            return
+        }
+
+        isLoadingStats = true
+        defer { isLoadingStats = false }
+
+        do {
+            stats = try await profileStatsService.loadStats(for: nationalId)
+        } catch {
+            alertItem = ProfileAlertItem(
+                title: "Could not load profile stats",
+                message: error.localizedDescription
+            )
+        }
+    }
+
+    func uploadProfileImage(data: Data) {
+        isUploadingProfileImage = true
+        alertItem = nil
+
+        Task {
+            do {
+                let uploaded = try await profileImageStorageService.uploadProfileImage(
+                    data: data,
+                    userId: profile.id,
+                    replacing: profile.profileImagePath
+                )
+
+                _ = try ProfileImageCache.shared.saveImageData(
+                    UIImage(data: data)?.jpegData(compressionQuality: 0.82) ?? data,
+                    for: profile.id
+                )
+
+                let updatedProfile = ClientProfile(
+                    id: profile.id,
+                    email: profile.email,
+                    appleUserIdentifier: profile.appleUserIdentifier,
+                    fullName: profile.fullName,
+                    nationalId: profile.nationalId,
+                    phoneNumber: profile.phoneNumber,
+                    birthday: profile.birthday,
+                    address: profile.address,
+                    emergencyContactName: profile.emergencyContactName,
+                    emergencyContactPhone: profile.emergencyContactPhone,
+                    isProfileComplete: profile.isProfileComplete,
+                    createdAt: profile.createdAt,
+                    updatedAt: Date(),
+                    profileCompletedAt: profile.profileCompletedAt,
+                    profileImageURL: uploaded.downloadURL,
+                    profileImagePath: uploaded.storagePath
+                )
+
+                try await completeClientProfileUseCase.execute(profile: updatedProfile)
+                avatarImage = ProfileImageCache.shared.loadImage(for: profile.id)
+                handleProfileSaved(updatedProfile)
+            } catch {
+                alertItem = ProfileAlertItem(
+                    title: "Could not update profile photo",
+                    message: error.localizedDescription
+                )
+            }
+
+            isUploadingProfileImage = false
+        }
+    }
+
+    func removeProfileImage() {
+        isUploadingProfileImage = true
+        alertItem = nil
+
+        Task {
+            do {
+                try await profileImageStorageService.deleteProfileImage(path: profile.profileImagePath)
+                ProfileImageCache.shared.removeImage(for: profile.id)
+
+                let updatedProfile = ClientProfile(
+                    id: profile.id,
+                    email: profile.email,
+                    appleUserIdentifier: profile.appleUserIdentifier,
+                    fullName: profile.fullName,
+                    nationalId: profile.nationalId,
+                    phoneNumber: profile.phoneNumber,
+                    birthday: profile.birthday,
+                    address: profile.address,
+                    emergencyContactName: profile.emergencyContactName,
+                    emergencyContactPhone: profile.emergencyContactPhone,
+                    isProfileComplete: profile.isProfileComplete,
+                    createdAt: profile.createdAt,
+                    updatedAt: Date(),
+                    profileCompletedAt: profile.profileCompletedAt,
+                    profileImageURL: nil,
+                    profileImagePath: nil
+                )
+
+                try await completeClientProfileUseCase.execute(profile: updatedProfile)
+                avatarImage = nil
+                handleProfileSaved(updatedProfile)
+            } catch {
+                alertItem = ProfileAlertItem(
+                    title: "Could not delete profile photo",
+                    message: error.localizedDescription
+                )
+            }
+
+            isUploadingProfileImage = false
+        }
+    }
+
+    private func loadAvatar() async {
+        if let cached = ProfileImageCache.shared.loadImage(for: profile.id) {
+            avatarImage = cached
+            return
+        }
+
+        guard let urlString = profile.profileImageURL,
+              let url = URL(string: urlString) else {
+            avatarImage = nil
+            return
+        }
+
+        do {
+            let (data, _) = try await URLSession.shared.data(from: url)
+            if let image = try ProfileImageCache.shared.saveImageData(data, for: profile.id) {
+                avatarImage = image
+            }
+        } catch {
+            avatarImage = nil
+        }
     }
 
     func onDeleteRequest(_ request: ASAuthorizationAppleIDRequest) {
@@ -166,6 +329,9 @@ final class ProfileViewModel: ObservableObject {
         isDeletingAccount = true
 
         do {
+            try await profileImageStorageService.deleteProfileImage(path: profile.profileImagePath)
+            ProfileImageCache.shared.removeImage(for: profile.id)
+
             try await deleteCurrentAccountUseCase.execute(
                 currentUserId: profile.id,
                 idToken: idToken,

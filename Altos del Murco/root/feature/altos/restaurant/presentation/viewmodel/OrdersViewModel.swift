@@ -7,7 +7,6 @@
 
 import Combine
 import Foundation
-import FirebaseAuth
 
 @MainActor
 final class OrdersViewModel: ObservableObject {
@@ -18,6 +17,12 @@ final class OrdersViewModel: ObservableObject {
 
     init(observeOrdersUseCase: ObserveOrdersUseCase) {
         self.observeOrdersUseCase = observeOrdersUseCase
+    }
+
+    func setNationalId(_ nationalId: String) {
+        let clean = nationalId.filter(\.isNumber)
+        guard state.nationalId != clean else { return }
+        state.nationalId = clean
     }
 
     func onEvent(_ event: OrdersEvent) {
@@ -34,12 +39,20 @@ final class OrdersViewModel: ObservableObject {
     private func startObservingOrders() {
         observeTask?.cancel()
 
+        let nationalId = state.nationalId.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !nationalId.isEmpty else {
+            state.orders = []
+            state.errorMessage = nil
+            state.isLoading = false
+            return
+        }
+
         state.isLoading = true
         state.errorMessage = nil
 
         observeTask = Task {
             do {
-                for try await orders in observeOrdersUseCase.execute(nationalId: "0503638371") {
+                for try await orders in observeOrdersUseCase.execute(nationalId: nationalId) {
                     guard !Task.isCancelled else { return }
                     state.orders = orders
                     state.isLoading = false

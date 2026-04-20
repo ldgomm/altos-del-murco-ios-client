@@ -827,71 +827,6 @@ struct AdventureService: Identifiable, Hashable {
     }
 }
 
-extension AdventureService {
-    static let mockServices: [AdventureService] = [
-        AdventureService(
-            activityType: .offRoad,
-            title: "Off-road 4x4",
-            systemImage: "car.fill",
-            shortDescription: "Reserva 1, 2 o 3 horas por vehículo.",
-            fullDescription: "Un vehículo off-road admite 1 o 2 personas. El precio es por vehículo por hora.",
-            priceText: "$20 / hora / vehículo",
-            durationText: "1 - 3 horas",
-            includes: ["Vehículo", "Guía", "Charla de seguridad"]
-        ),
-        AdventureService(
-            activityType: .paintball,
-            title: "Paintball",
-            systemImage: "shield.lefthalf.filled",
-            shortDescription: "Sesiones flexibles para grupos.",
-            fullDescription: "Reserva paintball en bloques de 30 minutos para tantas personas como desees.",
-            priceText: "$5 / 30 min / persona",
-            durationText: "30 - 120 min",
-            includes: ["Marcadora", "Máscara", "Munición básica"]
-        ),
-        AdventureService(
-            activityType: .goKarts,
-            title: "Go karts",
-            systemImage: "flag.checkered",
-            shortDescription: "Vueltas rápidas con duración flexible.",
-            fullDescription: "Reserva go karts en bloques de 30 minutos para grupos pequeños o grandes.",
-            priceText: "$5 / 30 min / persona",
-            durationText: "30 - 120 min",
-            includes: ["Kart", "Casco", "Acceso a la pista"]
-        ),
-        AdventureService(
-            activityType: .shootingRange,
-            title: "Campo de tiro",
-            systemImage: "target",
-            shortDescription: "Sesiones de precisión por tiempo y número de personas.",
-            fullDescription: "Reserva el campo de tiro de forma individual o dentro de un combo.",
-            priceText: "$5 / 30 min / persona",
-            durationText: "30 - 120 min",
-            includes: ["Equipo", "Charla de seguridad"]
-        ),
-        AdventureService(
-            activityType: .camping,
-            title: "Camping",
-            systemImage: "tent.fill",
-            shortDescription: "Estadía nocturna con comida y experiencia off-road incluida.",
-            fullDescription: "El camping se reserva por persona por noche y funciona como complemento nocturno.",
-            priceText: "$30 / persona / noche",
-            durationText: "1+ noches",
-            includes: ["Comida", "Área para dormir", "Experiencia off-road incluida"]
-        ),
-        AdventureService(
-            activityType: .extremeSlide,
-            title: "Resvaladera extrema",
-            systemImage: "figure.fall",
-            shortDescription: "Experiencia en la resbaladera extrema con transporte off-road incluido.",
-            fullDescription: "Una sesión fija que incluye el transporte y la resbaladera extrema.",
-            priceText: "$15 / persona",
-            durationText: "30 min + transporte",
-            includes: ["Sesión en la resbaladera", "Transporte off-road incluido"]
-        )
-    ]
-}
-
 ```
 
 ---
@@ -2131,6 +2066,42 @@ struct CancelAdventureBookingUseCase {
 
 ---
 
+# Altos del Murco/root/feature/altos/adventure/domain/LoyaltyLevel.swift
+
+```swift
+//
+//  LoyaltyLevel.swift
+//  Altos del Murco
+//
+//  Created by José Ruiz on 19/4/26.
+//
+
+import Foundation
+
+struct ProfileStats {
+    let points: Int
+    let completedOrders: Int
+    let completedBookings: Int
+    let restaurantSpent: Double
+    let adventureSpent: Double
+    let totalSpent: Double
+    let level: LoyaltyLevel
+
+    static let empty = ProfileStats(
+        points: 0,
+        completedOrders: 0,
+        completedBookings: 0,
+        restaurantSpent: 0,
+        adventureSpent: 0,
+        totalSpent: 0,
+        level: .silver
+    )
+}
+
+```
+
+---
+
 # Altos del Murco/root/feature/altos/adventure/presentation/view/AdventureCatalogView.swift
 
 ```swift
@@ -2188,8 +2159,9 @@ struct AdventureCatalogView: View {
             }
             .navigationTitle("Aventura en Los Altos")
             .navigationBarTitleDisplayMode(.large)
+            .appScreenStyle(.adventure)
+
         }
-        .appScreenStyle(.adventure)
         .onAppear {
             catalogViewModel.onAppear()
         }
@@ -2493,7 +2465,9 @@ struct AdventureComboBuilderView: View {
     
     
     @State private var editingItem: AdventureReservationItemDraft?
+    
     @State private var isFoodPickerPresented = false
+    @State private var editingFoodItem: ReservationFoodItemDraft?
     
     private var authenticatedProfile: ClientProfile? {
         sessionViewModel.authenticatedProfile
@@ -2548,6 +2522,11 @@ struct AdventureComboBuilderView: View {
                 )
             ) { updated in
                 adventureComboBuilderViewModel.updateItem(updated)
+            }
+        }
+        .sheet(item: $editingFoodItem) { item in
+            ReservationFoodItemEditorView(item: item) { updated in
+                adventureComboBuilderViewModel.updateFoodItem(updated)
             }
         }
         .alert(
@@ -2675,6 +2654,59 @@ struct AdventureComboBuilderView: View {
         }
     }
     
+    private struct ReservationFoodItemEditorView: View {
+        @Environment(\.dismiss) private var dismiss
+
+        @State private var item: ReservationFoodItemDraft
+        let onSave: (ReservationFoodItemDraft) -> Void
+
+        init(
+            item: ReservationFoodItemDraft,
+            onSave: @escaping (ReservationFoodItemDraft) -> Void
+        ) {
+            _item = State(initialValue: item)
+            self.onSave = onSave
+        }
+
+        var body: some View {
+            NavigationStack {
+                Form {
+                    Section("Plato") {
+                        Text(item.name)
+                        Text("Unitario: \(item.unitPrice.priceText)")
+                            .foregroundStyle(.secondary)
+                    }
+
+                    Section("Cantidad") {
+                        Stepper("Cantidad: \(item.quantity)", value: $item.quantity, in: 1...50)
+                    }
+
+                    Section("Notas") {
+                        TextField("Sin cebolla, más cocido, etc.", text: Binding(
+                            get: { item.notes ?? "" },
+                            set: { item.notes = $0 }
+                        ), axis: .vertical)
+                        .lineLimit(3...5)
+                    }
+                }
+                .navigationTitle("Editar comida")
+                .toolbar {
+                    ToolbarItem(placement: .topBarLeading) {
+                        Button("Cancelar") { dismiss() }
+                    }
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button("Guardar") {
+                            onSave(item)
+                            dismiss()
+                        }
+                        .fontWeight(.semibold)
+                    }
+                }
+                .appScreenStyle(.adventure)
+            }
+        }
+    }
+    
     private var foodSection: some View {
         Section {
             VStack(alignment: .leading, spacing: 16) {
@@ -2683,102 +2715,192 @@ struct AdventureComboBuilderView: View {
                     title: "Comida",
                     subtitle: "También puedes hacer una reserva solo de comida para cumpleaños, reuniones o visitas futuras."
                 )
-                
-                if adventureComboBuilderViewModel.state.foodItems.isEmpty {
-                    Text("No hay platos agregados todavía.")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                } else {
-                    VStack(spacing: 12) {
-                        ForEach(adventureComboBuilderViewModel.state.foodItems) { item in
-                            ReservationFoodRow(
-                                item: item,
-                                onIncrease: { adventureComboBuilderViewModel.increaseFoodQuantity(item.id) },
-                                onDecrease: { adventureComboBuilderViewModel.decreaseFoodQuantity(item.id) },
-                                onRemove: { adventureComboBuilderViewModel.removeFoodItem(item.id) }
-                            )
-                        }
-                    }
-                }
-                
-                Button {
-                    isFoodPickerPresented = true
-                } label: {
-                    HStack(spacing: 12) {
-                        BrandIconBubble(theme: .adventure, systemImage: "fork.knife")
-
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("Agregar comida")
-                                .font(.headline)
-
-                            Text("Explora platos, ingredientes y detalles antes de agregarlos.")
-                                .font(.subheadline)
-                                .foregroundStyle(.secondary)
-                        }
-
-                        Spacer()
-
-                        Image(systemName: "chevron.right.circle.fill")
-                            .font(.title3)
-                            .foregroundStyle(.secondary)
-                    }
-                    .appCardStyle(.adventure, emphasized: false)
-                }
-                .buttonStyle(.plain)
-                .sheet(isPresented: $isFoodPickerPresented) {
-                    AdventureFoodPickerSheet(
-                        menuSections: menuViewModel.state.sections,
-                        selectedDate: adventureComboBuilderViewModel.state.selectedDate
-                    ) { item, quantity, notes in
-                        adventureComboBuilderViewModel.addFoodItem(
-                            item,
-                            quantity: quantity,
-                            notes: notes,
-                            for: adventureComboBuilderViewModel.state.selectedDate
-                        )
-                    }
-                }
-                
-                if !adventureComboBuilderViewModel.state.foodItems.isEmpty {
-                    Picker(
-                        "Momento de servicio",
-                        selection: Binding(
-                            get: { adventureComboBuilderViewModel.state.foodServingMoment },
-                            set: { adventureComboBuilderViewModel.setFoodServingMoment($0) }
-                        )
-                    ) {
-                        ForEach(ReservationServingMoment.allCases) { option in
-                            Text(option.title).tag(option)
-                        }
-                    }
-                    
-                    if adventureComboBuilderViewModel.state.foodServingMoment == .specificTime {
-                        DatePicker(
-                            "Hora de servicio",
-                            selection: Binding(
-                                get: { adventureComboBuilderViewModel.state.foodServingTime },
-                                set: { adventureComboBuilderViewModel.setFoodServingTime($0) }
-                            ),
-                            displayedComponents: .hourAndMinute
-                        )
-                    }
-                    
-                    TextField(
-                        "Notas de comida (opcional)",
-                        text: Binding(
-                            get: { adventureComboBuilderViewModel.state.foodNotes },
-                            set: { adventureComboBuilderViewModel.setFoodNotes($0) }
-                        ),
-                        axis: .vertical
-                    )
-                    .lineLimit(2...4)
-                    .appTextFieldStyle(.adventure)
-                }
             }
-            .appCardStyle(.adventure)
             .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
             .listRowBackground(Color.clear)
             .listRowSeparator(.hidden)
+
+            if adventureComboBuilderViewModel.state.foodItems.isEmpty {
+                Text("No hay platos agregados todavía.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .appCardStyle(.adventure, emphasized: false)
+                    .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
+            } else {
+                ForEach(adventureComboBuilderViewModel.state.foodItems) { item in
+                    ReservationFoodRow(
+                        item: item,
+                        onEdit: { editingFoodItem = item },
+                        onIncrease: { adventureComboBuilderViewModel.increaseFoodQuantity(item.id) },
+                        onDecrease: { adventureComboBuilderViewModel.decreaseFoodQuantity(item.id) },
+                        onRemove: { adventureComboBuilderViewModel.removeFoodItem(item.id) }
+                    )
+                    .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
+                    .swipeActions(edge: .trailing) {
+                        Button {
+                            editingFoodItem = item
+                        } label: {
+                            Label("Editar", systemImage: "pencil")
+                        }
+                        .tint(.blue)
+
+                        Button(role: .destructive) {
+                            adventureComboBuilderViewModel.removeFoodItem(item.id)
+                        } label: {
+                            Label("Quitar", systemImage: "trash")
+                        }
+                    }
+                }
+            }
+
+            Button {
+                isFoodPickerPresented = true
+            } label: {
+                HStack(spacing: 12) {
+                    BrandIconBubble(theme: .adventure, systemImage: "fork.knife")
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Agregar comida")
+                            .font(.headline)
+
+                        Text("Explora platos, ingredientes y detalles antes de agregarlos.")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    Spacer()
+
+                    Image(systemName: "chevron.right.circle.fill")
+                        .font(.title3)
+                        .foregroundStyle(.secondary)
+                }
+                .appCardStyle(.adventure, emphasized: false)
+            }
+            .buttonStyle(.plain)
+            .sheet(isPresented: $isFoodPickerPresented) {
+                AdventureFoodPickerSheet(
+                    menuSections: menuViewModel.state.sections,
+                    selectedDate: adventureComboBuilderViewModel.state.selectedDate
+                ) { item, quantity, notes in
+                    adventureComboBuilderViewModel.addFoodItem(
+                        item,
+                        quantity: quantity,
+                        notes: notes,
+                        for: adventureComboBuilderViewModel.state.selectedDate
+                    )
+                }
+            }
+            .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+            .listRowBackground(Color.clear)
+            .listRowSeparator(.hidden)
+
+            if !adventureComboBuilderViewModel.state.foodItems.isEmpty {
+                foodServingOptionsCard
+                    .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
+            }
+        }
+    }
+    
+    private var foodServingOptionsCard: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            BrandSectionHeader(
+                theme: .adventure,
+                title: "Servicio de comida",
+                subtitle: "Define cuándo debe servirse lo agregado."
+            )
+
+            Picker(
+                "Momento de servicio",
+                selection: Binding(
+                    get: { adventureComboBuilderViewModel.state.foodServingMoment },
+                    set: { adventureComboBuilderViewModel.setFoodServingMoment($0) }
+                )
+            ) {
+                ForEach(ReservationServingMoment.allCases) { option in
+                    Text(option.title).tag(option)
+                }
+            }
+
+            if adventureComboBuilderViewModel.state.foodServingMoment == .specificTime {
+                DatePicker(
+                    "Hora de servicio",
+                    selection: Binding(
+                        get: { adventureComboBuilderViewModel.state.foodServingTime },
+                        set: { adventureComboBuilderViewModel.setFoodServingTime($0) }
+                    ),
+                    displayedComponents: .hourAndMinute
+                )
+            }
+
+            TextField(
+                "Notas de comida (opcional)",
+                text: Binding(
+                    get: { adventureComboBuilderViewModel.state.foodNotes },
+                    set: { adventureComboBuilderViewModel.setFoodNotes($0) }
+                ),
+                axis: .vertical
+            )
+            .lineLimit(2...4)
+            .appTextFieldStyle(.adventure)
+        }
+        .appCardStyle(.adventure)
+    }
+    
+    private struct ReservationFoodRow: View {
+        let item: ReservationFoodItemDraft
+        let onEdit: () -> Void
+        let onIncrease: () -> Void
+        let onDecrease: () -> Void
+        let onRemove: () -> Void
+
+        var body: some View {
+            HStack(spacing: 12) {
+                BrandIconBubble(theme: .adventure, systemImage: "fork.knife", size: 46)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(item.name)
+                        .font(.headline)
+
+                    Text("Unitario: \(item.unitPrice.priceText)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
+                    Text("Subtotal: \(item.subtotal.priceText)")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+
+                    if let notes = item.notes, !notes.isEmpty {
+                        Text(notes)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                Spacer()
+
+                HStack(spacing: 10) {
+                    Button(action: onDecrease) {
+                        Image(systemName: "minus.circle.fill")
+                    }
+                    .buttonStyle(.plain)
+
+                    Text("\(item.quantity)")
+                        .font(.headline)
+                        .frame(minWidth: 20)
+
+                    Button(action: onIncrease) {
+                        Image(systemName: "plus.circle.fill")
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .appCardStyle(.adventure)
         }
     }
     
@@ -4215,9 +4337,9 @@ struct BookingsView: View {
                 .padding(.horizontal, 20)
                 .padding(.vertical, 16)
             }
+            .appScreenStyle(.neutral)
             .navigationTitle("Reservas")
         }
-        .appScreenStyle(.neutral)
     }
 
     private var headerSection: some View {
@@ -5557,6 +5679,25 @@ final class AdventureComboBuilderViewModel: ObservableObject {
             state.customEventTitle = ""
         }
     }
+    
+    func updateFoodItem(_ item: ReservationFoodItemDraft) {
+        guard let index = state.foodItems.firstIndex(where: { $0.id == item.id }) else { return }
+
+        let trimmedNotes = item.notes?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let finalNotes = (trimmedNotes?.isEmpty == false) ? trimmedNotes : nil
+
+        state.foodItems[index] = ReservationFoodItemDraft(
+            id: item.id,
+            menuItemId: item.menuItemId,
+            name: item.name,
+            unitPrice: item.unitPrice,
+            quantity: max(1, item.quantity),
+            notes: finalNotes
+        )
+
+        state.selectedSlot = nil
+        Task { await loadAvailability() }
+    }
 
     func setCustomEventTitle(_ value: String) { state.customEventTitle = value }
     func setEventNotes(_ value: String) { state.eventNotes = value }
@@ -6132,6 +6273,8 @@ struct ClientProfile: Identifiable, Codable, Equatable {
     let createdAt: Date
     let updatedAt: Date
     let profileCompletedAt: Date?
+    let profileImageURL: String?
+    let profileImagePath: String?
 
     var isComplete: Bool {
         isProfileComplete &&
@@ -6142,74 +6285,10 @@ struct ClientProfile: Identifiable, Codable, Equatable {
         !emergencyContactName.trimmed.isEmpty &&
         !emergencyContactPhone.trimmed.isEmpty
     }
-}
 
-```
-
----
-
-# Altos del Murco/root/feature/altos/authentication/domain/ClientProfileDocument.swift
-
-```swift
-//
-//  ClientProfileDocument.swift
-//  Altos del Murco
-//
-//  Created by José Ruiz on 3/4/26.
-//
-
-import Foundation
-
-struct ClientProfileDocument: Codable {
-    let id: String
-    let email: String
-    let appleUserIdentifier: String
-    let fullName: String
-    let nationalId: String
-    let phoneNumber: String
-    let birthday: Date
-    let address: String
-    let emergencyContactName: String
-    let emergencyContactPhone: String
-    let isProfileComplete: Bool
-    let createdAt: Date
-    let updatedAt: Date
-    let profileCompletedAt: Date?
-
-    init(profile: ClientProfile) {
-        self.id = profile.id
-        self.email = profile.email
-        self.appleUserIdentifier = profile.appleUserIdentifier
-        self.fullName = profile.fullName
-        self.nationalId = profile.nationalId
-        self.phoneNumber = profile.phoneNumber
-        self.birthday = profile.birthday
-        self.address = profile.address
-        self.emergencyContactName = profile.emergencyContactName
-        self.emergencyContactPhone = profile.emergencyContactPhone
-        self.isProfileComplete = profile.isProfileComplete
-        self.createdAt = profile.createdAt
-        self.updatedAt = profile.updatedAt
-        self.profileCompletedAt = profile.profileCompletedAt
-    }
-
-    func toDomain() -> ClientProfile {
-        ClientProfile(
-            id: id,
-            email: email,
-            appleUserIdentifier: appleUserIdentifier,
-            fullName: fullName,
-            nationalId: nationalId,
-            phoneNumber: phoneNumber,
-            birthday: birthday,
-            address: address,
-            emergencyContactName: emergencyContactName,
-            emergencyContactPhone: emergencyContactPhone,
-            isProfileComplete: isProfileComplete,
-            createdAt: createdAt,
-            updatedAt: updatedAt,
-            profileCompletedAt: profileCompletedAt
-        )
+    var hasProfileImage: Bool {
+        let url = profileImageURL?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return !url.isEmpty
     }
 }
 
@@ -7163,6 +7242,8 @@ final class AppSessionViewModel: ObservableObject {
 
         let saveUseCase = completeClientProfileUseCase
         let deleteUseCase = deleteCurrentAccountUseCase
+        let imageStorageService = ProfileImageStorageService()
+        let statsService = ProfileStatsService()
 
         return { [weak self] in
             ProfileViewModel(
@@ -7170,6 +7251,8 @@ final class AppSessionViewModel: ObservableObject {
                 appPreferences: appPreferences,
                 completeClientProfileUseCase: saveUseCase,
                 deleteCurrentAccountUseCase: deleteUseCase,
+                profileImageStorageService: imageStorageService,
+                profileStatsService: statsService,
                 onProfileUpdated: { [weak self] updatedProfile in
                     self?.state = .authenticated(updatedProfile)
                 },
@@ -7241,117 +7324,6 @@ enum AppSessionState {
     case needsProfile(AuthenticatedUser, ClientProfile?)
     case authenticated(ClientProfile)
     case error(String)
-}
-
-```
-
----
-
-# Altos del Murco/root/feature/altos/authentication/presentation/viewmodel/CompleteProfileViewModel.swift
-
-```swift
-//
-//  CompleteProfileViewModel.swift
-//  Altos del Murco
-//
-//  Created by José Ruiz on 3/4/26.
-//
-
-import Combine
-import Foundation
-
-@MainActor
-final class CompleteProfileViewModel: ObservableObject {
-    @Published var fullName: String
-    @Published var nationalId: String
-    @Published var phoneNumber: String
-    @Published var birthday: Date
-    @Published var address: String
-    @Published var emergencyContactName: String
-    @Published var emergencyContactPhone: String
-
-    @Published private(set) var isSaving = false
-    @Published var errorMessage: String?
-
-    let validBirthdayRange: ClosedRange<Date>
-
-    private let authenticatedUser: AuthenticatedUser
-    private let existingProfile: ClientProfile?
-    private let completeClientProfileUseCase: CompleteClientProfileUseCase
-    private let onCompleted: @MainActor (ClientProfile) -> Void
-
-    init(
-        authenticatedUser: AuthenticatedUser,
-        existingProfile: ClientProfile?,
-        completeClientProfileUseCase: CompleteClientProfileUseCase,
-        onCompleted: @escaping @MainActor (ClientProfile) -> Void
-    ) {
-        self.authenticatedUser = authenticatedUser
-        self.existingProfile = existingProfile
-        self.completeClientProfileUseCase = completeClientProfileUseCase
-        self.onCompleted = onCompleted
-
-        let now = Date()
-        let minimumDate = Calendar.current.date(byAdding: .year, value: -100, to: now) ?? now
-        self.validBirthdayRange = minimumDate...now
-
-        self.fullName = existingProfile?.fullName ?? authenticatedUser.displayName
-        self.nationalId = existingProfile?.nationalId ?? ""
-        self.phoneNumber = existingProfile?.phoneNumber ?? ""
-        self.birthday = existingProfile?.birthday ?? Calendar.current.date(byAdding: .year, value: -18, to: now) ?? now
-        self.address = existingProfile?.address ?? ""
-        self.emergencyContactName = existingProfile?.emergencyContactName ?? ""
-        self.emergencyContactPhone = existingProfile?.emergencyContactPhone ?? ""
-    }
-
-    var canSubmit: Bool {
-        !fullName.trimmed.isEmpty &&
-        nationalId.digitsOnly.count >= 8 &&
-        phoneNumber.digitsOnly.count >= 8 &&
-        !address.trimmed.isEmpty &&
-        !emergencyContactName.trimmed.isEmpty &&
-        emergencyContactPhone.digitsOnly.count >= 8 &&
-        birthday <= Date()
-    }
-
-    func saveProfile() {
-        guard canSubmit else {
-            errorMessage = "Please complete all required fields correctly."
-            return
-        }
-
-        errorMessage = nil
-        isSaving = true
-
-        let now = Date()
-        let profile = ClientProfile(
-            id: authenticatedUser.uid,
-            email: authenticatedUser.email,
-            appleUserIdentifier: authenticatedUser.appleUserIdentifier,
-            fullName: fullName.trimmed,
-            nationalId: nationalId.digitsOnly,
-            phoneNumber: phoneNumber.digitsOnly,
-            birthday: birthday,
-            address: address.trimmed,
-            emergencyContactName: emergencyContactName.trimmed,
-            emergencyContactPhone: emergencyContactPhone.digitsOnly,
-            isProfileComplete: true,
-            createdAt: existingProfile?.createdAt ?? now,
-            updatedAt: now,
-            profileCompletedAt: existingProfile?.profileCompletedAt ?? now
-        )
-
-        Task {
-            do {
-                try await completeClientProfileUseCase.execute(profile: profile)
-                isSaving = false
-                onCompleted(profile)
-            } catch {
-                isSaving = false
-                errorMessage = error.localizedDescription
-            }
-        }
-    }
 }
 
 ```
@@ -8183,8 +8155,8 @@ struct HomeView: View {
             }
             .navigationTitle("Altos del Murco")
             .navigationBarTitleDisplayMode(.large)
+            .appScreenStyle(.neutral)
         }
-        .appScreenStyle(.neutral)
     }
 
     private var heroSection: some View {
@@ -8777,6 +8749,476 @@ final class RemoteImageLoader: ObservableObject {
         }
 
         return UIImage(cgImage: cgImage)
+    }
+}
+
+```
+
+---
+
+# Altos del Murco/root/feature/altos/profile/data/ProfileImageCache.swift
+
+```swift
+//
+//  ProfileImageCache.swift
+//  Altos del Murco
+//
+//  Created by José Ruiz on 19/4/26.
+//
+
+import Foundation
+import UIKit
+
+final class ProfileImageCache {
+    static let shared = ProfileImageCache()
+
+    private let fileManager = FileManager.default
+    private let directoryURL: URL
+
+    private init() {
+        let root = fileManager.urls(for: .cachesDirectory, in: .userDomainMask).first!
+        let directory = root.appendingPathComponent("ProfileImages", isDirectory: true)
+
+        if !fileManager.fileExists(atPath: directory.path) {
+            try? fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+        }
+
+        self.directoryURL = directory
+    }
+
+    private func fileURL(for userId: String) -> URL {
+        directoryURL.appendingPathComponent("profile_\(userId).jpg")
+    }
+
+    func loadImage(for userId: String) -> UIImage? {
+        guard let data = try? Data(contentsOf: fileURL(for: userId)) else { return nil }
+        return UIImage(data: data)
+    }
+
+    @discardableResult
+    func saveImageData(_ data: Data, for userId: String) throws -> UIImage? {
+        let url = fileURL(for: userId)
+        try data.write(to: url, options: .atomic)
+        return UIImage(data: data)
+    }
+
+    func removeImage(for userId: String) {
+        try? fileManager.removeItem(at: fileURL(for: userId))
+    }
+}
+
+```
+
+---
+
+# Altos del Murco/root/feature/altos/profile/data/ProfileImageStorageService.swift
+
+```swift
+//
+//  ProfileImageStorageService.swift
+//  Altos del Murco
+//
+//  Created by José Ruiz on 19/4/26.
+//
+
+import Foundation
+import FirebaseStorage
+import UIKit
+
+struct UploadedProfileImage {
+    let downloadURL: String
+    let storagePath: String
+}
+
+final class ProfileImageStorageService {
+    private let storage: Storage
+
+    init(storage: Storage = Storage.storage()) {
+        self.storage = storage
+    }
+
+    func uploadProfileImage(
+        data: Data,
+        userId: String,
+        replacing existingPath: String?
+    ) async throws -> UploadedProfileImage {
+        if let existingPath, !existingPath.isEmpty {
+            try? await deleteProfileImage(path: existingPath)
+        }
+
+        let jpegData = UIImage(data: data)?.jpegData(compressionQuality: 0.82) ?? data
+        let path = "clients/profile_images/\(userId)/avatar_\(Int(Date().timeIntervalSince1970)).jpg"
+        let ref = storage.reference(withPath: path)
+
+        let metadata = StorageMetadata()
+        metadata.contentType = "image/jpeg"
+
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            ref.putData(jpegData, metadata: metadata) { _, error in
+                if let error {
+                    continuation.resume(throwing: error)
+                } else {
+                    continuation.resume(returning: ())
+                }
+            }
+        }
+
+        let url = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<URL, Error>) in
+            ref.downloadURL { url, error in
+                if let error {
+                    continuation.resume(throwing: error)
+                } else if let url {
+                    continuation.resume(returning: url)
+                } else {
+                    continuation.resume(throwing: NSError(
+                        domain: "ProfileImageStorageService",
+                        code: -1,
+                        userInfo: [NSLocalizedDescriptionKey: "Missing profile image download URL."]
+                    ))
+                }
+            }
+        }
+
+        return UploadedProfileImage(
+            downloadURL: url.absoluteString,
+            storagePath: path
+        )
+    }
+
+    func deleteProfileImage(path: String?) async throws {
+        guard let path = path, !path.isEmpty else { return }
+
+        let ref = storage.reference(withPath: path)
+
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            ref.delete { error in
+                if let nsError = error as NSError?,
+                   nsError.code == StorageErrorCode.objectNotFound.rawValue {
+                    continuation.resume(returning: ())
+                } else if let error = error {
+                    continuation.resume(throwing: error)
+                } else {
+                    continuation.resume(returning: ())
+                }
+            }
+        }
+    }
+}
+
+
+```
+
+---
+
+# Altos del Murco/root/feature/altos/profile/data/ProfileStatsService.swift
+
+```swift
+//
+//  ProfileStatsService.swift
+//  Altos del Murco
+//
+//  Created by José Ruiz on 19/4/26.
+//
+
+import Foundation
+import FirebaseFirestore
+
+final class ProfileStatsService {
+    private let db: Firestore
+
+    init(db: Firestore = Firestore.firestore()) {
+        self.db = db
+    }
+
+    func loadStats(for nationalId: String) async throws -> ProfileStats {
+        let cleanNationalId = nationalId.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleanNationalId.isEmpty else { return .empty }
+
+        async let ordersTask = db
+            .collection(FirestoreConstants.restaurant_orders)
+            .whereField("nationalId", isEqualTo: cleanNationalId)
+            .getDocuments()
+
+        async let bookingsTask = db
+            .collection(FirestoreConstants.adventure_bookings)
+            .whereField("nationalId", isEqualTo: cleanNationalId)
+            .getDocuments()
+
+        let ordersSnapshot = try await ordersTask
+        let bookingsSnapshot = try await bookingsTask
+
+        let orders: [Order] = try ordersSnapshot.documents.compactMap { document in
+            let dto = try document.data(as: OrderDto.self)
+            return dto.toDomain()
+        }
+
+        let bookings: [AdventureBooking] = try bookingsSnapshot.documents.map { document in
+            let dto = try document.data(as: AdventureBookingDto.self)
+            return dto.toDomain(documentId: document.documentID)
+        }
+
+        let completedOrders = orders.filter { $0.recalculatedStatus() == .completed }
+        let completedBookings = bookings.filter { $0.status == .completed }
+
+        let restaurantSpent = completedOrders.reduce(0) { $0 + $1.totalAmount }
+        let adventureSpent = completedBookings.reduce(0) { $0 + $1.totalAmount }
+        let totalSpent = restaurantSpent + adventureSpent
+
+        return ProfileStats(
+            points: Int(totalSpent.rounded(.down)),
+            completedOrders: completedOrders.count,
+            completedBookings: completedBookings.count,
+            restaurantSpent: restaurantSpent,
+            adventureSpent: adventureSpent,
+            totalSpent: totalSpent,
+            level: LoyaltyLevel.from(totalSpent: totalSpent)
+        )
+    }
+}
+
+```
+
+---
+
+# Altos del Murco/root/feature/altos/profile/domain/ClientProfileDocument.swift
+
+```swift
+//
+//  ClientProfileDocument.swift
+//  Altos del Murco
+//
+//  Created by José Ruiz on 19/4/26.
+//
+
+import Foundation
+
+struct ClientProfileDocument: Codable {
+    let id: String
+    let email: String
+    let appleUserIdentifier: String
+    let fullName: String
+    let nationalId: String
+    let phoneNumber: String
+    let birthday: Date
+    let address: String
+    let emergencyContactName: String
+    let emergencyContactPhone: String
+    let isProfileComplete: Bool
+    let createdAt: Date
+    let updatedAt: Date
+    let profileCompletedAt: Date?
+    let profileImageURL: String?
+    let profileImagePath: String?
+
+    init(profile: ClientProfile) {
+        self.id = profile.id
+        self.email = profile.email
+        self.appleUserIdentifier = profile.appleUserIdentifier
+        self.fullName = profile.fullName
+        self.nationalId = profile.nationalId
+        self.phoneNumber = profile.phoneNumber
+        self.birthday = profile.birthday
+        self.address = profile.address
+        self.emergencyContactName = profile.emergencyContactName
+        self.emergencyContactPhone = profile.emergencyContactPhone
+        self.isProfileComplete = profile.isProfileComplete
+        self.createdAt = profile.createdAt
+        self.updatedAt = profile.updatedAt
+        self.profileCompletedAt = profile.profileCompletedAt
+        self.profileImageURL = profile.profileImageURL
+        self.profileImagePath = profile.profileImagePath
+    }
+
+    func toDomain() -> ClientProfile {
+        ClientProfile(
+            id: id,
+            email: email,
+            appleUserIdentifier: appleUserIdentifier,
+            fullName: fullName,
+            nationalId: nationalId,
+            phoneNumber: phoneNumber,
+            birthday: birthday,
+            address: address,
+            emergencyContactName: emergencyContactName,
+            emergencyContactPhone: emergencyContactPhone,
+            isProfileComplete: isProfileComplete,
+            createdAt: createdAt,
+            updatedAt: updatedAt,
+            profileCompletedAt: profileCompletedAt,
+            profileImageURL: profileImageURL,
+            profileImagePath: profileImagePath
+        )
+    }
+}
+
+```
+
+---
+
+# Altos del Murco/root/feature/altos/profile/domain/ProfileStats.swift
+
+```swift
+//
+//  ProfileStats.swift
+//  Altos del Murco
+//
+//  Created by José Ruiz on 19/4/26.
+//
+
+import Foundation
+
+enum LoyaltyLevel: String, Codable, CaseIterable, Hashable {
+    case silver
+    case gold
+    case diamond
+
+    var title: String { rawValue.capitalized }
+
+    var badgeSubtitle: String {
+        switch self {
+        case .silver:
+            return "Building your rewards history"
+        case .gold:
+            return "Strong loyalty across experiences"
+        case .diamond:
+            return "Top guest level"
+        }
+    }
+
+    static func from(totalSpent: Double) -> LoyaltyLevel {
+        switch totalSpent {
+        case 0..<200:
+            return .silver
+        case 200..<800:
+            return .gold
+        default:
+            return .diamond
+        }
+    }
+}
+
+```
+
+---
+
+# Altos del Murco/root/feature/altos/profile/presentation/view/AccountActionsView.swift
+
+```swift
+//
+//  AccountActionsView.swift
+//  Altos del Murco
+//
+//  Created by José Ruiz on 19/4/26.
+//
+
+import SwiftUI
+
+struct AccountActionsView: View {
+    @ObservedObject var viewModel: ProfileViewModel
+    @Environment(\.colorScheme) private var colorScheme
+    @State private var showSignOutDialog = false
+    @State private var showDeleteDialog = false
+
+    private let theme: AppSectionTheme = .neutral
+
+    private var palette: ThemePalette {
+        AppTheme.palette(for: theme, scheme: colorScheme)
+    }
+
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 16) {
+                dangerRow(
+                    title: "Sign Out",
+                    subtitle: "Close your current session on this device",
+                    systemImage: "rectangle.portrait.and.arrow.right",
+                    tint: .orange
+                ) {
+                    showSignOutDialog = true
+                }
+
+                dangerRow(
+                    title: "Delete Account",
+                    subtitle: "Permanently remove your account and profile",
+                    systemImage: "trash.fill",
+                    tint: .red
+                ) {
+                    showDeleteDialog = true
+                }
+            }
+            .padding(16)
+        }
+        .navigationTitle("Account Actions")
+        .appScreenStyle(theme)
+        .confirmationDialog(
+            "Sign out?",
+            isPresented: $showSignOutDialog,
+            titleVisibility: .visible
+        ) {
+            Button("Sign Out", role: .destructive) {
+                viewModel.signOutTapped()
+            }
+            Button("Cancel", role: .cancel) { }
+        }
+        .confirmationDialog(
+            "Delete account?",
+            isPresented: $showDeleteDialog,
+            titleVisibility: .visible
+        ) {
+            Button("Delete Account", role: .destructive) {
+                viewModel.askForDeleteAccount()
+            }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("These actions affect your account and should be confirmed first.")
+        }
+    }
+
+    private func dangerRow(
+        title: String,
+        subtitle: String,
+        systemImage: String,
+        tint: Color,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            HStack(spacing: 14) {
+                ZStack {
+                    Circle()
+                        .fill(tint.opacity(colorScheme == .dark ? 0.20 : 0.12))
+                        .frame(width: 44, height: 44)
+
+                    Image(systemName: systemImage)
+                        .font(.headline)
+                        .foregroundStyle(tint)
+                }
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(title)
+                        .font(.headline)
+                        .foregroundStyle(tint)
+
+                    Text(subtitle)
+                        .font(.subheadline)
+                        .foregroundStyle(palette.textSecondary)
+                }
+
+                Spacer()
+
+                Image(systemName: "chevron.right")
+                    .foregroundStyle(tint.opacity(0.7))
+            }
+            .padding(16)
+            .background(
+                RoundedRectangle(cornerRadius: 22, style: .continuous)
+                    .fill(palette.cardGradient)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 22, style: .continuous)
+                    .stroke(palette.stroke, lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
     }
 }
 
@@ -9413,15 +9855,13 @@ private struct ReadOnlyFieldCard: View {
 //  ProfileAccountHubView.swift
 //  Altos del Murco
 //
-//  Created by José Ruiz on 16/4/26.
+//  Created by José Ruiz on 3/4/26.
 //
 
 import SwiftUI
 
 struct ProfileAccountHubView: View {
     @ObservedObject var viewModel: ProfileViewModel
-    @Environment(\.colorScheme) private var colorScheme
-    @Environment(\.openURL) private var openURL
 
     private let theme: AppSectionTheme = .neutral
 
@@ -9431,25 +9871,33 @@ struct ProfileAccountHubView: View {
                 actionRow(
                     title: "Personal Information",
                     subtitle: "Edit your contact and emergency details",
-                    systemImage: "person.text.rectangle",
-                    tint: .blue
+                    systemImage: "person.text.rectangle"
                 ) {
                     viewModel.openEditProfile()
                 }
 
                 actionRow(
                     title: "Rewards & Points",
-                    subtitle: "Your loyalty history and benefits",
-                    systemImage: "gift.fill",
-                    tint: .orange
+                    subtitle: "\(viewModel.stats.level.title) • \(viewModel.stats.points) points",
+                    systemImage: "gift.fill"
                 ) { }
 
                 actionRow(
                     title: "Birthday Benefits",
                     subtitle: "Used for special promos and discounts",
-                    systemImage: "birthday.cake.fill",
-                    tint: .pink
+                    systemImage: "birthday.cake.fill"
                 ) { }
+
+                NavigationLink {
+                    AccountActionsView(viewModel: viewModel)
+                } label: {
+                    row(
+                        title: "Account Actions",
+                        subtitle: "Sign out and other sensitive account actions",
+                        systemImage: "exclamationmark.shield.fill"
+                    )
+                }
+                .buttonStyle(.plain)
             }
             .padding(16)
         }
@@ -9461,29 +9909,36 @@ struct ProfileAccountHubView: View {
         title: String,
         subtitle: String,
         systemImage: String,
-        tint: Color,
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
-            HStack(spacing: 14) {
-                BrandIconBubble(theme: theme, systemImage: systemImage, size: 44)
-
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(title)
-                        .font(.headline)
-                    Text(subtitle)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                }
-
-                Spacer()
-
-                Image(systemName: "chevron.right")
-                    .foregroundStyle(.tertiary)
-            }
-            .appCardStyle(theme)
+            row(title: title, subtitle: subtitle, systemImage: systemImage)
         }
         .buttonStyle(.plain)
+    }
+
+    private func row(
+        title: String,
+        subtitle: String,
+        systemImage: String
+    ) -> some View {
+        HStack(spacing: 14) {
+            BrandIconBubble(theme: theme, systemImage: systemImage, size: 44)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title)
+                    .font(.headline)
+                Text(subtitle)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer()
+
+            Image(systemName: "chevron.right")
+                .foregroundStyle(.tertiary)
+        }
+        .appCardStyle(theme)
     }
 }
 
@@ -9559,8 +10014,8 @@ struct ProfileContainerView: View {
                         .padding()
                     }
                     .navigationTitle("Profile")
+                    .appScreenStyle(.neutral)
                 }
-                .appScreenStyle(.neutral)
             }
         }
     }
@@ -9643,34 +10098,6 @@ struct ProfilePreferencesHubView: View {
         }
         .appCardStyle(theme)
     }
-}
-
-```
-
----
-
-# Altos del Murco/root/feature/altos/profile/presentation/view/ProfileStats.swift
-
-```swift
-//
-//  ProfileStats.swift
-//  Altos del Murco
-//
-//  Created by José Ruiz on 3/4/26.
-//
-
-import Foundation
-
-struct ProfileStats {
-    let points: Int
-    let orders: Int
-    let bookings: Int
-
-    static let empty = ProfileStats(
-        points: 0,
-        orders: 0,
-        bookings: 0
-    )
 }
 
 ```
@@ -9773,12 +10200,14 @@ struct ProfileSupportHubView: View {
 //  Created by José Ruiz on 31/3/26.
 //
 
+import PhotosUI
 import SwiftUI
 
 struct ProfileView: View {
     @Environment(\.openURL) private var openURL
     @Environment(\.colorScheme) private var colorScheme
     @StateObject private var viewModel: ProfileViewModel
+    @State private var selectedPhotoItem: PhotosPickerItem?
 
     private let theme: AppSectionTheme = .neutral
 
@@ -9798,7 +10227,6 @@ struct ProfileView: View {
                     statsSection
                     mainMenuSection
                     socialCompactSection
-                    dangerSection
                     aboutSection
                 }
                 .padding(.horizontal, 16)
@@ -9807,6 +10235,7 @@ struct ProfileView: View {
             }
             .scrollIndicators(.hidden)
             .navigationTitle("Profile")
+            .appScreenStyle(theme)
             .sheet(isPresented: $viewModel.isShowingEditProfile) {
                 EditProfileView(
                     viewModelFactory: { viewModel.makeEditProfileViewModel() }
@@ -9822,49 +10251,55 @@ struct ProfileView: View {
                     dismissButton: .default(Text("OK"))
                 )
             }
+            .onAppear {
+                viewModel.onAppear()
+            }
+            .onChange(of: selectedPhotoItem) { _, item in
+                guard let item else { return }
+
+                Task {
+                    if let data = try? await item.loadTransferable(type: Data.self) {
+                        await MainActor.run {
+                            viewModel.uploadProfileImage(data: data)
+                        }
+                    }
+                }
+            }
         }
-        .appScreenStyle(theme)
     }
 
     private var headerSection: some View {
         VStack(spacing: 18) {
             ZStack(alignment: .bottomTrailing) {
-                Circle()
-                    .fill(palette.heroGradient)
-                    .frame(width: 104, height: 104)
-                    .overlay(
-                        Circle()
-                            .stroke(
-                                Color.white.opacity(colorScheme == .dark ? 0.10 : 0.32),
-                                lineWidth: 1
+                avatarView
+
+                HStack(spacing: 10) {
+                    if viewModel.hasProfileImage {
+                        Button {
+                            viewModel.removeProfileImage()
+                        } label: {
+                            Image(systemName: "trash")
+                                .font(.caption.bold())
+                                .foregroundStyle(.white)
+                                .padding(10)
+                                .background(Circle().fill(.red))
+                        }
+                    }
+
+                    PhotosPicker(selection: $selectedPhotoItem, matching: .images) {
+                        Image(systemName: "camera.fill")
+                            .font(.caption.bold())
+                            .foregroundStyle(.white)
+                            .padding(10)
+                            .background(
+                                Circle()
+                                    .fill(palette.primary)
                             )
-                    )
-                    .shadow(
-                        color: palette.shadow.opacity(colorScheme == .dark ? 0.28 : 0.12),
-                        radius: 16,
-                        x: 0,
-                        y: 10
-                    )
-
-                Text(viewModel.displayName.initials)
-                    .font(.system(size: 34, weight: .bold, design: .rounded))
-                    .foregroundStyle(palette.onPrimary)
-
-                Button {
-                    viewModel.openEditProfile()
-                } label: {
-                    Image(systemName: "pencil")
-                        .font(.caption.bold())
-                        .foregroundStyle(.white)
-                        .padding(10)
-                        .background(
-                            Circle()
-                                .fill(palette.primary)
-                        )
-                        .overlay(
-                            Circle()
-                                .stroke(Color.white.opacity(0.18), lineWidth: 1)
-                        )
+                            .overlay(
+                                Circle()
+                                    .stroke(Color.white.opacity(0.18), lineWidth: 1)
+                            )
+                    }
                 }
                 .offset(x: 4, y: 4)
             }
@@ -9932,7 +10367,50 @@ struct ProfileView: View {
         .frame(maxWidth: .infinity)
         .appCardStyle(theme, emphasized: false)
     }
-    
+
+    @ViewBuilder
+    private var avatarView: some View {
+        ZStack {
+            Circle()
+                .fill(palette.heroGradient)
+                .frame(width: 112, height: 112)
+                .overlay(
+                    Circle()
+                        .stroke(
+                            Color.white.opacity(colorScheme == .dark ? 0.10 : 0.32),
+                            lineWidth: 1
+                        )
+                )
+                .shadow(
+                    color: palette.shadow.opacity(colorScheme == .dark ? 0.28 : 0.12),
+                    radius: 16,
+                    x: 0,
+                    y: 10
+                )
+
+            if let avatarImage = viewModel.avatarImage {
+                Image(uiImage: avatarImage)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: 112, height: 112)
+                    .clipShape(Circle())
+            } else {
+                Text(viewModel.displayName.initials)
+                    .font(.system(size: 34, weight: .bold, design: .rounded))
+                    .foregroundStyle(palette.onPrimary)
+            }
+
+            if viewModel.isUploadingProfileImage {
+                Circle()
+                    .fill(.black.opacity(0.35))
+                    .frame(width: 112, height: 112)
+
+                ProgressView()
+                    .tint(.white)
+            }
+        }
+    }
+
     private func compactInfoCard(
         title: String,
         value: String,
@@ -9967,63 +10445,103 @@ struct ProfileView: View {
         )
     }
 
-    private func infoPill(title: String, value: String) -> some View {
-        HStack(spacing: 12) {
-            Text(title)
-                .font(.caption.bold())
-                .foregroundStyle(palette.textSecondary)
-
-            Spacer()
-
-            Text(value)
-                .font(.caption)
-                .foregroundStyle(palette.textPrimary)
-                .multilineTextAlignment(.trailing)
-        }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 12)
-        .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(palette.elevatedCard)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .stroke(palette.stroke, lineWidth: 1)
-        )
-    }
-
     private var statsSection: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: 14) {
             HStack {
                 Text("Overview")
                     .font(.headline)
                     .foregroundStyle(palette.textPrimary)
-
                 Spacer()
             }
+
+            levelCard
 
             HStack(spacing: 12) {
                 profileStatCard(
                     title: "Points",
-                    value: "\(viewModel.stats.points)",
+                    value: "\(viewModel.stats.points )",
                     systemImage: "star.fill"
                 )
 
                 profileStatCard(
                     title: "Orders",
-                    value: "\(viewModel.stats.orders)",
+                    value: "\(viewModel.stats.completedOrders)",
                     systemImage: "fork.knife"
                 )
 
                 profileStatCard(
                     title: "Bookings",
-                    value: "\(viewModel.stats.bookings)",
+                    value: "\(viewModel.stats.completedBookings)",
                     systemImage: "calendar"
+                )
+            }
+
+            HStack(spacing: 12) {
+                profileStatCard(
+                    title: "Restaurant",
+                    value: viewModel.stats.restaurantSpent.priceText,
+                    systemImage: "takeoutbag.and.cup.and.straw.fill"
+                )
+
+                profileStatCard(
+                    title: "Adventure",
+                    value: viewModel.stats.adventureSpent.priceText,
+                    systemImage: "figure.hiking"
                 )
             }
         }
     }
-    
+
+    private var levelCard: some View {
+        HStack(spacing: 14) {
+            ZStack {
+                Circle()
+                    .fill(palette.chipGradient)
+                    .frame(width: 56, height: 56)
+
+                Image(systemName: levelIcon)
+                    .font(.title3.bold())
+                    .foregroundStyle(palette.primary)
+            }
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text("\(viewModel.stats.level.title) Level")
+                    .font(.headline)
+                    .foregroundStyle(palette.textPrimary)
+
+                Text(viewModel.stats.level.badgeSubtitle)
+                    .font(.subheadline)
+                    .foregroundStyle(palette.textSecondary)
+
+                Text("Completed spend: \(viewModel.stats.totalSpent.priceText)")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(palette.primary)
+            }
+
+            Spacer()
+        }
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .fill(palette.cardGradient)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .stroke(palette.stroke, lineWidth: 1)
+        )
+    }
+
+    private var levelIcon: String {
+        switch viewModel.stats.level {
+        case .silver:
+            return "seal.fill"
+        case .gold:
+            return "star.circle.fill"
+        case .diamond:
+            return "diamond.fill"
+        }
+    }
+
     private func profileStatCard(
         title: String,
         value: String,
@@ -10043,6 +10561,8 @@ struct ProfileView: View {
             Text(value)
                 .font(.title3.bold())
                 .foregroundStyle(palette.textPrimary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
 
             Text(title)
                 .font(.caption.weight(.medium))
@@ -10066,20 +10586,6 @@ struct ProfileView: View {
         )
     }
 
-    private func statCard(title: String, value: String) -> some View {
-        VStack(spacing: 8) {
-            Text(value)
-                .font(.title2.bold())
-                .foregroundStyle(palette.textPrimary)
-
-            Text(title)
-                .font(.caption.weight(.medium))
-                .foregroundStyle(palette.textSecondary)
-        }
-        .frame(maxWidth: .infinity)
-        .appCardStyle(theme)
-    }
-    
     private var mainMenuSection: some View {
         VStack(spacing: 12) {
             sectionHeader("Settings")
@@ -10089,7 +10595,7 @@ struct ProfileView: View {
             } label: {
                 navigationRow(
                     title: "Account",
-                    subtitle: "Personal information, rewards and birthday benefits",
+                    subtitle: "Personal information, rewards and account actions",
                     systemImage: "person.crop.circle",
                     tint: .blue
                 )
@@ -10121,7 +10627,7 @@ struct ProfileView: View {
             .buttonStyle(.plain)
         }
     }
-    
+
     private var socialCompactSection: some View {
         VStack(spacing: 12) {
             sectionHeader("Social & Visit Us")
@@ -10129,31 +10635,26 @@ struct ProfileView: View {
             HStack(spacing: 14) {
                 socialIconButton(
                     systemImage: "camera.fill",
-                    tint: .pink,
                     action: { openURL(AppExternalLinks.instagram) }
                 )
 
                 socialIconButton(
                     systemImage: "music.note.tv",
-                    tint: .black,
                     action: { openURL(AppExternalLinks.tiktok) }
                 )
 
                 socialIconButton(
                     systemImage: "f.cursive.circle.fill",
-                    tint: .blue,
                     action: { openURL(AppExternalLinks.facebook) }
                 )
 
                 socialIconButton(
                     systemImage: "message.fill",
-                    tint: .green,
                     action: { openURL(AppExternalLinks.whatsapp) }
                 )
 
                 socialIconButton(
                     systemImage: "map.fill",
-                    tint: .red,
                     action: { openURL(AppExternalLinks.maps) }
                 )
             }
@@ -10164,256 +10665,24 @@ struct ProfileView: View {
 
     private func socialIconButton(
         systemImage: String,
-        tint: Color,
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
             ZStack {
                 Circle()
-                    .fill(tint.opacity(colorScheme == .dark ? 0.22 : 0.14))
-                    .frame(width: 54, height: 54)
+                    .fill(palette.chipGradient)
+                    .frame(width: 52, height: 52)
 
                 Image(systemName: systemImage)
-                    .font(.title3.weight(.semibold))
-                    .foregroundStyle(tint)
+                    .font(.headline.weight(.semibold))
+                    .foregroundStyle(palette.primary)
             }
+            .overlay(
+                Circle()
+                    .stroke(palette.stroke, lineWidth: 1)
+            )
         }
         .buttonStyle(.plain)
-    }
-
-    private var accountSection: some View {
-        VStack(spacing: 12) {
-            sectionHeader("Account")
-
-            actionRow(
-                title: "Personal Information",
-                subtitle: "Edit your contact and emergency details",
-                systemImage: "person.text.rectangle",
-                tint: .blue
-            ) {
-                viewModel.openEditProfile()
-            }
-
-            actionRow(
-                title: "Rewards & Points",
-                subtitle: "Your loyalty history and benefits",
-                systemImage: "gift.fill",
-                tint: .orange
-            ) { }
-
-            actionRow(
-                title: "Birthday Benefits",
-                subtitle: "Used for special promos and discounts",
-                systemImage: "birthday.cake.fill",
-                tint: .pink
-            ) { }
-        }
-    }
-
-    private var preferencesSection: some View {
-        VStack(spacing: 12) {
-            sectionHeader("Preferences")
-
-            NavigationLink {
-                AppearanceSettingsView(viewModel: viewModel)
-            } label: {
-                navigationRow(
-                    title: "Appearance",
-                    subtitle: viewModel.appearanceTitle,
-                    systemImage: "circle.lefthalf.filled",
-                    tint: .purple
-                )
-            }
-            .buttonStyle(.plain)
-
-            actionRow(
-                title: "App Permissions",
-                subtitle: "Notifications, location and device settings",
-                systemImage: "gearshape.2.fill",
-                tint: .gray
-            ) {
-                guard let settingsURL = URL(string: UIApplication.openSettingsURLString) else { return }
-                openURL(settingsURL)
-            }
-        }
-    }
-
-    private var socialSection: some View {
-        VStack(spacing: 12) {
-            sectionHeader("Social & Visit Us")
-
-            actionRow(
-                title: "Instagram",
-                subtitle: "@altosdelmurco",
-                systemImage: "camera.fill",
-                tint: .pink
-            ) {
-                openURL(AppExternalLinks.instagram)
-            }
-
-            actionRow(
-                title: "TikTok",
-                subtitle: "@altosdelmurco",
-                systemImage: "music.note.tv",
-                tint: .black
-            ) {
-                openURL(AppExternalLinks.tiktok)
-            }
-
-            actionRow(
-                title: "Facebook",
-                subtitle: "Follow our updates and promos",
-                systemImage: "f.cursive.circle.fill",
-                tint: .blue
-            ) {
-                openURL(AppExternalLinks.facebook)
-            }
-
-            actionRow(
-                title: "WhatsApp",
-                subtitle: "Contact us directly",
-                systemImage: "message.fill",
-                tint: .green
-            ) {
-                openURL(AppExternalLinks.whatsapp)
-            }
-
-            actionRow(
-                title: "Open in Maps",
-                subtitle: "Navigate to Altos del Murco",
-                systemImage: "map.fill",
-                tint: .red
-            ) {
-                openURL(AppExternalLinks.maps)
-            }
-        }
-    }
-
-    private var supportSection: some View {
-        VStack(spacing: 12) {
-            sectionHeader("Support & Legal")
-
-            actionRow(
-                title: "Help & Support",
-                subtitle: "Email our support team",
-                systemImage: "questionmark.circle.fill",
-                tint: .teal
-            ) {
-                openURL(AppExternalLinks.supportEmail)
-            }
-
-            actionRow(
-                title: "Privacy Policy",
-                subtitle: "Read how your data is used",
-                systemImage: "hand.raised.fill",
-                tint: .indigo
-            ) {
-                openURL(AppExternalLinks.privacyPolicy)
-            }
-
-            actionRow(
-                title: "Terms & Conditions",
-                subtitle: "App and service terms",
-                systemImage: "doc.text.fill",
-                tint: .brown
-            ) {
-                openURL(AppExternalLinks.terms)
-            }
-        }
-    }
-
-    private var dangerSection: some View {
-        VStack(spacing: 12) {
-            HStack {
-                Text("Account Actions")
-                    .font(.headline)
-                    .foregroundStyle(palette.textPrimary)
-
-                Spacer()
-            }
-
-            Button {
-                viewModel.signOutTapped()
-            } label: {
-                HStack(spacing: 14) {
-                    ZStack {
-                        Circle()
-                            .fill(Color.orange.opacity(colorScheme == .dark ? 0.20 : 0.12))
-                            .frame(width: 44, height: 44)
-
-                        Image(systemName: "rectangle.portrait.and.arrow.right")
-                            .font(.headline)
-                            .foregroundStyle(.orange)
-                    }
-
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Sign Out")
-                            .font(.headline)
-                            .foregroundStyle(palette.textPrimary)
-
-                        Text("Close your current session")
-                            .font(.subheadline)
-                            .foregroundStyle(palette.textSecondary)
-                    }
-
-                    Spacer()
-
-                    Image(systemName: "chevron.right")
-                        .foregroundStyle(palette.textTertiary)
-                }
-                .padding(16)
-                .background(
-                    RoundedRectangle(cornerRadius: 22, style: .continuous)
-                        .fill(palette.cardGradient)
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 22, style: .continuous)
-                        .stroke(palette.stroke, lineWidth: 1)
-                )
-            }
-            .buttonStyle(.plain)
-
-            Button {
-                viewModel.askForDeleteAccount()
-            } label: {
-                HStack(spacing: 14) {
-                    ZStack {
-                        Circle()
-                            .fill(Color.red.opacity(0.16))
-                            .frame(width: 44, height: 44)
-
-                        Image(systemName: "trash.fill")
-                            .font(.headline)
-                            .foregroundStyle(.red)
-                    }
-
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Delete Account")
-                            .font(.headline)
-                            .foregroundStyle(.red)
-
-                        Text("Permanently remove your account")
-                            .font(.subheadline)
-                            .foregroundStyle(palette.textSecondary)
-                    }
-
-                    Spacer()
-
-                    Image(systemName: "chevron.right")
-                        .foregroundStyle(.red.opacity(0.7))
-                }
-                .padding(16)
-                .background(
-                    RoundedRectangle(cornerRadius: 22, style: .continuous)
-                        .fill(Color.red.opacity(colorScheme == .dark ? 0.10 : 0.06))
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 22, style: .continuous)
-                        .stroke(Color.red.opacity(0.22), lineWidth: 1)
-                )
-            }
-            .buttonStyle(.plain)
-        }
     }
 
     private var aboutSection: some View {
@@ -10431,25 +10700,12 @@ struct ProfileView: View {
     }
 
     private func sectionHeader(_ title: String) -> some View {
-        BrandSectionHeader(theme: theme, title: title)
-    }
-
-    private func actionRow(
-        title: String,
-        subtitle: String,
-        systemImage: String,
-        tint: Color,
-        action: @escaping () -> Void
-    ) -> some View {
-        Button(action: action) {
-            baseRow(
-                title: title,
-                subtitle: subtitle,
-                systemImage: systemImage,
-                tint: tint
-            )
+        HStack {
+            Text(title)
+                .font(.headline)
+                .foregroundStyle(palette.textPrimary)
+            Spacer()
         }
-        .buttonStyle(.plain)
     }
 
     private func navigationRow(
@@ -10472,39 +10728,154 @@ struct ProfileView: View {
         systemImage: String,
         tint: Color
     ) -> some View {
-        HStack(spacing: 16) {
+        HStack(spacing: 14) {
             ZStack {
                 Circle()
-                    .fill(tint.opacity(colorScheme == .dark ? 0.22 : 0.14))
+                    .fill(tint.opacity(colorScheme == .dark ? 0.20 : 0.12))
                     .frame(width: 44, height: 44)
 
                 Image(systemName: systemImage)
-                    .font(.system(size: 16, weight: .semibold))
+                    .font(.headline)
                     .foregroundStyle(tint)
             }
-            .overlay(
-                Circle()
-                    .stroke(palette.stroke, lineWidth: 1)
-            )
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(title)
-                    .font(.body.weight(.semibold))
+                    .font(.headline)
                     .foregroundStyle(palette.textPrimary)
 
                 Text(subtitle)
-                    .font(.caption)
+                    .font(.subheadline)
                     .foregroundStyle(palette.textSecondary)
-                    .multilineTextAlignment(.leading)
             }
 
             Spacer()
 
             Image(systemName: "chevron.right")
-                .font(.footnote.weight(.semibold))
                 .foregroundStyle(palette.textTertiary)
         }
-        .appListRowStyle(theme)
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .fill(palette.cardGradient)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .stroke(palette.stroke, lineWidth: 1)
+        )
+    }
+}
+
+```
+
+---
+
+# Altos del Murco/root/feature/altos/profile/presentation/viewmodel/CompleteProfileViewModel.swift
+
+```swift
+//
+//  CompleteProfileViewModel.swift
+//  Altos del Murco
+//
+//  Created by José Ruiz on 19/4/26.
+//
+
+import Combine
+import Foundation
+
+@MainActor
+final class CompleteProfileViewModel: ObservableObject {
+    @Published var fullName: String
+    @Published var nationalId: String
+    @Published var phoneNumber: String
+    @Published var birthday: Date
+    @Published var address: String
+    @Published var emergencyContactName: String
+    @Published var emergencyContactPhone: String
+
+    @Published private(set) var isSaving = false
+    @Published var errorMessage: String?
+
+    let validBirthdayRange: ClosedRange<Date>
+
+    private let authenticatedUser: AuthenticatedUser
+    private let existingProfile: ClientProfile?
+    private let completeClientProfileUseCase: CompleteClientProfileUseCase
+    private let onCompleted: @MainActor (ClientProfile) -> Void
+
+    init(
+        authenticatedUser: AuthenticatedUser,
+        existingProfile: ClientProfile?,
+        completeClientProfileUseCase: CompleteClientProfileUseCase,
+        onCompleted: @escaping @MainActor (ClientProfile) -> Void
+    ) {
+        self.authenticatedUser = authenticatedUser
+        self.existingProfile = existingProfile
+        self.completeClientProfileUseCase = completeClientProfileUseCase
+        self.onCompleted = onCompleted
+
+        let now = Date()
+        let minimumDate = Calendar.current.date(byAdding: .year, value: -100, to: now) ?? now
+        self.validBirthdayRange = minimumDate...now
+
+        self.fullName = existingProfile?.fullName ?? authenticatedUser.displayName
+        self.nationalId = existingProfile?.nationalId ?? ""
+        self.phoneNumber = existingProfile?.phoneNumber ?? ""
+        self.birthday = existingProfile?.birthday ?? Calendar.current.date(byAdding: .year, value: -18, to: now) ?? now
+        self.address = existingProfile?.address ?? ""
+        self.emergencyContactName = existingProfile?.emergencyContactName ?? ""
+        self.emergencyContactPhone = existingProfile?.emergencyContactPhone ?? ""
+    }
+
+    var canSubmit: Bool {
+        !fullName.trimmed.isEmpty &&
+        nationalId.digitsOnly.count >= 8 &&
+        phoneNumber.digitsOnly.count >= 8 &&
+        !address.trimmed.isEmpty &&
+        !emergencyContactName.trimmed.isEmpty &&
+        emergencyContactPhone.digitsOnly.count >= 8 &&
+        birthday <= Date()
+    }
+
+    func saveProfile() {
+        guard canSubmit else {
+            errorMessage = "Please complete all required fields correctly."
+            return
+        }
+
+        errorMessage = nil
+        isSaving = true
+
+        let now = Date()
+        let profile = ClientProfile(
+            id: authenticatedUser.uid,
+            email: authenticatedUser.email,
+            appleUserIdentifier: authenticatedUser.appleUserIdentifier,
+            fullName: fullName.trimmed,
+            nationalId: nationalId.digitsOnly,
+            phoneNumber: phoneNumber.digitsOnly,
+            birthday: birthday,
+            address: address.trimmed,
+            emergencyContactName: emergencyContactName.trimmed,
+            emergencyContactPhone: emergencyContactPhone.digitsOnly,
+            isProfileComplete: true,
+            createdAt: existingProfile?.createdAt ?? now,
+            updatedAt: now,
+            profileCompletedAt: existingProfile?.profileCompletedAt ?? now,
+            profileImageURL: existingProfile?.profileImageURL,
+            profileImagePath: existingProfile?.profileImagePath
+        )
+
+        Task {
+            do {
+                try await completeClientProfileUseCase.execute(profile: profile)
+                isSaving = false
+                onCompleted(profile)
+            } catch {
+                isSaving = false
+                errorMessage = error.localizedDescription
+            }
+        }
     }
 }
 
@@ -10602,7 +10973,9 @@ final class EditProfileViewModel: ObservableObject {
             isProfileComplete: true,
             createdAt: originalProfile.createdAt,
             updatedAt: Date(),
-            profileCompletedAt: originalProfile.profileCompletedAt ?? Date()
+            profileCompletedAt: originalProfile.profileCompletedAt ?? Date(),
+            profileImageURL: originalProfile.profileImageURL,
+            profileImagePath: originalProfile.profileImagePath
         )
 
         Task {
@@ -10634,11 +11007,16 @@ final class EditProfileViewModel: ObservableObject {
 
 import Combine
 import AuthenticationServices
+import Foundation
+import UIKit
 
 @MainActor
 final class ProfileViewModel: ObservableObject {
     @Published private(set) var profile: ClientProfile
     @Published private(set) var stats: ProfileStats = .empty
+    @Published var avatarImage: UIImage?
+    @Published private(set) var isLoadingStats = false
+    @Published private(set) var isUploadingProfileImage = false
 
     @Published var isShowingEditProfile = false
     @Published var isShowingDeleteAccountSheet = false
@@ -10648,6 +11026,8 @@ final class ProfileViewModel: ObservableObject {
     private let appPreferences: AppPreferences
     private let completeClientProfileUseCase: CompleteClientProfileUseCase
     private let deleteCurrentAccountUseCase: DeleteCurrentAccountUseCase
+    private let profileImageStorageService: ProfileImageStorageService
+    private let profileStatsService: ProfileStatsService
     private let onProfileUpdated: @MainActor (ClientProfile) -> Void
     private let onSignOut: @MainActor () -> Void
     private let onAccountDeleted: @MainActor () -> Void
@@ -10659,6 +11039,8 @@ final class ProfileViewModel: ObservableObject {
         appPreferences: AppPreferences,
         completeClientProfileUseCase: CompleteClientProfileUseCase,
         deleteCurrentAccountUseCase: DeleteCurrentAccountUseCase,
+        profileImageStorageService: ProfileImageStorageService,
+        profileStatsService: ProfileStatsService,
         onProfileUpdated: @escaping @MainActor (ClientProfile) -> Void,
         onSignOut: @escaping @MainActor () -> Void,
         onAccountDeleted: @escaping @MainActor () -> Void
@@ -10667,9 +11049,16 @@ final class ProfileViewModel: ObservableObject {
         self.appPreferences = appPreferences
         self.completeClientProfileUseCase = completeClientProfileUseCase
         self.deleteCurrentAccountUseCase = deleteCurrentAccountUseCase
+        self.profileImageStorageService = profileImageStorageService
+        self.profileStatsService = profileStatsService
         self.onProfileUpdated = onProfileUpdated
         self.onSignOut = onSignOut
         self.onAccountDeleted = onAccountDeleted
+
+        Task {
+            await loadAvatar()
+            await refreshStats()
+        }
     }
 
     var displayName: String {
@@ -10704,6 +11093,14 @@ final class ProfileViewModel: ObservableObject {
         appPreferences.appearance
     }
 
+    var hasProfileImage: Bool {
+        profile.hasProfileImage || avatarImage != nil
+    }
+
+    func onAppear() {
+        Task { await refreshStats() }
+    }
+
     func updateAppearance(_ appearance: AppAppearance) {
         appPreferences.appearance = appearance
         objectWillChange.send()
@@ -10724,6 +11121,11 @@ final class ProfileViewModel: ObservableObject {
     func handleProfileSaved(_ updatedProfile: ClientProfile) {
         profile = updatedProfile
         onProfileUpdated(updatedProfile)
+
+        Task {
+            await loadAvatar()
+            await refreshStats()
+        }
     }
 
     func makeEditProfileViewModel() -> EditProfileViewModel {
@@ -10734,6 +11136,140 @@ final class ProfileViewModel: ObservableObject {
                 self?.handleProfileSaved(updatedProfile)
             }
         )
+    }
+
+    func refreshStats() async {
+        let nationalId = profile.nationalId.filter(\.isNumber)
+        guard !nationalId.isEmpty else {
+            stats = .empty
+            return
+        }
+
+        isLoadingStats = true
+        defer { isLoadingStats = false }
+
+        do {
+            stats = try await profileStatsService.loadStats(for: nationalId)
+        } catch {
+            alertItem = ProfileAlertItem(
+                title: "Could not load profile stats",
+                message: error.localizedDescription
+            )
+        }
+    }
+
+    func uploadProfileImage(data: Data) {
+        isUploadingProfileImage = true
+        alertItem = nil
+
+        Task {
+            do {
+                let uploaded = try await profileImageStorageService.uploadProfileImage(
+                    data: data,
+                    userId: profile.id,
+                    replacing: profile.profileImagePath
+                )
+
+                _ = try ProfileImageCache.shared.saveImageData(
+                    UIImage(data: data)?.jpegData(compressionQuality: 0.82) ?? data,
+                    for: profile.id
+                )
+
+                let updatedProfile = ClientProfile(
+                    id: profile.id,
+                    email: profile.email,
+                    appleUserIdentifier: profile.appleUserIdentifier,
+                    fullName: profile.fullName,
+                    nationalId: profile.nationalId,
+                    phoneNumber: profile.phoneNumber,
+                    birthday: profile.birthday,
+                    address: profile.address,
+                    emergencyContactName: profile.emergencyContactName,
+                    emergencyContactPhone: profile.emergencyContactPhone,
+                    isProfileComplete: profile.isProfileComplete,
+                    createdAt: profile.createdAt,
+                    updatedAt: Date(),
+                    profileCompletedAt: profile.profileCompletedAt,
+                    profileImageURL: uploaded.downloadURL,
+                    profileImagePath: uploaded.storagePath
+                )
+
+                try await completeClientProfileUseCase.execute(profile: updatedProfile)
+                avatarImage = ProfileImageCache.shared.loadImage(for: profile.id)
+                handleProfileSaved(updatedProfile)
+            } catch {
+                alertItem = ProfileAlertItem(
+                    title: "Could not update profile photo",
+                    message: error.localizedDescription
+                )
+            }
+
+            isUploadingProfileImage = false
+        }
+    }
+
+    func removeProfileImage() {
+        isUploadingProfileImage = true
+        alertItem = nil
+
+        Task {
+            do {
+                try await profileImageStorageService.deleteProfileImage(path: profile.profileImagePath)
+                ProfileImageCache.shared.removeImage(for: profile.id)
+
+                let updatedProfile = ClientProfile(
+                    id: profile.id,
+                    email: profile.email,
+                    appleUserIdentifier: profile.appleUserIdentifier,
+                    fullName: profile.fullName,
+                    nationalId: profile.nationalId,
+                    phoneNumber: profile.phoneNumber,
+                    birthday: profile.birthday,
+                    address: profile.address,
+                    emergencyContactName: profile.emergencyContactName,
+                    emergencyContactPhone: profile.emergencyContactPhone,
+                    isProfileComplete: profile.isProfileComplete,
+                    createdAt: profile.createdAt,
+                    updatedAt: Date(),
+                    profileCompletedAt: profile.profileCompletedAt,
+                    profileImageURL: nil,
+                    profileImagePath: nil
+                )
+
+                try await completeClientProfileUseCase.execute(profile: updatedProfile)
+                avatarImage = nil
+                handleProfileSaved(updatedProfile)
+            } catch {
+                alertItem = ProfileAlertItem(
+                    title: "Could not delete profile photo",
+                    message: error.localizedDescription
+                )
+            }
+
+            isUploadingProfileImage = false
+        }
+    }
+
+    private func loadAvatar() async {
+        if let cached = ProfileImageCache.shared.loadImage(for: profile.id) {
+            avatarImage = cached
+            return
+        }
+
+        guard let urlString = profile.profileImageURL,
+              let url = URL(string: urlString) else {
+            avatarImage = nil
+            return
+        }
+
+        do {
+            let (data, _) = try await URLSession.shared.data(from: url)
+            if let image = try ProfileImageCache.shared.saveImageData(data, for: profile.id) {
+                avatarImage = image
+            }
+        } catch {
+            avatarImage = nil
+        }
     }
 
     func onDeleteRequest(_ request: ASAuthorizationAppleIDRequest) {
@@ -10793,6 +11329,9 @@ final class ProfileViewModel: ObservableObject {
         isDeletingAccount = true
 
         do {
+            try await profileImageStorageService.deleteProfileImage(path: profile.profileImagePath)
+            ProfileImageCache.shared.removeImage(for: profile.id)
+
             try await deleteCurrentAccountUseCase.execute(
                 currentUserId: profile.id,
                 idToken: idToken,
@@ -10965,8 +11504,6 @@ struct OrderItemDto: Codable {
     let preparedQuantity: Int?
     let totalPrice: Double?
     let notes: String?
-    
-    
 }
 
 extension OrderItemDto {
@@ -10983,7 +11520,6 @@ extension OrderItemDto {
     
     func toDomain() -> OrderItem? {
         guard let uuid = UUID(uuidString: id) else { return nil }
-        printDebugging()
         
         return OrderItem(
             id: uuid,
@@ -10995,10 +11531,6 @@ extension OrderItemDto {
             notes: notes
         )
         
-    }
-    
-    func printDebugging() {
-        print("OrderItemDto: \(String(describing: notes))")
     }
 }
 
@@ -11900,8 +12432,6 @@ struct OrderItem: Identifiable, Hashable, Codable {
         self.preparedQuantity = min(max(preparedQuantity, 0), quantity)
         self.totalPrice = Double(quantity) * unitPrice
         self.notes = notes
-        
-        printDebugging()
     }
 
     var remainingQuantity: Int {
@@ -11926,10 +12456,6 @@ struct OrderItem: Identifiable, Hashable, Codable {
             preparedQuantity: min(max(newValue, 0), quantity),
             notes: notes
         )
-    }
-    
-    func printDebugging() {
-        print("OrderItem: \(String(describing: notes))")
     }
 }
 
@@ -12082,6 +12608,7 @@ struct CheckoutState {
 import Foundation
 
 struct OrdersState {
+    var nationalId: String = ""
     var isLoading = false
     var orders: [Order] = []
     var errorMessage: String?
@@ -12586,6 +13113,7 @@ struct CartView: View {
             }
         }
         .navigationTitle("Cart")
+        .appScreenStyle(.restaurant)
         .toolbar {
             if !cartManager.isEmpty {
                 ToolbarItem(placement: .topBarTrailing) {
@@ -13399,8 +13927,6 @@ struct MenuListView: View {
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 24) {
-                headerSection
-                
                 if !featuredItems.isEmpty {
                     featuredCarousel
                 }
@@ -13482,44 +14008,6 @@ struct MenuListView: View {
                 OrderSuccessView(order: order, path: $path)
             }
         }
-    }
-    
-    private var headerSection: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            VStack(alignment: .leading, spacing: 10) {
-                Text("Flavors from Altos del Murco")
-                    .font(.title2.bold())
-                    .foregroundStyle(palette.textPrimary)
-                
-                Text("Explore our charcoal-grilled dishes, house specials, drinks, and more.")
-                    .font(.subheadline)
-                    .foregroundStyle(palette.textSecondary)
-            }
-            
-            NavigationLink(value: Route.reservationBuilder) {
-                HStack(spacing: 12) {
-                    BrandIconBubble(theme: .restaurant, systemImage: "calendar.badge.plus")
-                    
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Reservar comida o evento")
-                            .font(.headline)
-                            .foregroundStyle(palette.textPrimary)
-                        Text("Cumpleaños, reuniones y comida para una visita futura.")
-                            .font(.subheadline)
-                            .foregroundStyle(palette.textSecondary)
-                    }
-                    
-                    Spacer()
-                    
-                    Image(systemName: "chevron.right")
-                        .foregroundStyle(palette.textTertiary)
-                }
-                .appCardStyle(.restaurant)
-            }
-            .buttonStyle(.plain)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .appCardStyle(.restaurant, emphasized: false)
     }
     
     private var featuredCarousel: some View {
@@ -14928,30 +15416,119 @@ struct SummaryMetricCard: View {
 
 import SwiftUI
 
+private enum OrdersGroupingOption: String, CaseIterable, Identifiable {
+    case byDate = "Date"
+    case byStatus = "Status"
+    var id: String { rawValue }
+}
+
+private enum OrdersSortOption: String, CaseIterable, Identifiable {
+    case newestFirst = "Newest"
+    case oldestFirst = "Oldest"
+    case highestTotal = "Highest total"
+    var id: String { rawValue }
+}
+
+private enum OrdersStatusFilter: String, CaseIterable, Identifiable {
+    case all = "All"
+    case pending = "Pending"
+    case confirmed = "Confirmed"
+    case preparing = "Preparing"
+    case completed = "Completed"
+    case canceled = "Canceled"
+
+    var id: String { rawValue }
+
+    var status: OrderStatus? {
+        switch self {
+        case .all: return nil
+        case .pending: return .pending
+        case .confirmed: return .confirmed
+        case .preparing: return .preparing
+        case .completed: return .completed
+        case .canceled: return .canceled
+        }
+    }
+}
+
+private struct OrdersGroup: Identifiable {
+    let id: String
+    let title: String
+    let orders: [Order]
+}
+
 struct OrdersView: View {
     @ObservedObject var viewModel: OrdersViewModel
+    @EnvironmentObject private var sessionViewModel: AppSessionViewModel
     @Environment(\.colorScheme) private var colorScheme
-    
+
     @State private var selectedOrder: Order?
-    
+    @State private var grouping: OrdersGroupingOption = .byDate
+    @State private var sortOption: OrdersSortOption = .newestFirst
+    @State private var statusFilter: OrdersStatusFilter = .all
+
     private var palette: ThemePalette {
         AppTheme.palette(for: .restaurant, scheme: colorScheme)
     }
 
-    private var groupedOrders: [(status: OrderStatus, orders: [Order])] {
-        let grouped = Dictionary(grouping: viewModel.state.orders) { $0.recalculatedStatus() }
+    private var filteredOrders: [Order] {
+        viewModel.state.orders.filter { order in
+            guard let filterStatus = statusFilter.status else { return true }
+            return order.recalculatedStatus() == filterStatus
+        }
+    }
 
-        let orderedStatuses: [OrderStatus] = [
-            .pending,
-            .confirmed,
-            .preparing,
-            .completed,
-            .canceled
-        ]
+    private var sortedOrders: [Order] {
+        switch sortOption {
+        case .newestFirst:
+            return filteredOrders.sorted { $0.createdAt > $1.createdAt }
+        case .oldestFirst:
+            return filteredOrders.sorted { $0.createdAt < $1.createdAt }
+        case .highestTotal:
+            return filteredOrders.sorted { $0.totalAmount > $1.totalAmount }
+        }
+    }
 
-        return orderedStatuses.compactMap { status in
-            guard let orders = grouped[status], !orders.isEmpty else { return nil }
-            return (status, orders.sorted { $0.createdAt > $1.createdAt })
+    private var groupedOrders: [OrdersGroup] {
+        switch grouping {
+        case .byStatus:
+            let orderedStatuses: [OrderStatus] = [.pending, .confirmed, .preparing, .completed, .canceled]
+
+            let buckets = Dictionary(grouping: sortedOrders) { $0.recalculatedStatus() }
+            return orderedStatuses.compactMap { status in
+                guard let orders = buckets[status], !orders.isEmpty else { return nil }
+                return OrdersGroup(
+                    id: status.rawValue,
+                    title: status.title,
+                    orders: orders
+                )
+            }
+
+        case .byDate:
+            let calendar = Calendar.current
+            let buckets = Dictionary(grouping: sortedOrders) { calendar.startOfDay(for: $0.createdAt) }
+
+            return buckets
+                .map { day, orders in
+                    OrdersGroup(
+                        id: ISO8601DateFormatter().string(from: day),
+                        title: dateTitle(for: day),
+                        orders: sortInsideGroup(orders)
+                    )
+                }
+                .sorted { lhs, rhs in
+                    guard let lhsDate = lhs.orders.first?.createdAt,
+                          let rhsDate = rhs.orders.first?.createdAt else {
+                        return lhs.title > rhs.title
+                    }
+
+                    switch sortOption {
+                    case .oldestFirst:
+                        return lhsDate < rhsDate
+                    case .newestFirst, .highestTotal:
+                        return lhsDate > rhsDate
+                    }
+                }
         }
     }
 
@@ -14964,6 +15541,9 @@ struct OrdersView: View {
         .navigationBarTitleDisplayMode(.large)
         .tint(palette.primary)
         .onAppear {
+            if let nationalId = sessionViewModel.authenticatedProfile?.nationalId {
+                viewModel.setNationalId(nationalId)
+            }
             viewModel.onEvent(.onAppear)
         }
     }
@@ -15022,8 +15602,9 @@ struct OrdersView: View {
     private var ordersList: some View {
         List {
             summarySection
+            controlsSection
 
-            ForEach(groupedOrders, id: \.status) { group in
+            ForEach(groupedOrders) { group in
                 Section {
                     ForEach(group.orders) { order in
                         Button {
@@ -15039,7 +15620,7 @@ struct OrdersView: View {
                         .listRowBackground(Color.clear)
                     }
                 } header: {
-                    sectionHeader(for: group.status, count: group.orders.count)
+                    sectionHeader(title: group.title, count: group.orders.count)
                 }
             }
         }
@@ -15053,10 +15634,10 @@ struct OrdersView: View {
             OrderDetailView(order: order)
         }
     }
- 
+
     private var summarySection: some View {
         Section {
-            OrdersSummaryView(orders: viewModel.state.orders)
+            OrdersSummaryView(orders: filteredOrders)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .appCardStyle(.restaurant, emphasized: false)
                 .listRowInsets(EdgeInsets(top: 8, leading: 8, bottom: 10, trailing: 8))
@@ -15065,7 +15646,7 @@ struct OrdersView: View {
             BrandSectionHeader(
                 theme: .restaurant,
                 title: "Overview",
-                subtitle: "Track today’s and recent restaurant orders."
+                subtitle: "Track your orders with date grouping, filters and sorting."
             )
             .padding(.horizontal, 4)
             .padding(.bottom, 6)
@@ -15073,9 +15654,43 @@ struct OrdersView: View {
         }
     }
 
-    private func sectionHeader(for status: OrderStatus, count: Int) -> some View {
+    private var controlsSection: some View {
+        Section {
+            VStack(spacing: 14) {
+                Picker("Group", selection: $grouping) {
+                    ForEach(OrdersGroupingOption.allCases) { option in
+                        Text(option.rawValue).tag(option)
+                    }
+                }
+                .pickerStyle(.segmented)
+
+                Picker("Status", selection: $statusFilter) {
+                    ForEach(OrdersStatusFilter.allCases) { option in
+                        Text(option.rawValue).tag(option)
+                    }
+                }
+
+                Picker("Sort", selection: $sortOption) {
+                    ForEach(OrdersSortOption.allCases) { option in
+                        Text(option.rawValue).tag(option)
+                    }
+                }
+            }
+            .padding(.vertical, 4)
+            .appCardStyle(.restaurant, emphasized: false)
+            .listRowInsets(EdgeInsets(top: 8, leading: 8, bottom: 10, trailing: 8))
+            .listRowBackground(Color.clear)
+        } header: {
+            Text("Order tools")
+                .font(.headline)
+                .foregroundStyle(palette.textSecondary)
+                .textCase(nil)
+        }
+    }
+
+    private func sectionHeader(title: String, count: Int) -> some View {
         HStack(spacing: 10) {
-            Text(status.title)
+            Text(title)
                 .font(.headline)
                 .foregroundStyle(palette.textPrimary)
 
@@ -15084,13 +15699,31 @@ struct OrdersView: View {
             BrandBadge(
                 theme: .restaurant,
                 title: "\(count)",
-                selected: status == .pending || status == .preparing
+                selected: true
             )
         }
         .padding(.horizontal, 4)
         .padding(.top, 10)
         .padding(.bottom, 4)
         .textCase(nil)
+    }
+
+    private func sortInsideGroup(_ orders: [Order]) -> [Order] {
+        switch sortOption {
+        case .newestFirst:
+            return orders.sorted { $0.createdAt > $1.createdAt }
+        case .oldestFirst:
+            return orders.sorted { $0.createdAt < $1.createdAt }
+        case .highestTotal:
+            return orders.sorted { $0.totalAmount > $1.totalAmount }
+        }
+    }
+
+    private func dateTitle(for day: Date) -> String {
+        let calendar = Calendar.current
+        if calendar.isDateInToday(day) { return "Today" }
+        if calendar.isDateInYesterday(day) { return "Yesterday" }
+        return day.formatted(date: .abbreviated, time: .omitted)
     }
 }
 
@@ -15240,7 +15873,6 @@ final class MenuViewModel: ObservableObject {
 
 import Combine
 import Foundation
-import FirebaseAuth
 
 @MainActor
 final class OrdersViewModel: ObservableObject {
@@ -15251,6 +15883,12 @@ final class OrdersViewModel: ObservableObject {
 
     init(observeOrdersUseCase: ObserveOrdersUseCase) {
         self.observeOrdersUseCase = observeOrdersUseCase
+    }
+
+    func setNationalId(_ nationalId: String) {
+        let clean = nationalId.filter(\.isNumber)
+        guard state.nationalId != clean else { return }
+        state.nationalId = clean
     }
 
     func onEvent(_ event: OrdersEvent) {
@@ -15267,12 +15905,20 @@ final class OrdersViewModel: ObservableObject {
     private func startObservingOrders() {
         observeTask?.cancel()
 
+        let nationalId = state.nationalId.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !nationalId.isEmpty else {
+            state.orders = []
+            state.errorMessage = nil
+            state.isLoading = false
+            return
+        }
+
         state.isLoading = true
         state.errorMessage = nil
 
         observeTask = Task {
             do {
-                for try await orders in observeOrdersUseCase.execute(nationalId: "0503638371") {
+                for try await orders in observeOrdersUseCase.execute(nationalId: nationalId) {
                     guard !Task.isCancelled else { return }
                     state.orders = orders
                     state.isLoading = false

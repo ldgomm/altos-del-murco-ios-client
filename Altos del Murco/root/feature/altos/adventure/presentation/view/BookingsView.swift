@@ -53,9 +53,9 @@ struct BookingsView: View {
                 .padding(.horizontal, 20)
                 .padding(.vertical, 16)
             }
+            .appScreenStyle(.neutral)
             .navigationTitle("Reservas")
         }
-        .appScreenStyle(.neutral)
     }
 
     private var headerSection: some View {

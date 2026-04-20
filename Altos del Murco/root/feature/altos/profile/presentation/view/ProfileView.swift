@@ -5,12 +5,14 @@
 //  Created by José Ruiz on 31/3/26.
 //
 
+import PhotosUI
 import SwiftUI
 
 struct ProfileView: View {
     @Environment(\.openURL) private var openURL
     @Environment(\.colorScheme) private var colorScheme
     @StateObject private var viewModel: ProfileViewModel
+    @State private var selectedPhotoItem: PhotosPickerItem?
 
     private let theme: AppSectionTheme = .neutral
 
@@ -30,7 +32,6 @@ struct ProfileView: View {
                     statsSection
                     mainMenuSection
                     socialCompactSection
-                    dangerSection
                     aboutSection
                 }
                 .padding(.horizontal, 16)
@@ -39,6 +40,7 @@ struct ProfileView: View {
             }
             .scrollIndicators(.hidden)
             .navigationTitle("Profile")
+            .appScreenStyle(theme)
             .sheet(isPresented: $viewModel.isShowingEditProfile) {
                 EditProfileView(
                     viewModelFactory: { viewModel.makeEditProfileViewModel() }
@@ -54,49 +56,55 @@ struct ProfileView: View {
                     dismissButton: .default(Text("OK"))
                 )
             }
+            .onAppear {
+                viewModel.onAppear()
+            }
+            .onChange(of: selectedPhotoItem) { _, item in
+                guard let item else { return }
+
+                Task {
+                    if let data = try? await item.loadTransferable(type: Data.self) {
+                        await MainActor.run {
+                            viewModel.uploadProfileImage(data: data)
+                        }
+                    }
+                }
+            }
         }
-        .appScreenStyle(theme)
     }
 
     private var headerSection: some View {
         VStack(spacing: 18) {
             ZStack(alignment: .bottomTrailing) {
-                Circle()
-                    .fill(palette.heroGradient)
-                    .frame(width: 104, height: 104)
-                    .overlay(
-                        Circle()
-                            .stroke(
-                                Color.white.opacity(colorScheme == .dark ? 0.10 : 0.32),
-                                lineWidth: 1
+                avatarView
+
+                HStack(spacing: 10) {
+                    if viewModel.hasProfileImage {
+                        Button {
+                            viewModel.removeProfileImage()
+                        } label: {
+                            Image(systemName: "trash")
+                                .font(.caption.bold())
+                                .foregroundStyle(.white)
+                                .padding(10)
+                                .background(Circle().fill(.red))
+                        }
+                    }
+
+                    PhotosPicker(selection: $selectedPhotoItem, matching: .images) {
+                        Image(systemName: "camera.fill")
+                            .font(.caption.bold())
+                            .foregroundStyle(.white)
+                            .padding(10)
+                            .background(
+                                Circle()
+                                    .fill(palette.primary)
                             )
-                    )
-                    .shadow(
-                        color: palette.shadow.opacity(colorScheme == .dark ? 0.28 : 0.12),
-                        radius: 16,
-                        x: 0,
-                        y: 10
-                    )
-
-                Text(viewModel.displayName.initials)
-                    .font(.system(size: 34, weight: .bold, design: .rounded))
-                    .foregroundStyle(palette.onPrimary)
-
-                Button {
-                    viewModel.openEditProfile()
-                } label: {
-                    Image(systemName: "pencil")
-                        .font(.caption.bold())
-                        .foregroundStyle(.white)
-                        .padding(10)
-                        .background(
-                            Circle()
-                                .fill(palette.primary)
-                        )
-                        .overlay(
-                            Circle()
-                                .stroke(Color.white.opacity(0.18), lineWidth: 1)
-                        )
+                            .overlay(
+                                Circle()
+                                    .stroke(Color.white.opacity(0.18), lineWidth: 1)
+                            )
+                    }
                 }
                 .offset(x: 4, y: 4)
             }
@@ -164,7 +172,50 @@ struct ProfileView: View {
         .frame(maxWidth: .infinity)
         .appCardStyle(theme, emphasized: false)
     }
-    
+
+    @ViewBuilder
+    private var avatarView: some View {
+        ZStack {
+            Circle()
+                .fill(palette.heroGradient)
+                .frame(width: 112, height: 112)
+                .overlay(
+                    Circle()
+                        .stroke(
+                            Color.white.opacity(colorScheme == .dark ? 0.10 : 0.32),
+                            lineWidth: 1
+                        )
+                )
+                .shadow(
+                    color: palette.shadow.opacity(colorScheme == .dark ? 0.28 : 0.12),
+                    radius: 16,
+                    x: 0,
+                    y: 10
+                )
+
+            if let avatarImage = viewModel.avatarImage {
+                Image(uiImage: avatarImage)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: 112, height: 112)
+                    .clipShape(Circle())
+            } else {
+                Text(viewModel.displayName.initials)
+                    .font(.system(size: 34, weight: .bold, design: .rounded))
+                    .foregroundStyle(palette.onPrimary)
+            }
+
+            if viewModel.isUploadingProfileImage {
+                Circle()
+                    .fill(.black.opacity(0.35))
+                    .frame(width: 112, height: 112)
+
+                ProgressView()
+                    .tint(.white)
+            }
+        }
+    }
+
     private func compactInfoCard(
         title: String,
         value: String,
@@ -199,63 +250,103 @@ struct ProfileView: View {
         )
     }
 
-    private func infoPill(title: String, value: String) -> some View {
-        HStack(spacing: 12) {
-            Text(title)
-                .font(.caption.bold())
-                .foregroundStyle(palette.textSecondary)
-
-            Spacer()
-
-            Text(value)
-                .font(.caption)
-                .foregroundStyle(palette.textPrimary)
-                .multilineTextAlignment(.trailing)
-        }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 12)
-        .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(palette.elevatedCard)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .stroke(palette.stroke, lineWidth: 1)
-        )
-    }
-
     private var statsSection: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: 14) {
             HStack {
                 Text("Overview")
                     .font(.headline)
                     .foregroundStyle(palette.textPrimary)
-
                 Spacer()
             }
+
+            levelCard
 
             HStack(spacing: 12) {
                 profileStatCard(
                     title: "Points",
-                    value: "\(viewModel.stats.points)",
+                    value: "\(viewModel.stats.points )",
                     systemImage: "star.fill"
                 )
 
                 profileStatCard(
                     title: "Orders",
-                    value: "\(viewModel.stats.orders)",
+                    value: "\(viewModel.stats.completedOrders)",
                     systemImage: "fork.knife"
                 )
 
                 profileStatCard(
                     title: "Bookings",
-                    value: "\(viewModel.stats.bookings)",
+                    value: "\(viewModel.stats.completedBookings)",
                     systemImage: "calendar"
+                )
+            }
+
+            HStack(spacing: 12) {
+                profileStatCard(
+                    title: "Restaurant",
+                    value: viewModel.stats.restaurantSpent.priceText,
+                    systemImage: "takeoutbag.and.cup.and.straw.fill"
+                )
+
+                profileStatCard(
+                    title: "Adventure",
+                    value: viewModel.stats.adventureSpent.priceText,
+                    systemImage: "figure.hiking"
                 )
             }
         }
     }
-    
+
+    private var levelCard: some View {
+        HStack(spacing: 14) {
+            ZStack {
+                Circle()
+                    .fill(palette.chipGradient)
+                    .frame(width: 56, height: 56)
+
+                Image(systemName: levelIcon)
+                    .font(.title3.bold())
+                    .foregroundStyle(palette.primary)
+            }
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text("\(viewModel.stats.level.title) Level")
+                    .font(.headline)
+                    .foregroundStyle(palette.textPrimary)
+
+                Text(viewModel.stats.level.badgeSubtitle)
+                    .font(.subheadline)
+                    .foregroundStyle(palette.textSecondary)
+
+                Text("Completed spend: \(viewModel.stats.totalSpent.priceText)")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(palette.primary)
+            }
+
+            Spacer()
+        }
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .fill(palette.cardGradient)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .stroke(palette.stroke, lineWidth: 1)
+        )
+    }
+
+    private var levelIcon: String {
+        switch viewModel.stats.level {
+        case .silver:
+            return "seal.fill"
+        case .gold:
+            return "star.circle.fill"
+        case .diamond:
+            return "diamond.fill"
+        }
+    }
+
     private func profileStatCard(
         title: String,
         value: String,
@@ -275,6 +366,8 @@ struct ProfileView: View {
             Text(value)
                 .font(.title3.bold())
                 .foregroundStyle(palette.textPrimary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
 
             Text(title)
                 .font(.caption.weight(.medium))
@@ -298,20 +391,6 @@ struct ProfileView: View {
         )
     }
 
-    private func statCard(title: String, value: String) -> some View {
-        VStack(spacing: 8) {
-            Text(value)
-                .font(.title2.bold())
-                .foregroundStyle(palette.textPrimary)
-
-            Text(title)
-                .font(.caption.weight(.medium))
-                .foregroundStyle(palette.textSecondary)
-        }
-        .frame(maxWidth: .infinity)
-        .appCardStyle(theme)
-    }
-    
     private var mainMenuSection: some View {
         VStack(spacing: 12) {
             sectionHeader("Settings")
@@ -321,7 +400,7 @@ struct ProfileView: View {
             } label: {
                 navigationRow(
                     title: "Account",
-                    subtitle: "Personal information, rewards and birthday benefits",
+                    subtitle: "Personal information, rewards and account actions",
                     systemImage: "person.crop.circle",
                     tint: .blue
                 )
@@ -353,7 +432,7 @@ struct ProfileView: View {
             .buttonStyle(.plain)
         }
     }
-    
+
     private var socialCompactSection: some View {
         VStack(spacing: 12) {
             sectionHeader("Social & Visit Us")
@@ -361,31 +440,26 @@ struct ProfileView: View {
             HStack(spacing: 14) {
                 socialIconButton(
                     systemImage: "camera.fill",
-                    tint: .pink,
                     action: { openURL(AppExternalLinks.instagram) }
                 )
 
                 socialIconButton(
                     systemImage: "music.note.tv",
-                    tint: .black,
                     action: { openURL(AppExternalLinks.tiktok) }
                 )
 
                 socialIconButton(
                     systemImage: "f.cursive.circle.fill",
-                    tint: .blue,
                     action: { openURL(AppExternalLinks.facebook) }
                 )
 
                 socialIconButton(
                     systemImage: "message.fill",
-                    tint: .green,
                     action: { openURL(AppExternalLinks.whatsapp) }
                 )
 
                 socialIconButton(
                     systemImage: "map.fill",
-                    tint: .red,
                     action: { openURL(AppExternalLinks.maps) }
                 )
             }
@@ -396,256 +470,24 @@ struct ProfileView: View {
 
     private func socialIconButton(
         systemImage: String,
-        tint: Color,
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
             ZStack {
                 Circle()
-                    .fill(tint.opacity(colorScheme == .dark ? 0.22 : 0.14))
-                    .frame(width: 54, height: 54)
+                    .fill(palette.chipGradient)
+                    .frame(width: 52, height: 52)
 
                 Image(systemName: systemImage)
-                    .font(.title3.weight(.semibold))
-                    .foregroundStyle(tint)
+                    .font(.headline.weight(.semibold))
+                    .foregroundStyle(palette.primary)
             }
+            .overlay(
+                Circle()
+                    .stroke(palette.stroke, lineWidth: 1)
+            )
         }
         .buttonStyle(.plain)
-    }
-
-    private var accountSection: some View {
-        VStack(spacing: 12) {
-            sectionHeader("Account")
-
-            actionRow(
-                title: "Personal Information",
-                subtitle: "Edit your contact and emergency details",
-                systemImage: "person.text.rectangle",
-                tint: .blue
-            ) {
-                viewModel.openEditProfile()
-            }
-
-            actionRow(
-                title: "Rewards & Points",
-                subtitle: "Your loyalty history and benefits",
-                systemImage: "gift.fill",
-                tint: .orange
-            ) { }
-
-            actionRow(
-                title: "Birthday Benefits",
-                subtitle: "Used for special promos and discounts",
-                systemImage: "birthday.cake.fill",
-                tint: .pink
-            ) { }
-        }
-    }
-
-    private var preferencesSection: some View {
-        VStack(spacing: 12) {
-            sectionHeader("Preferences")
-
-            NavigationLink {
-                AppearanceSettingsView(viewModel: viewModel)
-            } label: {
-                navigationRow(
-                    title: "Appearance",
-                    subtitle: viewModel.appearanceTitle,
-                    systemImage: "circle.lefthalf.filled",
-                    tint: .purple
-                )
-            }
-            .buttonStyle(.plain)
-
-            actionRow(
-                title: "App Permissions",
-                subtitle: "Notifications, location and device settings",
-                systemImage: "gearshape.2.fill",
-                tint: .gray
-            ) {
-                guard let settingsURL = URL(string: UIApplication.openSettingsURLString) else { return }
-                openURL(settingsURL)
-            }
-        }
-    }
-
-    private var socialSection: some View {
-        VStack(spacing: 12) {
-            sectionHeader("Social & Visit Us")
-
-            actionRow(
-                title: "Instagram",
-                subtitle: "@altosdelmurco",
-                systemImage: "camera.fill",
-                tint: .pink
-            ) {
-                openURL(AppExternalLinks.instagram)
-            }
-
-            actionRow(
-                title: "TikTok",
-                subtitle: "@altosdelmurco",
-                systemImage: "music.note.tv",
-                tint: .black
-            ) {
-                openURL(AppExternalLinks.tiktok)
-            }
-
-            actionRow(
-                title: "Facebook",
-                subtitle: "Follow our updates and promos",
-                systemImage: "f.cursive.circle.fill",
-                tint: .blue
-            ) {
-                openURL(AppExternalLinks.facebook)
-            }
-
-            actionRow(
-                title: "WhatsApp",
-                subtitle: "Contact us directly",
-                systemImage: "message.fill",
-                tint: .green
-            ) {
-                openURL(AppExternalLinks.whatsapp)
-            }
-
-            actionRow(
-                title: "Open in Maps",
-                subtitle: "Navigate to Altos del Murco",
-                systemImage: "map.fill",
-                tint: .red
-            ) {
-                openURL(AppExternalLinks.maps)
-            }
-        }
-    }
-
-    private var supportSection: some View {
-        VStack(spacing: 12) {
-            sectionHeader("Support & Legal")
-
-            actionRow(
-                title: "Help & Support",
-                subtitle: "Email our support team",
-                systemImage: "questionmark.circle.fill",
-                tint: .teal
-            ) {
-                openURL(AppExternalLinks.supportEmail)
-            }
-
-            actionRow(
-                title: "Privacy Policy",
-                subtitle: "Read how your data is used",
-                systemImage: "hand.raised.fill",
-                tint: .indigo
-            ) {
-                openURL(AppExternalLinks.privacyPolicy)
-            }
-
-            actionRow(
-                title: "Terms & Conditions",
-                subtitle: "App and service terms",
-                systemImage: "doc.text.fill",
-                tint: .brown
-            ) {
-                openURL(AppExternalLinks.terms)
-            }
-        }
-    }
-
-    private var dangerSection: some View {
-        VStack(spacing: 12) {
-            HStack {
-                Text("Account Actions")
-                    .font(.headline)
-                    .foregroundStyle(palette.textPrimary)
-
-                Spacer()
-            }
-
-            Button {
-                viewModel.signOutTapped()
-            } label: {
-                HStack(spacing: 14) {
-                    ZStack {
-                        Circle()
-                            .fill(Color.orange.opacity(colorScheme == .dark ? 0.20 : 0.12))
-                            .frame(width: 44, height: 44)
-
-                        Image(systemName: "rectangle.portrait.and.arrow.right")
-                            .font(.headline)
-                            .foregroundStyle(.orange)
-                    }
-
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Sign Out")
-                            .font(.headline)
-                            .foregroundStyle(palette.textPrimary)
-
-                        Text("Close your current session")
-                            .font(.subheadline)
-                            .foregroundStyle(palette.textSecondary)
-                    }
-
-                    Spacer()
-
-                    Image(systemName: "chevron.right")
-                        .foregroundStyle(palette.textTertiary)
-                }
-                .padding(16)
-                .background(
-                    RoundedRectangle(cornerRadius: 22, style: .continuous)
-                        .fill(palette.cardGradient)
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 22, style: .continuous)
-                        .stroke(palette.stroke, lineWidth: 1)
-                )
-            }
-            .buttonStyle(.plain)
-
-            Button {
-                viewModel.askForDeleteAccount()
-            } label: {
-                HStack(spacing: 14) {
-                    ZStack {
-                        Circle()
-                            .fill(Color.red.opacity(0.16))
-                            .frame(width: 44, height: 44)
-
-                        Image(systemName: "trash.fill")
-                            .font(.headline)
-                            .foregroundStyle(.red)
-                    }
-
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Delete Account")
-                            .font(.headline)
-                            .foregroundStyle(.red)
-
-                        Text("Permanently remove your account")
-                            .font(.subheadline)
-                            .foregroundStyle(palette.textSecondary)
-                    }
-
-                    Spacer()
-
-                    Image(systemName: "chevron.right")
-                        .foregroundStyle(.red.opacity(0.7))
-                }
-                .padding(16)
-                .background(
-                    RoundedRectangle(cornerRadius: 22, style: .continuous)
-                        .fill(Color.red.opacity(colorScheme == .dark ? 0.10 : 0.06))
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 22, style: .continuous)
-                        .stroke(Color.red.opacity(0.22), lineWidth: 1)
-                )
-            }
-            .buttonStyle(.plain)
-        }
     }
 
     private var aboutSection: some View {
@@ -663,25 +505,12 @@ struct ProfileView: View {
     }
 
     private func sectionHeader(_ title: String) -> some View {
-        BrandSectionHeader(theme: theme, title: title)
-    }
-
-    private func actionRow(
-        title: String,
-        subtitle: String,
-        systemImage: String,
-        tint: Color,
-        action: @escaping () -> Void
-    ) -> some View {
-        Button(action: action) {
-            baseRow(
-                title: title,
-                subtitle: subtitle,
-                systemImage: systemImage,
-                tint: tint
-            )
+        HStack {
+            Text(title)
+                .font(.headline)
+                .foregroundStyle(palette.textPrimary)
+            Spacer()
         }
-        .buttonStyle(.plain)
     }
 
     private func navigationRow(
@@ -704,38 +533,40 @@ struct ProfileView: View {
         systemImage: String,
         tint: Color
     ) -> some View {
-        HStack(spacing: 16) {
+        HStack(spacing: 14) {
             ZStack {
                 Circle()
-                    .fill(tint.opacity(colorScheme == .dark ? 0.22 : 0.14))
+                    .fill(tint.opacity(colorScheme == .dark ? 0.20 : 0.12))
                     .frame(width: 44, height: 44)
 
                 Image(systemName: systemImage)
-                    .font(.system(size: 16, weight: .semibold))
+                    .font(.headline)
                     .foregroundStyle(tint)
             }
-            .overlay(
-                Circle()
-                    .stroke(palette.stroke, lineWidth: 1)
-            )
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(title)
-                    .font(.body.weight(.semibold))
+                    .font(.headline)
                     .foregroundStyle(palette.textPrimary)
 
                 Text(subtitle)
-                    .font(.caption)
+                    .font(.subheadline)
                     .foregroundStyle(palette.textSecondary)
-                    .multilineTextAlignment(.leading)
             }
 
             Spacer()
 
             Image(systemName: "chevron.right")
-                .font(.footnote.weight(.semibold))
                 .foregroundStyle(palette.textTertiary)
         }
-        .appListRowStyle(theme)
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .fill(palette.cardGradient)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .stroke(palette.stroke, lineWidth: 1)
+        )
     }
 }

@@ -22,6 +22,8 @@ struct ClientProfile: Identifiable, Codable, Equatable {
     let createdAt: Date
     let updatedAt: Date
     let profileCompletedAt: Date?
+    let profileImageURL: String?
+    let profileImagePath: String?
 
     var isComplete: Bool {
         isProfileComplete &&
@@ -31,5 +33,10 @@ struct ClientProfile: Identifiable, Codable, Equatable {
         !address.trimmed.isEmpty &&
         !emergencyContactName.trimmed.isEmpty &&
         !emergencyContactPhone.trimmed.isEmpty
+    }
+
+    var hasProfileImage: Bool {
+        let url = profileImageURL?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return !url.isEmpty
     }
 }

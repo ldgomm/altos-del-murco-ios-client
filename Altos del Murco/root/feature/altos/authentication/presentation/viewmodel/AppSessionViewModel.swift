@@ -122,6 +122,8 @@ final class AppSessionViewModel: ObservableObject {
 
         let saveUseCase = completeClientProfileUseCase
         let deleteUseCase = deleteCurrentAccountUseCase
+        let imageStorageService = ProfileImageStorageService()
+        let statsService = ProfileStatsService()
 
         return { [weak self] in
             ProfileViewModel(
@@ -129,6 +131,8 @@ final class AppSessionViewModel: ObservableObject {
                 appPreferences: appPreferences,
                 completeClientProfileUseCase: saveUseCase,
                 deleteCurrentAccountUseCase: deleteUseCase,
+                profileImageStorageService: imageStorageService,
+                profileStatsService: statsService,
                 onProfileUpdated: { [weak self] updatedProfile in
                     self?.state = .authenticated(updatedProfile)
                 },

@@ -22,8 +22,8 @@ struct HomeView: View {
             }
             .navigationTitle("Altos del Murco")
             .navigationBarTitleDisplayMode(.large)
+            .appScreenStyle(.neutral)
         }
-        .appScreenStyle(.neutral)
     }
 
     private var heroSection: some View {

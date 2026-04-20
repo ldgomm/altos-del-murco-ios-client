@@ -2,7 +2,7 @@
 //  CompleteProfileViewModel.swift
 //  Altos del Murco
 //
-//  Created by José Ruiz on 3/4/26.
+//  Created by José Ruiz on 19/4/26.
 //
 
 import Combine
@@ -86,7 +86,9 @@ final class CompleteProfileViewModel: ObservableObject {
             isProfileComplete: true,
             createdAt: existingProfile?.createdAt ?? now,
             updatedAt: now,
-            profileCompletedAt: existingProfile?.profileCompletedAt ?? now
+            profileCompletedAt: existingProfile?.profileCompletedAt ?? now,
+            profileImageURL: existingProfile?.profileImageURL,
+            profileImagePath: existingProfile?.profileImagePath
         )
 
         Task {

@@ -51,6 +51,7 @@ struct CartView: View {
             }
         }
         .navigationTitle("Cart")
+        .appScreenStyle(.restaurant)
         .toolbar {
             if !cartManager.isEmpty {
                 ToolbarItem(placement: .topBarTrailing) {

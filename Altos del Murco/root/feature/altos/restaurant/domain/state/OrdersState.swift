@@ -8,6 +8,7 @@
 import Foundation
 
 struct OrdersState {
+    var nationalId: String = ""
     var isLoading = false
     var orders: [Order] = []
     var errorMessage: String?

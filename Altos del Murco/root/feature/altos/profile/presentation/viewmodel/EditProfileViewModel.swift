@@ -85,7 +85,9 @@ final class EditProfileViewModel: ObservableObject {
             isProfileComplete: true,
             createdAt: originalProfile.createdAt,
             updatedAt: Date(),
-            profileCompletedAt: originalProfile.profileCompletedAt ?? Date()
+            profileCompletedAt: originalProfile.profileCompletedAt ?? Date(),
+            profileImageURL: originalProfile.profileImageURL,
+            profileImagePath: originalProfile.profileImagePath
         )
 
         Task {

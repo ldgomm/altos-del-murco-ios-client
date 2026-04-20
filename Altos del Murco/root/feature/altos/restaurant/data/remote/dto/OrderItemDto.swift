@@ -16,8 +16,6 @@ struct OrderItemDto: Codable {
     let preparedQuantity: Int?
     let totalPrice: Double?
     let notes: String?
-    
-    
 }
 
 extension OrderItemDto {
@@ -34,7 +32,6 @@ extension OrderItemDto {
     
     func toDomain() -> OrderItem? {
         guard let uuid = UUID(uuidString: id) else { return nil }
-        printDebugging()
         
         return OrderItem(
             id: uuid,
@@ -46,9 +43,5 @@ extension OrderItemDto {
             notes: notes
         )
         
-    }
-    
-    func printDebugging() {
-        print("OrderItemDto: \(String(describing: notes))")
     }
 }

@@ -52,8 +52,9 @@ struct AdventureCatalogView: View {
             }
             .navigationTitle("Aventura en Los Altos")
             .navigationBarTitleDisplayMode(.large)
+            .appScreenStyle(.adventure)
+
         }
-        .appScreenStyle(.adventure)
         .onAppear {
             catalogViewModel.onAppear()
         }

@@ -2,7 +2,7 @@
 //  ClientProfileDocument.swift
 //  Altos del Murco
 //
-//  Created by José Ruiz on 3/4/26.
+//  Created by José Ruiz on 19/4/26.
 //
 
 import Foundation
@@ -22,6 +22,8 @@ struct ClientProfileDocument: Codable {
     let createdAt: Date
     let updatedAt: Date
     let profileCompletedAt: Date?
+    let profileImageURL: String?
+    let profileImagePath: String?
 
     init(profile: ClientProfile) {
         self.id = profile.id
@@ -38,6 +40,8 @@ struct ClientProfileDocument: Codable {
         self.createdAt = profile.createdAt
         self.updatedAt = profile.updatedAt
         self.profileCompletedAt = profile.profileCompletedAt
+        self.profileImageURL = profile.profileImageURL
+        self.profileImagePath = profile.profileImagePath
     }
 
     func toDomain() -> ClientProfile {
@@ -55,7 +59,9 @@ struct ClientProfileDocument: Codable {
             isProfileComplete: isProfileComplete,
             createdAt: createdAt,
             updatedAt: updatedAt,
-            profileCompletedAt: profileCompletedAt
+            profileCompletedAt: profileCompletedAt,
+            profileImageURL: profileImageURL,
+            profileImagePath: profileImagePath
         )
     }
 }

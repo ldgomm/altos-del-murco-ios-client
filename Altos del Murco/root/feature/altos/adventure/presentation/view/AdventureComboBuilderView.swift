@@ -15,7 +15,9 @@ struct AdventureComboBuilderView: View {
     
     
     @State private var editingItem: AdventureReservationItemDraft?
+    
     @State private var isFoodPickerPresented = false
+    @State private var editingFoodItem: ReservationFoodItemDraft?
     
     private var authenticatedProfile: ClientProfile? {
         sessionViewModel.authenticatedProfile
@@ -70,6 +72,11 @@ struct AdventureComboBuilderView: View {
                 )
             ) { updated in
                 adventureComboBuilderViewModel.updateItem(updated)
+            }
+        }
+        .sheet(item: $editingFoodItem) { item in
+            ReservationFoodItemEditorView(item: item) { updated in
+                adventureComboBuilderViewModel.updateFoodItem(updated)
             }
         }
         .alert(
@@ -197,6 +204,59 @@ struct AdventureComboBuilderView: View {
         }
     }
     
+    private struct ReservationFoodItemEditorView: View {
+        @Environment(\.dismiss) private var dismiss
+
+        @State private var item: ReservationFoodItemDraft
+        let onSave: (ReservationFoodItemDraft) -> Void
+
+        init(
+            item: ReservationFoodItemDraft,
+            onSave: @escaping (ReservationFoodItemDraft) -> Void
+        ) {
+            _item = State(initialValue: item)
+            self.onSave = onSave
+        }
+
+        var body: some View {
+            NavigationStack {
+                Form {
+                    Section("Plato") {
+                        Text(item.name)
+                        Text("Unitario: \(item.unitPrice.priceText)")
+                            .foregroundStyle(.secondary)
+                    }
+
+                    Section("Cantidad") {
+                        Stepper("Cantidad: \(item.quantity)", value: $item.quantity, in: 1...50)
+                    }
+
+                    Section("Notas") {
+                        TextField("Sin cebolla, más cocido, etc.", text: Binding(
+                            get: { item.notes ?? "" },
+                            set: { item.notes = $0 }
+                        ), axis: .vertical)
+                        .lineLimit(3...5)
+                    }
+                }
+                .navigationTitle("Editar comida")
+                .toolbar {
+                    ToolbarItem(placement: .topBarLeading) {
+                        Button("Cancelar") { dismiss() }
+                    }
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button("Guardar") {
+                            onSave(item)
+                            dismiss()
+                        }
+                        .fontWeight(.semibold)
+                    }
+                }
+                .appScreenStyle(.adventure)
+            }
+        }
+    }
+    
     private var foodSection: some View {
         Section {
             VStack(alignment: .leading, spacing: 16) {
@@ -205,102 +265,192 @@ struct AdventureComboBuilderView: View {
                     title: "Comida",
                     subtitle: "También puedes hacer una reserva solo de comida para cumpleaños, reuniones o visitas futuras."
                 )
-                
-                if adventureComboBuilderViewModel.state.foodItems.isEmpty {
-                    Text("No hay platos agregados todavía.")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                } else {
-                    VStack(spacing: 12) {
-                        ForEach(adventureComboBuilderViewModel.state.foodItems) { item in
-                            ReservationFoodRow(
-                                item: item,
-                                onIncrease: { adventureComboBuilderViewModel.increaseFoodQuantity(item.id) },
-                                onDecrease: { adventureComboBuilderViewModel.decreaseFoodQuantity(item.id) },
-                                onRemove: { adventureComboBuilderViewModel.removeFoodItem(item.id) }
-                            )
-                        }
-                    }
-                }
-                
-                Button {
-                    isFoodPickerPresented = true
-                } label: {
-                    HStack(spacing: 12) {
-                        BrandIconBubble(theme: .adventure, systemImage: "fork.knife")
-
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("Agregar comida")
-                                .font(.headline)
-
-                            Text("Explora platos, ingredientes y detalles antes de agregarlos.")
-                                .font(.subheadline)
-                                .foregroundStyle(.secondary)
-                        }
-
-                        Spacer()
-
-                        Image(systemName: "chevron.right.circle.fill")
-                            .font(.title3)
-                            .foregroundStyle(.secondary)
-                    }
-                    .appCardStyle(.adventure, emphasized: false)
-                }
-                .buttonStyle(.plain)
-                .sheet(isPresented: $isFoodPickerPresented) {
-                    AdventureFoodPickerSheet(
-                        menuSections: menuViewModel.state.sections,
-                        selectedDate: adventureComboBuilderViewModel.state.selectedDate
-                    ) { item, quantity, notes in
-                        adventureComboBuilderViewModel.addFoodItem(
-                            item,
-                            quantity: quantity,
-                            notes: notes,
-                            for: adventureComboBuilderViewModel.state.selectedDate
-                        )
-                    }
-                }
-                
-                if !adventureComboBuilderViewModel.state.foodItems.isEmpty {
-                    Picker(
-                        "Momento de servicio",
-                        selection: Binding(
-                            get: { adventureComboBuilderViewModel.state.foodServingMoment },
-                            set: { adventureComboBuilderViewModel.setFoodServingMoment($0) }
-                        )
-                    ) {
-                        ForEach(ReservationServingMoment.allCases) { option in
-                            Text(option.title).tag(option)
-                        }
-                    }
-                    
-                    if adventureComboBuilderViewModel.state.foodServingMoment == .specificTime {
-                        DatePicker(
-                            "Hora de servicio",
-                            selection: Binding(
-                                get: { adventureComboBuilderViewModel.state.foodServingTime },
-                                set: { adventureComboBuilderViewModel.setFoodServingTime($0) }
-                            ),
-                            displayedComponents: .hourAndMinute
-                        )
-                    }
-                    
-                    TextField(
-                        "Notas de comida (opcional)",
-                        text: Binding(
-                            get: { adventureComboBuilderViewModel.state.foodNotes },
-                            set: { adventureComboBuilderViewModel.setFoodNotes($0) }
-                        ),
-                        axis: .vertical
-                    )
-                    .lineLimit(2...4)
-                    .appTextFieldStyle(.adventure)
-                }
             }
-            .appCardStyle(.adventure)
             .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
             .listRowBackground(Color.clear)
             .listRowSeparator(.hidden)
+
+            if adventureComboBuilderViewModel.state.foodItems.isEmpty {
+                Text("No hay platos agregados todavía.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .appCardStyle(.adventure, emphasized: false)
+                    .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
+            } else {
+                ForEach(adventureComboBuilderViewModel.state.foodItems) { item in
+                    ReservationFoodRow(
+                        item: item,
+                        onEdit: { editingFoodItem = item },
+                        onIncrease: { adventureComboBuilderViewModel.increaseFoodQuantity(item.id) },
+                        onDecrease: { adventureComboBuilderViewModel.decreaseFoodQuantity(item.id) },
+                        onRemove: { adventureComboBuilderViewModel.removeFoodItem(item.id) }
+                    )
+                    .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
+                    .swipeActions(edge: .trailing) {
+                        Button {
+                            editingFoodItem = item
+                        } label: {
+                            Label("Editar", systemImage: "pencil")
+                        }
+                        .tint(.blue)
+
+                        Button(role: .destructive) {
+                            adventureComboBuilderViewModel.removeFoodItem(item.id)
+                        } label: {
+                            Label("Quitar", systemImage: "trash")
+                        }
+                    }
+                }
+            }
+
+            Button {
+                isFoodPickerPresented = true
+            } label: {
+                HStack(spacing: 12) {
+                    BrandIconBubble(theme: .adventure, systemImage: "fork.knife")
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Agregar comida")
+                            .font(.headline)
+
+                        Text("Explora platos, ingredientes y detalles antes de agregarlos.")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    Spacer()
+
+                    Image(systemName: "chevron.right.circle.fill")
+                        .font(.title3)
+                        .foregroundStyle(.secondary)
+                }
+                .appCardStyle(.adventure, emphasized: false)
+            }
+            .buttonStyle(.plain)
+            .sheet(isPresented: $isFoodPickerPresented) {
+                AdventureFoodPickerSheet(
+                    menuSections: menuViewModel.state.sections,
+                    selectedDate: adventureComboBuilderViewModel.state.selectedDate
+                ) { item, quantity, notes in
+                    adventureComboBuilderViewModel.addFoodItem(
+                        item,
+                        quantity: quantity,
+                        notes: notes,
+                        for: adventureComboBuilderViewModel.state.selectedDate
+                    )
+                }
+            }
+            .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+            .listRowBackground(Color.clear)
+            .listRowSeparator(.hidden)
+
+            if !adventureComboBuilderViewModel.state.foodItems.isEmpty {
+                foodServingOptionsCard
+                    .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
+            }
+        }
+    }
+    
+    private var foodServingOptionsCard: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            BrandSectionHeader(
+                theme: .adventure,
+                title: "Servicio de comida",
+                subtitle: "Define cuándo debe servirse lo agregado."
+            )
+
+            Picker(
+                "Momento de servicio",
+                selection: Binding(
+                    get: { adventureComboBuilderViewModel.state.foodServingMoment },
+                    set: { adventureComboBuilderViewModel.setFoodServingMoment($0) }
+                )
+            ) {
+                ForEach(ReservationServingMoment.allCases) { option in
+                    Text(option.title).tag(option)
+                }
+            }
+
+            if adventureComboBuilderViewModel.state.foodServingMoment == .specificTime {
+                DatePicker(
+                    "Hora de servicio",
+                    selection: Binding(
+                        get: { adventureComboBuilderViewModel.state.foodServingTime },
+                        set: { adventureComboBuilderViewModel.setFoodServingTime($0) }
+                    ),
+                    displayedComponents: .hourAndMinute
+                )
+            }
+
+            TextField(
+                "Notas de comida (opcional)",
+                text: Binding(
+                    get: { adventureComboBuilderViewModel.state.foodNotes },
+                    set: { adventureComboBuilderViewModel.setFoodNotes($0) }
+                ),
+                axis: .vertical
+            )
+            .lineLimit(2...4)
+            .appTextFieldStyle(.adventure)
+        }
+        .appCardStyle(.adventure)
+    }
+    
+    private struct ReservationFoodRow: View {
+        let item: ReservationFoodItemDraft
+        let onEdit: () -> Void
+        let onIncrease: () -> Void
+        let onDecrease: () -> Void
+        let onRemove: () -> Void
+
+        var body: some View {
+            HStack(spacing: 12) {
+                BrandIconBubble(theme: .adventure, systemImage: "fork.knife", size: 46)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(item.name)
+                        .font(.headline)
+
+                    Text("Unitario: \(item.unitPrice.priceText)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
+                    Text("Subtotal: \(item.subtotal.priceText)")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+
+                    if let notes = item.notes, !notes.isEmpty {
+                        Text(notes)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                Spacer()
+
+                HStack(spacing: 10) {
+                    Button(action: onDecrease) {
+                        Image(systemName: "minus.circle.fill")
+                    }
+                    .buttonStyle(.plain)
+
+                    Text("\(item.quantity)")
+                        .font(.headline)
+                        .frame(minWidth: 20)
+
+                    Button(action: onIncrease) {
+                        Image(systemName: "plus.circle.fill")
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .appCardStyle(.adventure)
         }
     }
     

@@ -207,6 +207,25 @@ final class AdventureComboBuilderViewModel: ObservableObject {
             state.customEventTitle = ""
         }
     }
+    
+    func updateFoodItem(_ item: ReservationFoodItemDraft) {
+        guard let index = state.foodItems.firstIndex(where: { $0.id == item.id }) else { return }
+
+        let trimmedNotes = item.notes?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let finalNotes = (trimmedNotes?.isEmpty == false) ? trimmedNotes : nil
+
+        state.foodItems[index] = ReservationFoodItemDraft(
+            id: item.id,
+            menuItemId: item.menuItemId,
+            name: item.name,
+            unitPrice: item.unitPrice,
+            quantity: max(1, item.quantity),
+            notes: finalNotes
+        )
+
+        state.selectedSlot = nil
+        Task { await loadAvailability() }
+    }
 
     func setCustomEventTitle(_ value: String) { state.customEventTitle = value }
     func setEventNotes(_ value: String) { state.eventNotes = value }

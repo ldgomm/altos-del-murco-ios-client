@@ -41,8 +41,8 @@ struct ProfileContainerView: View {
                         .padding()
                     }
                     .navigationTitle("Profile")
+                    .appScreenStyle(.neutral)
                 }
-                .appScreenStyle(.neutral)
             }
         }
     }
