@@ -24,46 +24,46 @@ struct EditProfileView: View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 18) {
-                    ProfileFieldSection(theme: theme, title: "Account") {
+                    ProfileFieldSection(theme: theme, title: "Cuenta") {
                         ReadOnlyFieldCard(
                             theme: theme,
-                            title: "Email",
-                            value: viewModel.email.isEmpty ? "Hidden by Apple" : viewModel.email
+                            title: "Correo electrónico",
+                            value: viewModel.email.isEmpty ? "Oculto por Apple" : viewModel.email
                         )
                     }
 
-                    ProfileFieldSection(theme: theme, title: "Personal information") {
+                    ProfileFieldSection(theme: theme, title: "Información personal") {
                         EditableFieldCard(
                             theme: theme,
-                            title: "Full name",
-                            placeholder: "Enter your full name",
+                            title: "Nombre completo",
+                            placeholder: "Ingresa tu nombre completo",
                             text: $viewModel.fullName,
                             keyboardType: .default
                         )
 
                         EditableFieldCard(
                             theme: theme,
-                            title: "National unique number",
-                            placeholder: "Example: 0501234567",
+                            title: "Número de cédula",
+                            placeholder: "Ejemplo: 0501234567",
                             text: $viewModel.nationalId,
                             keyboardType: .numberPad
                         )
 
                         EditableFieldCard(
                             theme: theme,
-                            title: "Phone number",
-                            placeholder: "Example: 0987654321",
+                            title: "Número de teléfono",
+                            placeholder: "Ejemplo: 0987654321",
                             text: $viewModel.phoneNumber,
                             keyboardType: .phonePad
                         )
 
                         VStack(alignment: .leading, spacing: 10) {
-                            Label("Birthday", systemImage: "calendar")
+                            Label("Fecha de nacimiento", systemImage: "calendar")
                                 .font(.subheadline.bold())
                                 .foregroundStyle(palette.textPrimary)
 
                             DatePicker(
-                                "Birthday",
+                                "Fecha de nacimiento",
                                 selection: $viewModel.birthday,
                                 in: viewModel.validBirthdayRange,
                                 displayedComponents: .date
@@ -85,13 +85,13 @@ struct EditProfileView: View {
                         }
                     }
 
-                    ProfileFieldSection(theme: theme, title: "Address") {
+                    ProfileFieldSection(theme: theme, title: "Dirección") {
                         VStack(alignment: .leading, spacing: 10) {
-                            Label("Address", systemImage: "house")
+                            Label("Dirección", systemImage: "house")
                                 .font(.subheadline.bold())
                                 .foregroundStyle(palette.textPrimary)
 
-                            TextField("Street, reference, sector...", text: $viewModel.address, axis: .vertical)
+                            TextField("Calle, referencia, sector...", text: $viewModel.address, axis: .vertical)
                                 .textInputAutocapitalization(.words)
                                 .autocorrectionDisabled()
                                 .foregroundStyle(palette.textPrimary)
@@ -109,19 +109,19 @@ struct EditProfileView: View {
                         }
                     }
 
-                    ProfileFieldSection(theme: theme, title: "Emergency contact") {
+                    ProfileFieldSection(theme: theme, title: "Contacto de emergencia") {
                         EditableFieldCard(
                             theme: theme,
-                            title: "Emergency contact name",
-                            placeholder: "Who should we contact if needed?",
+                            title: "Nombre del contacto de emergencia",
+                            placeholder: "¿A quién debemos contactar si es necesario?",
                             text: $viewModel.emergencyContactName,
                             keyboardType: .default
                         )
 
                         EditableFieldCard(
                             theme: theme,
-                            title: "Emergency contact phone",
-                            placeholder: "Example: 0999999999",
+                            title: "Teléfono del contacto de emergencia",
+                            placeholder: "Ejemplo: 0999999999",
                             text: $viewModel.emergencyContactPhone,
                             keyboardType: .phonePad
                         )
@@ -150,11 +150,11 @@ struct EditProfileView: View {
                 }
                 .padding()
             }
-            .navigationTitle("Edit Profile")
+            .navigationTitle("Editar perfil")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    Button("Close") {
+                    Button("Cerrar") {
                         dismiss()
                     }
                 }
@@ -167,7 +167,7 @@ struct EditProfileView: View {
                             ProgressView()
                                 .tint(palette.primary)
                         } else {
-                            Text("Save")
+                            Text("Guardar")
                                 .fontWeight(.semibold)
                         }
                     }

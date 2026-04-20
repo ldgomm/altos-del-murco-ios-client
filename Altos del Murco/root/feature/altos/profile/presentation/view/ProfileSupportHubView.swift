@@ -16,24 +16,24 @@ struct ProfileSupportHubView: View {
         ScrollView {
             VStack(spacing: 16) {
                 supportRow(
-                    title: "Help & Support",
-                    subtitle: "Email our support team",
+                    title: "Ayuda y soporte",
+                    subtitle: "Escribe a nuestro equipo de soporte",
                     systemImage: "questionmark.circle.fill",
                     tint: .teal,
                     url: AppExternalLinks.supportEmail
                 )
 
                 supportRow(
-                    title: "Privacy Policy",
-                    subtitle: "Read how your data is used",
+                    title: "Política de privacidad",
+                    subtitle: "Lee cómo se usan tus datos",
                     systemImage: "hand.raised.fill",
                     tint: .indigo,
                     url: AppExternalLinks.privacyPolicy
                 )
 
                 supportRow(
-                    title: "Terms & Conditions",
-                    subtitle: "App and service terms",
+                    title: "Términos y condiciones",
+                    subtitle: "Términos de la app y del servicio",
                     systemImage: "doc.text.fill",
                     tint: .brown,
                     url: AppExternalLinks.terms
@@ -41,7 +41,7 @@ struct ProfileSupportHubView: View {
             }
             .padding(16)
         }
-        .navigationTitle("Help & Support")
+        .navigationTitle("Ayuda y soporte")
         .appScreenStyle(theme)
     }
 

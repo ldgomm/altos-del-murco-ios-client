@@ -28,7 +28,7 @@ struct DeleteAccountConfirmationView: View {
                         actionSection
                         
                         if viewModel.isDeletingAccount {
-                            ProgressView("Deleting account...")
+                            ProgressView("Eliminando cuenta...")
                                 .tint(palette.destructive)
                                 .foregroundStyle(palette.textSecondary)
                                 .padding(.top, 4)
@@ -37,7 +37,7 @@ struct DeleteAccountConfirmationView: View {
                     .padding(24)
                 }
             }
-            .navigationTitle("Confirm Deletion")
+            .navigationTitle("Confirmar eliminación")
             .navigationBarTitleDisplayMode(.inline)
         }
         .presentationDetents([.medium, .large])
@@ -61,11 +61,11 @@ struct DeleteAccountConfirmationView: View {
             }
             
             VStack(spacing: 10) {
-                Text("Delete account")
+                Text("Eliminar cuenta")
                     .font(.title2.bold())
                     .foregroundStyle(palette.textPrimary)
                 
-                Text("This action is permanent. Your profile will be removed and you will lose access to your account.")
+                Text("Esta acción es permanente. Tu perfil será eliminado y perderás el acceso a tu cuenta.")
                     .font(.body)
                     .foregroundStyle(palette.textSecondary)
                     .multilineTextAlignment(.center)
@@ -80,17 +80,17 @@ struct DeleteAccountConfirmationView: View {
         VStack(alignment: .leading, spacing: 14) {
             warningRow(
                 systemImage: "person.crop.circle.badge.xmark",
-                text: "Your client profile will be deleted"
+                text: "Tu perfil de cliente será eliminado"
             )
             
             warningRow(
                 systemImage: "rectangle.portrait.and.arrow.right",
-                text: "You will be signed out immediately"
+                text: "Se cerrará tu sesión inmediatamente"
             )
             
             warningRow(
                 systemImage: "exclamationmark.triangle.fill",
-                text: "This action cannot be undone"
+                text: "Esta acción no se puede deshacer"
             )
         }
         .appCardStyle(.neutral, emphasized: true)
@@ -98,7 +98,7 @@ struct DeleteAccountConfirmationView: View {
     
     private var actionSection: some View {
         VStack(spacing: 14) {
-            Text("To continue, confirm your identity with Apple.")
+            Text("Para continuar, confirma tu identidad con Apple.")
                 .font(.footnote)
                 .foregroundStyle(palette.textSecondary)
                 .multilineTextAlignment(.center)

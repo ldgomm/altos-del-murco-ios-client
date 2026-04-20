@@ -82,7 +82,7 @@ struct FeaturedMenuCard: View {
 
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
-                    BrandBadge(theme: .restaurant, title: "Featured", selected: true)
+                    BrandBadge(theme: .restaurant, title: "Destacados", selected: true)
                     Spacer()
                 }
                 

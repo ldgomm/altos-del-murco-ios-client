@@ -33,13 +33,13 @@ struct CheckoutView: View {
             .padding(.top, 12)
             .padding(.bottom, 32)
         }
-        .navigationTitle("Checkout")
+        .navigationTitle("Confirmación")
         .appScreenStyle(.restaurant)
         .alert(
             "Error",
             isPresented: .constant(viewModel.state.errorMessage != nil),
             actions: {
-                Button("OK") {
+                Button("Aceptar") {
                     viewModel.clearError()
                 }
             },
@@ -60,8 +60,8 @@ struct CheckoutView: View {
         VStack(alignment: .leading, spacing: 16) {
             BrandSectionHeader(
                 theme: .restaurant,
-                title: "Client Details",
-                subtitle: "Your profile information is used automatically for this order."
+                title: "Datos del cliente",
+                subtitle: "La información de tu perfil se utiliza automáticamente para este pedido."
             )
             
             VStack(spacing: 14) {
@@ -84,7 +84,7 @@ struct CheckoutView: View {
                 .disabled(true)
                 
                 themedField(
-                    title: "Table number",
+                    title: "Número de mesa",
                     text: Binding(
                         get: { cartManager.tableNumber },
                         set: { cartManager.updateTableNumber($0) }
@@ -96,11 +96,11 @@ struct CheckoutView: View {
                     BrandIconBubble(theme: .restaurant, systemImage: "person.crop.circle.badge.checkmark", size: 38)
                     
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("Need to update your information?")
+                        Text("¿Necesitas actualizar tu información?")
                             .font(.subheadline.weight(.semibold))
                             .foregroundStyle(palette.textPrimary)
                         
-                        Text("Please change your name or cédula from the Edit Profile page.")
+                        Text("Por favor, cambia tu nombre o cédula desde la página Editar perfil.")
                             .font(.subheadline)
                             .foregroundStyle(palette.textSecondary)
                     }
@@ -121,7 +121,7 @@ struct CheckoutView: View {
                     BrandIconBubble(theme: .restaurant, systemImage: "clock.fill", size: 38)
                     
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("Order time")
+                        Text("Hora del pedido")
                             .font(.subheadline.weight(.semibold))
                             .foregroundStyle(palette.textPrimary)
                         
@@ -150,13 +150,13 @@ struct CheckoutView: View {
         VStack(alignment: .leading, spacing: 16) {
             BrandSectionHeader(
                 theme: .restaurant,
-                title: "Summary",
-                subtitle: "Quick review of the order before confirming."
+                title: "Resumen",
+                subtitle: "Revisión rápida del pedido antes de confirmar."
             )
             
             VStack(spacing: 14) {
                 summaryRow(
-                    title: "Items",
+                    title: "Productos",
                     value: "\(cartManager.totalItems)",
                     systemImage: "fork.knife"
                 )
@@ -183,7 +183,7 @@ struct CheckoutView: View {
                             .tint(.white)
                             .frame(maxWidth: .infinity)
                     } else {
-                        Text("Confirm Order")
+                        Text("Confirmar pedido")
                             .frame(maxWidth: .infinity)
                     }
                 }
@@ -191,7 +191,7 @@ struct CheckoutView: View {
             .buttonStyle(BrandPrimaryButtonStyle(theme: .restaurant))
             .disabled(viewModel.state.isSubmitting)
             
-            Text("Review the data carefully before creating the order.")
+            Text("Revisa los datos cuidadosamente antes de crear el pedido.")
                 .font(.footnote)
                 .foregroundStyle(palette.textSecondary)
                 .multilineTextAlignment(.center)

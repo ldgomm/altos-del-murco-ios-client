@@ -39,7 +39,7 @@ struct ProfileView: View {
                 .padding(.bottom, 28)
             }
             .scrollIndicators(.hidden)
-            .navigationTitle("Profile")
+            .navigationTitle("Perfil")
             .appScreenStyle(theme)
             .sheet(isPresented: $viewModel.isShowingEditProfile) {
                 EditProfileView(
@@ -53,7 +53,7 @@ struct ProfileView: View {
                 Alert(
                     title: Text(item.title),
                     message: Text(item.message),
-                    dismissButton: .default(Text("OK"))
+                    dismissButton: .default(Text("Aceptar"))
                 )
             }
             .onAppear {
@@ -120,20 +120,20 @@ struct ProfileView: View {
                     .foregroundStyle(palette.textSecondary)
                     .multilineTextAlignment(.center)
 
-                Label("Member since \(viewModel.memberSinceText)", systemImage: "calendar")
+                Label("Miembro desde \(viewModel.memberSinceText)", systemImage: "calendar")
                     .font(.caption.weight(.medium))
                     .foregroundStyle(palette.textSecondary)
             }
 
             HStack(spacing: 10) {
                 compactInfoCard(
-                    title: "Phone",
+                    title: "Teléfono",
                     value: viewModel.phoneText,
                     systemImage: "phone.fill"
                 )
 
                 compactInfoCard(
-                    title: "Birthday",
+                    title: "Cumpleaños",
                     value: viewModel.birthdayText,
                     systemImage: "birthday.cake.fill"
                 )
@@ -147,7 +147,7 @@ struct ProfileView: View {
                 )
 
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Address")
+                    Text("Dirección")
                         .font(.caption.bold())
                         .foregroundStyle(palette.textSecondary)
 
@@ -253,7 +253,7 @@ struct ProfileView: View {
     private var statsSection: some View {
         VStack(spacing: 14) {
             HStack {
-                Text("Overview")
+                Text("Resumen")
                     .font(.headline)
                     .foregroundStyle(palette.textPrimary)
                 Spacer()
@@ -263,19 +263,19 @@ struct ProfileView: View {
 
             HStack(spacing: 12) {
                 profileStatCard(
-                    title: "Points",
-                    value: "\(viewModel.stats.points )",
+                    title: "Puntos",
+                    value: "\(viewModel.stats.points)",
                     systemImage: "star.fill"
                 )
 
                 profileStatCard(
-                    title: "Orders",
+                    title: "Pedidos",
                     value: "\(viewModel.stats.completedOrders)",
                     systemImage: "fork.knife"
                 )
 
                 profileStatCard(
-                    title: "Bookings",
+                    title: "Reservas",
                     value: "\(viewModel.stats.completedBookings)",
                     systemImage: "calendar"
                 )
@@ -283,13 +283,13 @@ struct ProfileView: View {
 
             HStack(spacing: 12) {
                 profileStatCard(
-                    title: "Restaurant",
+                    title: "Restaurante",
                     value: viewModel.stats.restaurantSpent.priceText,
                     systemImage: "takeoutbag.and.cup.and.straw.fill"
                 )
 
                 profileStatCard(
-                    title: "Adventure",
+                    title: "Aventura",
                     value: viewModel.stats.adventureSpent.priceText,
                     systemImage: "figure.hiking"
                 )
@@ -310,7 +310,7 @@ struct ProfileView: View {
             }
 
             VStack(alignment: .leading, spacing: 4) {
-                Text("\(viewModel.stats.level.title) Level")
+                Text("Nivel \(viewModel.stats.level.title)")
                     .font(.headline)
                     .foregroundStyle(palette.textPrimary)
 
@@ -318,7 +318,7 @@ struct ProfileView: View {
                     .font(.subheadline)
                     .foregroundStyle(palette.textSecondary)
 
-                Text("Completed spend: \(viewModel.stats.totalSpent.priceText)")
+                Text("Consumo acumulado: \(viewModel.stats.totalSpent.priceText)")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(palette.primary)
             }
@@ -393,14 +393,14 @@ struct ProfileView: View {
 
     private var mainMenuSection: some View {
         VStack(spacing: 12) {
-            sectionHeader("Settings")
+            sectionHeader("Configuración")
 
             NavigationLink {
                 ProfileAccountHubView(viewModel: viewModel)
             } label: {
                 navigationRow(
-                    title: "Account",
-                    subtitle: "Personal information, rewards and account actions",
+                    title: "Cuenta",
+                    subtitle: "Información personal, recompensas y acciones de la cuenta",
                     systemImage: "person.crop.circle",
                     tint: .blue
                 )
@@ -411,8 +411,8 @@ struct ProfileView: View {
                 ProfilePreferencesHubView(viewModel: viewModel)
             } label: {
                 navigationRow(
-                    title: "Preferences",
-                    subtitle: "Appearance and app permissions",
+                    title: "Preferencias",
+                    subtitle: "Apariencia y permisos de la app",
                     systemImage: "slider.horizontal.3",
                     tint: .purple
                 )
@@ -423,8 +423,8 @@ struct ProfileView: View {
                 ProfileSupportHubView()
             } label: {
                 navigationRow(
-                    title: "Help & Support",
-                    subtitle: "Support, privacy policy and terms",
+                    title: "Ayuda y soporte",
+                    subtitle: "Soporte, política de privacidad y términos",
                     systemImage: "questionmark.circle",
                     tint: .teal
                 )
@@ -435,7 +435,7 @@ struct ProfileView: View {
 
     private var socialCompactSection: some View {
         VStack(spacing: 12) {
-            sectionHeader("Social & Visit Us")
+            sectionHeader("Redes y visítanos")
 
             HStack(spacing: 14) {
                 socialIconButton(

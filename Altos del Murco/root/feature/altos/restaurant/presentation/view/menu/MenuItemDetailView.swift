@@ -35,7 +35,7 @@ struct MenuItemDetailView: View {
             .padding(.top, 12)
             .padding(.bottom, 120)
         }
-        .navigationTitle("Dish")
+        .navigationTitle("Plato")
         .navigationBarTitleDisplayMode(.inline)
         .appScreenStyle(.restaurant)
         .safeAreaInset(edge: .bottom) {
@@ -119,8 +119,8 @@ struct MenuItemDetailView: View {
         VStack(alignment: .leading, spacing: 10) {
             BrandSectionHeader(
                 theme: .restaurant,
-                title: "Description",
-                subtitle: "A closer look at this dish."
+                title: "Descripción",
+                subtitle: "Conoce más sobre este plato."
             )
             
             Text(item.description)
@@ -135,8 +135,8 @@ struct MenuItemDetailView: View {
         VStack(alignment: .leading, spacing: 12) {
             BrandSectionHeader(
                 theme: .restaurant,
-                title: "Ingredients",
-                subtitle: "Fresh components and accompaniments."
+                title: "Ingredientes",
+                subtitle: "Componentes frescos y acompañamientos."
             )
             
             ForEach(item.ingredients, id: \.self) { ingredient in
@@ -159,8 +159,8 @@ struct MenuItemDetailView: View {
         VStack(alignment: .leading, spacing: 12) {
             BrandSectionHeader(
                 theme: .restaurant,
-                title: "Price",
-                subtitle: item.hasOffer ? "Special offer available." : "Current regular price."
+                title: "Precio",
+                subtitle: item.hasOffer ? "Oferta especial disponible." : "Precio regular actual."
             )
             
             HStack(alignment: .lastTextBaseline, spacing: 10) {
@@ -187,8 +187,8 @@ struct MenuItemDetailView: View {
         VStack(alignment: .leading, spacing: 12) {
             BrandSectionHeader(
                 theme: .restaurant,
-                title: "Quantity",
-                subtitle: "Choose how many you want to add."
+                title: "Cantidad",
+                subtitle: "Elige cuántos quieres añadir."
             )
             
             QuantitySelectorView(
@@ -207,11 +207,11 @@ struct MenuItemDetailView: View {
         VStack(alignment: .leading, spacing: 12) {
             BrandSectionHeader(
                 theme: .restaurant,
-                title: "Notes",
-                subtitle: "Special instructions for the kitchen."
+                title: "Notas",
+                subtitle: "Instrucciones especiales para la cocina."
             )
             
-            TextField("Add any special notes (optional)", text: $notesText, axis: .vertical)
+            TextField("Agrega alguna nota especial (opcional)", text: $notesText, axis: .vertical)
                 .appTextFieldStyle(.restaurant)
                 .lineLimit(3, reservesSpace: true)
                 .disabled(!item.isAvailable)
@@ -223,7 +223,7 @@ struct MenuItemDetailView: View {
     private var bottomBar: some View {
         VStack(spacing: 12) {
             if showAddedMessage {
-                Text("Order has been added")
+                Text("El pedido ha sido agregado")
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(.white)
                     .padding(.horizontal, 16)

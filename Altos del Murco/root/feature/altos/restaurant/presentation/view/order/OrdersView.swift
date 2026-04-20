@@ -8,25 +8,25 @@
 import SwiftUI
 
 private enum OrdersGroupingOption: String, CaseIterable, Identifiable {
-    case byDate = "Date"
-    case byStatus = "Status"
+    case byDate = "Fecha"
+    case byStatus = "Estado"
     var id: String { rawValue }
 }
 
 private enum OrdersSortOption: String, CaseIterable, Identifiable {
-    case newestFirst = "Newest"
-    case oldestFirst = "Oldest"
-    case highestTotal = "Highest total"
+    case newestFirst = "Más recientes"
+    case oldestFirst = "Más antiguos"
+    case highestTotal = "Mayor total"
     var id: String { rawValue }
 }
 
 private enum OrdersStatusFilter: String, CaseIterable, Identifiable {
-    case all = "All"
-    case pending = "Pending"
-    case confirmed = "Confirmed"
-    case preparing = "Preparing"
-    case completed = "Completed"
-    case canceled = "Canceled"
+    case all = "Todos"
+    case pending = "Pendiente"
+    case confirmed = "Confirmado"
+    case preparing = "Preparando"
+    case completed = "Completado"
+    case canceled = "Cancelado"
 
     var id: String { rawValue }
 
@@ -128,7 +128,7 @@ struct OrdersView: View {
             BrandScreenBackground(theme: .restaurant)
             content
         }
-        .navigationTitle("Orders")
+        .navigationTitle("Pedidos")
         .navigationBarTitleDisplayMode(.large)
         .tint(palette.primary)
         .onAppear {
@@ -145,15 +145,15 @@ struct OrdersView: View {
             loadingView
         } else if let error = viewModel.state.errorMessage, viewModel.state.orders.isEmpty {
             stateCard(
-                title: "Something went wrong",
+                title: "Algo salió mal",
                 systemImage: "exclamationmark.triangle",
                 description: error
             )
         } else if viewModel.state.orders.isEmpty {
             stateCard(
-                title: "No orders yet",
+                title: "Aún no hay pedidos",
                 systemImage: "tray",
-                description: "Orders will appear here once customers place them."
+                description: "Los pedidos aparecerán aquí una vez que los clientes los realicen."
             )
         } else {
             ordersList
@@ -162,7 +162,7 @@ struct OrdersView: View {
 
     private var loadingView: some View {
         VStack {
-            ProgressView("Loading orders...")
+            ProgressView("Cargando pedidos...")
                 .tint(palette.primary)
                 .foregroundStyle(palette.textPrimary)
         }
@@ -236,8 +236,8 @@ struct OrdersView: View {
         } header: {
             BrandSectionHeader(
                 theme: .restaurant,
-                title: "Overview",
-                subtitle: "Track your orders with date grouping, filters and sorting."
+                title: "Resumen",
+                subtitle: "Haz seguimiento de tus pedidos con agrupación por fecha, filtros y ordenamiento."
             )
             .padding(.horizontal, 4)
             .padding(.bottom, 6)
@@ -248,20 +248,20 @@ struct OrdersView: View {
     private var controlsSection: some View {
         Section {
             VStack(spacing: 14) {
-                Picker("Group", selection: $grouping) {
+                Picker("Agrupar", selection: $grouping) {
                     ForEach(OrdersGroupingOption.allCases) { option in
                         Text(option.rawValue).tag(option)
                     }
                 }
                 .pickerStyle(.segmented)
 
-                Picker("Status", selection: $statusFilter) {
+                Picker("Estado", selection: $statusFilter) {
                     ForEach(OrdersStatusFilter.allCases) { option in
                         Text(option.rawValue).tag(option)
                     }
                 }
 
-                Picker("Sort", selection: $sortOption) {
+                Picker("Ordenar", selection: $sortOption) {
                     ForEach(OrdersSortOption.allCases) { option in
                         Text(option.rawValue).tag(option)
                     }
@@ -272,7 +272,7 @@ struct OrdersView: View {
             .listRowInsets(EdgeInsets(top: 8, leading: 8, bottom: 10, trailing: 8))
             .listRowBackground(Color.clear)
         } header: {
-            Text("Order tools")
+            Text("Herramientas de pedidos")
                 .font(.headline)
                 .foregroundStyle(palette.textSecondary)
                 .textCase(nil)
@@ -312,8 +312,8 @@ struct OrdersView: View {
 
     private func dateTitle(for day: Date) -> String {
         let calendar = Calendar.current
-        if calendar.isDateInToday(day) { return "Today" }
-        if calendar.isDateInYesterday(day) { return "Yesterday" }
+        if calendar.isDateInToday(day) { return "Hoy" }
+        if calendar.isDateInYesterday(day) { return "Ayer" }
         return day.formatted(date: .abbreviated, time: .omitted)
     }
 }

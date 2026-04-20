@@ -18,9 +18,9 @@ struct OrderDetailItemRow: View {
     }
 
     private var statusText: String {
-        if item.isCompleted { return "Ready" }
-        if item.isStarted { return "In progress" }
-        return "Waiting"
+        if item.isCompleted { return "Lista" }
+        if item.isStarted { return "En proceso" }
+        return "Esperando"
     }
 
     private var progressValue: Double {

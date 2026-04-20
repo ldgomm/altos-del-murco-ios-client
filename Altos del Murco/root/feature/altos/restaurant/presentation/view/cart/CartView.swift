@@ -15,20 +15,20 @@ struct CartView: View {
         VStack(spacing: 0) {
             if cartManager.isEmpty {
                 ContentUnavailableView(
-                    "Your cart is empty",
+                    "Tu carrito está vacío",
                     systemImage: "cart",
-                    description: Text("Add some delicious dishes from the menu.")
+                    description: Text("Agrega algunos platos deliciosos del menú.")
                 )
             } else {
                 List {
-                    Section("Items") {
+                    Section("Productos") {
                         ForEach(cartManager.items) { cartItem in
                             CartItemRowView(cartItem: cartItem)
                         }
                         .onDelete(perform: deleteItems)
                     }
                     
-                    Section("Summary") {
+                    Section("Resumen") {
                         HStack {
                             Text("Subtotal")
                                 .font(.headline)
@@ -39,7 +39,7 @@ struct CartView: View {
                         }
                         
                         HStack {
-                            Text("Items")
+                            Text("Productos")
                                 .foregroundStyle(.secondary)
                             Spacer()
                             Text("\(cartManager.totalItems)")
@@ -50,24 +50,24 @@ struct CartView: View {
                 .listStyle(.insetGrouped)
             }
         }
-        .navigationTitle("Cart")
+        .navigationTitle("Carrito")
         .appScreenStyle(.restaurant)
         .toolbar {
             if !cartManager.isEmpty {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("Clear") {
+                    Button("Vaciar") {
                         showClearCartAlert = true
                     }
                 }
             }
         }
-        .alert("Clear cart?", isPresented: $showClearCartAlert) {
-            Button("Cancel", role: .cancel) { }
-            Button("Clear", role: .destructive) {
+        .alert("¿Vaciar carrito?", isPresented: $showClearCartAlert) {
+            Button("Cancelar", role: .cancel) { }
+            Button("Vaciar", role: .destructive) {
                 cartManager.clear()
             }
         } message: {
-            Text("Are you sure you want to remove all items from your cart?")
+            Text("¿Estás seguro de que quieres eliminar todos los productos de tu carrito?")
         }
         .safeAreaInset(edge: .bottom) {
             if !cartManager.isEmpty {
@@ -86,7 +86,7 @@ struct CartView: View {
                         Spacer()
                         
                         NavigationLink(value: Route.checkout) {
-                            Text("Checkout")
+                            Text("Finalizar compra")
                                 .font(.headline)
                                 .frame(minWidth: 140)
                                 .padding(.vertical, 14)

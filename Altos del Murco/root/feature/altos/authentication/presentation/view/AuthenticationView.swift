@@ -68,8 +68,8 @@ struct AuthenticationView: View {
                 Text("Altos del Murco")
                     .font(.system(size: 34, weight: .bold, design: .rounded))
                     .foregroundStyle(palette.textPrimary)
-                
-                Text("Restaurant, adventure and rewards in one account.")
+
+                Text("Restaurante, aventura y recompensas en una sola cuenta.")
                     .font(.subheadline)
                     .foregroundStyle(palette.textSecondary)
                     .multilineTextAlignment(.center)
@@ -77,9 +77,9 @@ struct AuthenticationView: View {
             }
             
             HStack(spacing: 10) {
-                BrandBadge(theme: .restaurant, title: "Restaurant")
-                BrandBadge(theme: .adventure, title: "Adventure")
-                BrandBadge(theme: .neutral, title: "Rewards")
+                BrandBadge(theme: .restaurant, title: "Restaurante")
+                BrandBadge(theme: .adventure, title: "Aventura")
+                BrandBadge(theme: .neutral, title: "Recompensas")
             }
         }
         .frame(maxWidth: .infinity)
@@ -90,33 +90,33 @@ struct AuthenticationView: View {
         VStack(alignment: .leading, spacing: 18) {
             BrandSectionHeader(
                 theme: .neutral,
-                title: "Everything in one place",
-                subtitle: "Your account connects food, bookings, rewards and personalized offers."
+                title: "Todo en un solo lugar",
+                subtitle: "Tu cuenta conecta pedidos, reservas, recompensas y ofertas personalizadas."
             )
             
             VStack(spacing: 14) {
                 FeatureRow(
                     theme: .restaurant,
                     icon: "fork.knife",
-                    text: "Restaurant orders and loyalty"
+                    text: "Pedidos del restaurante y fidelización"
                 )
-                
+
                 FeatureRow(
                     theme: .neutral,
                     icon: "birthday.cake.fill",
-                    text: "Birthday discounts and special promos"
+                    text: "Descuentos de cumpleaños y promociones especiales"
                 )
-                
+
                 FeatureRow(
                     theme: .adventure,
                     icon: "figure.outdoor.cycle",
-                    text: "Adventure bookings in one place"
+                    text: "Reservas de aventura en un solo lugar"
                 )
-                
+
                 FeatureRow(
                     theme: .neutral,
                     icon: "lock.shield.fill",
-                    text: "Private and secure Apple sign in"
+                    text: "Inicio de sesión con Apple seguro y privado"
                 )
             }
         }
@@ -126,11 +126,11 @@ struct AuthenticationView: View {
     private var signInCard: some View {
         VStack(spacing: 18) {
             VStack(spacing: 8) {
-                Text("Sign in to continue")
+                Text("Inicia sesión para continuar")
                     .font(.title3.bold())
                     .foregroundStyle(palette.textPrimary)
                 
-                Text("Your profile helps us personalize reservations, discounts and contact details.")
+                Text("Tu perfil nos ayuda a personalizar tus reservas, descuentos y datos de contacto.")
                     .font(.footnote)
                     .multilineTextAlignment(.center)
                     .foregroundStyle(palette.textSecondary)
@@ -150,7 +150,7 @@ struct AuthenticationView: View {
                 y: 8
             )
             
-            Text("By continuing, your account will be linked to your Apple sign in.")
+            Text("Al continuar, tu cuenta se vinculará con tu inicio de sesión de Apple.")
                 .font(.footnote)
                 .foregroundStyle(palette.textTertiary)
                 .multilineTextAlignment(.center)

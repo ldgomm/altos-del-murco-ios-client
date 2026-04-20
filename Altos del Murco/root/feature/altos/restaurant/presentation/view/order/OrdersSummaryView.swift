@@ -38,7 +38,7 @@ struct OrdersSummaryView: View {
         LazyVGrid(columns: columns, spacing: 12) {
             SummaryMetricCard(
                 theme: theme,
-                title: "Pending",
+                title: "Pendientes",
                 value: "\(pendingCount)",
                 systemImage: "clock",
                 tone: .warning
@@ -46,7 +46,7 @@ struct OrdersSummaryView: View {
 
             SummaryMetricCard(
                 theme: theme,
-                title: "Preparing",
+                title: "En preparación",
                 value: "\(preparingCount)",
                 systemImage: "flame.fill",
                 tone: .accent
@@ -54,7 +54,7 @@ struct OrdersSummaryView: View {
 
             SummaryMetricCard(
                 theme: theme,
-                title: "Completed",
+                title: "Completados",
                 value: "\(completedCount)",
                 systemImage: "checkmark.circle.fill",
                 tone: .success
@@ -62,7 +62,7 @@ struct OrdersSummaryView: View {
 
             SummaryMetricCard(
                 theme: theme,
-                title: "Revenue",
+                title: "Ingresos",
                 value: totalRevenue.priceText,
                 systemImage: "dollarsign.circle.fill",
                 tone: .primary,

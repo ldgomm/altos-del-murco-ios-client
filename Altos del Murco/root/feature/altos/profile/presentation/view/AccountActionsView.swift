@@ -23,8 +23,8 @@ struct AccountActionsView: View {
         ScrollView {
             VStack(spacing: 16) {
                 dangerRow(
-                    title: "Sign Out",
-                    subtitle: "Close your current session on this device",
+                    title: "Cerrar sesión",
+                    subtitle: "Cierra tu sesión actual en este dispositivo",
                     systemImage: "rectangle.portrait.and.arrow.right",
                     tint: .orange
                 ) {
@@ -32,8 +32,8 @@ struct AccountActionsView: View {
                 }
 
                 dangerRow(
-                    title: "Delete Account",
-                    subtitle: "Permanently remove your account and profile",
+                    title: "Eliminar cuenta",
+                    subtitle: "Elimina permanentemente tu cuenta y perfil",
                     systemImage: "trash.fill",
                     tint: .red
                 ) {
@@ -42,29 +42,29 @@ struct AccountActionsView: View {
             }
             .padding(16)
         }
-        .navigationTitle("Account Actions")
+        .navigationTitle("Acciones de la cuenta")
         .appScreenStyle(theme)
         .confirmationDialog(
-            "Sign out?",
+            "¿Cerrar sesión?",
             isPresented: $showSignOutDialog,
             titleVisibility: .visible
         ) {
-            Button("Sign Out", role: .destructive) {
+            Button("Cerrar sesión", role: .destructive) {
                 viewModel.signOutTapped()
             }
-            Button("Cancel", role: .cancel) { }
+            Button("Cancelar", role: .cancel) { }
         }
         .confirmationDialog(
-            "Delete account?",
+            "¿Eliminar cuenta?",
             isPresented: $showDeleteDialog,
             titleVisibility: .visible
         ) {
-            Button("Delete Account", role: .destructive) {
+            Button("Eliminar cuenta", role: .destructive) {
                 viewModel.askForDeleteAccount()
             }
-            Button("Cancel", role: .cancel) { }
+            Button("Cancelar", role: .cancel) { }
         } message: {
-            Text("These actions affect your account and should be confirmed first.")
+            Text("Estas acciones afectan tu cuenta y deben confirmarse primero.")
         }
     }
 

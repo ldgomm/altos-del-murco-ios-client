@@ -41,8 +41,8 @@ struct OrderDetailView: View {
             } header: {
                 BrandSectionHeader(
                     theme: .restaurant,
-                    title: "Items",
-                    subtitle: "Everything included in this order"
+                    title: "Productos",
+                    subtitle: "Todo lo incluido en este pedido"
                 )
                 .padding(.horizontal, 16)
                 .padding(.top, 8)
@@ -56,7 +56,7 @@ struct OrderDetailView: View {
             } header: {
                 BrandSectionHeader(
                     theme: .restaurant,
-                    title: "Amounts"
+                    title: "Montos"
                 )
                 .padding(.horizontal, 16)
                 .padding(.top, 8)
@@ -66,7 +66,7 @@ struct OrderDetailView: View {
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
         .background(Color.clear)
-        .navigationTitle("Order Detail")
+        .navigationTitle("Detalle del pedido")
         .navigationBarTitleDisplayMode(.inline)
         .appScreenStyle(.restaurant)
     }
@@ -75,11 +75,11 @@ struct OrderDetailView: View {
         VStack(alignment: .leading, spacing: 18) {
             HStack(alignment: .top, spacing: 12) {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text(order.clientName.isEmpty ? "Walk-in customer" : order.clientName)
+                    Text(order.clientName.isEmpty ? "Cliente sin reserva" : order.clientName)
                         .font(.title3.bold())
                         .foregroundStyle(palette.textPrimary)
 
-                    Text("Order #\(order.id.prefix(8))")
+                    Text("Pedido #\(order.id.prefix(8))")
                         .font(.caption)
                         .foregroundStyle(palette.textSecondary)
                 }
@@ -91,13 +91,13 @@ struct OrderDetailView: View {
 
             HStack(spacing: 12) {
                 DetailMetricView(
-                    title: "Table",
+                    title: "Mesa",
                     value: order.tableNumber,
                     systemImage: "tablecells"
                 )
 
                 DetailMetricView(
-                    title: "Items",
+                    title: "Productos",
                     value: "\(order.totalItems)",
                     systemImage: "fork.knife"
                 )
@@ -105,13 +105,13 @@ struct OrderDetailView: View {
 
             HStack(spacing: 12) {
                 DetailMetricView(
-                    title: "Created",
+                    title: "Creado",
                     value: order.createdAt.shortDateTimeString,
                     systemImage: "calendar"
                 )
 
                 DetailMetricView(
-                    title: "Updated",
+                    title: "Actualizado",
                     value: order.updatedAt.shortDateTimeString,
                     systemImage: "clock.arrow.circlepath"
                 )
@@ -119,7 +119,7 @@ struct OrderDetailView: View {
 
             VStack(alignment: .leading, spacing: 10) {
                 HStack {
-                    Text("Preparation progress")
+                    Text("Progreso de preparación")
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(palette.textPrimary)
 
@@ -135,7 +135,7 @@ struct OrderDetailView: View {
             }
 
             if order.requiresReconfirmation {
-                Label("This order needs reconfirmation before kitchen proceeds.", systemImage: "exclamationmark.triangle.fill")
+                Label("Este pedido necesita reconfirmación antes de que cocina continúe.", systemImage: "exclamationmark.triangle.fill")
                     .font(.subheadline)
                     .foregroundStyle(palette.warning)
                     .padding(.top, 2)

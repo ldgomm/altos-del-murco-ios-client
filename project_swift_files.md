@@ -707,6 +707,68 @@ struct AdventureFeaturedPackageDto: Codable {
 import Foundation
 import FirebaseFirestore
 
+private final class CompositeAdventureListenerToken: AdventureListenerToken {
+    private var registrations: [ListenerRegistration]
+
+    init(registrations: [ListenerRegistration]) {
+        self.registrations = registrations
+    }
+
+    func remove() {
+        registrations.forEach { $0.remove() }
+        registrations.removeAll()
+    }
+}
+
+private final class AdventureCatalogObservationCoordinator {
+    private let makeSnapshot: (QuerySnapshot, QuerySnapshot) throws -> AdventureCatalogSnapshot
+    private let onChange: (Result<AdventureCatalogSnapshot, Error>) -> Void
+
+    private var activitiesSnapshot: QuerySnapshot?
+    private var packagesSnapshot: QuerySnapshot?
+
+    init(
+        makeSnapshot: @escaping (QuerySnapshot, QuerySnapshot) throws -> AdventureCatalogSnapshot,
+        onChange: @escaping (Result<AdventureCatalogSnapshot, Error>) -> Void
+    ) {
+        self.makeSnapshot = makeSnapshot
+        self.onChange = onChange
+    }
+
+    func receiveActivities(snapshot: QuerySnapshot?, error: Error?) {
+        if let error {
+            onChange(.failure(error))
+            return
+        }
+
+        guard let snapshot else { return }
+        activitiesSnapshot = snapshot
+        emitIfReady()
+    }
+
+    func receivePackages(snapshot: QuerySnapshot?, error: Error?) {
+        if let error {
+            onChange(.failure(error))
+            return
+        }
+
+        guard let snapshot else { return }
+        packagesSnapshot = snapshot
+        emitIfReady()
+    }
+
+    private func emitIfReady() {
+        guard let activitiesSnapshot, let packagesSnapshot else { return }
+
+        do {
+            let snapshot = try makeSnapshot(activitiesSnapshot, packagesSnapshot)
+            onChange(.success(snapshot))
+        } catch {
+            onChange(.failure(error))
+        }
+    }
+}
+
 final class AdventureCatalogService: AdventureCatalogServiceable {
     private let db: Firestore
     private let activitiesCollection = "adventure_activities"
@@ -723,6 +785,52 @@ final class AdventureCatalogService: AdventureCatalogServiceable {
         let activitiesSnapshot = try await activitiesTask
         let packagesSnapshot = try await packagesTask
 
+        return try makeCatalogSnapshot(
+            activitiesSnapshot: activitiesSnapshot,
+            packagesSnapshot: packagesSnapshot
+        )
+    }
+
+    func observeCatalog(
+        onChange: @escaping (Result<AdventureCatalogSnapshot, Error>) -> Void
+    ) -> AdventureListenerToken {
+        let coordinator = AdventureCatalogObservationCoordinator(
+            makeSnapshot: { [weak self] activitiesSnapshot, packagesSnapshot in
+                guard let self else {
+                    throw NSError(
+                        domain: "AdventureCatalogService",
+                        code: -1,
+                        userInfo: [NSLocalizedDescriptionKey: "AdventureCatalogService is no longer available."]
+                    )
+                }
+
+                return try self.makeCatalogSnapshot(
+                    activitiesSnapshot: activitiesSnapshot,
+                    packagesSnapshot: packagesSnapshot
+                )
+            },
+            onChange: onChange
+        )
+
+        let activitiesRegistration = db.collection(activitiesCollection)
+            .addSnapshotListener { snapshot, error in
+                coordinator.receiveActivities(snapshot: snapshot, error: error)
+            }
+
+        let packagesRegistration = db.collection(packagesCollection)
+            .addSnapshotListener { snapshot, error in
+                coordinator.receivePackages(snapshot: snapshot, error: error)
+            }
+
+        return CompositeAdventureListenerToken(
+            registrations: [activitiesRegistration, packagesRegistration]
+        )
+    }
+
+    private func makeCatalogSnapshot(
+        activitiesSnapshot: QuerySnapshot,
+        packagesSnapshot: QuerySnapshot
+    ) throws -> AdventureCatalogSnapshot {
         let activities = try activitiesSnapshot.documents.compactMap { document -> AdventureActivityCatalogItem? in
             let dto = try document.data(as: AdventureActivityCatalogDto.self)
             return dto.toDomain()
@@ -736,10 +844,6 @@ final class AdventureCatalogService: AdventureCatalogServiceable {
             guard dto.isActive else { return nil }
 
             let items = dto.items.compactMap { $0.toDomain() }
-
-            // Safe behavior:
-            // Hide the full package if any item references an unknown activity
-            // or an inactive activity, so package semantics stay predictable.
             guard items.count == dto.items.count else { return nil }
 
             let allItemsActive = items.allSatisfy { item in
@@ -997,6 +1101,10 @@ import Foundation
 
 protocol AdventureCatalogServiceable {
     func fetchCatalog() async throws -> AdventureCatalogSnapshot
+
+    func observeCatalog(
+        onChange: @escaping (Result<AdventureCatalogSnapshot, Error>) -> Void
+    ) -> AdventureListenerToken
 }
 
 ```
@@ -1020,6 +1128,16 @@ struct FetchAdventureCatalogUseCase {
 
     func execute() async throws -> AdventureCatalogSnapshot {
         try await service.fetchCatalog()
+    }
+}
+
+struct ObserveAdventureCatalogUseCase {
+    let service: AdventureCatalogServiceable
+
+    func execute(
+        onChange: @escaping (Result<AdventureCatalogSnapshot, Error>) -> Void
+    ) -> AdventureListenerToken {
+        service.observeCatalog(onChange: onChange)
     }
 }
 
@@ -1979,20 +2097,19 @@ final class AdventureModuleFactory {
             initialPackageDiscountAmount: packageDiscountAmount,
             getAvailabilityUseCase: GetAdventureAvailabilityUseCase(service: bookingsService),
             createBookingUseCase: CreateAdventureBookingUseCase(service: bookingsService),
-            fetchAdventureCatalogUseCase: FetchAdventureCatalogUseCase(service: catalogService)
-        )
-    }
-
-    func makeBookingsViewModel() -> AdventureBookingsViewModel {
-        AdventureBookingsViewModel(
-            observeBookingsUseCase: ObserveAdventureBookingsUseCase(service: bookingsService),
-            cancelBookingUseCase: CancelAdventureBookingUseCase(service: bookingsService)
+            fetchAdventureCatalogUseCase: FetchAdventureCatalogUseCase(service: catalogService),
+            observeAdventureCatalogUseCase: ObserveAdventureCatalogUseCase(service: catalogService)
         )
     }
 
     func makeCatalogViewModel() -> AdventureCatalogViewModel {
-        AdventureCatalogViewModel(
-            fetchAdventureCatalogUseCase: FetchAdventureCatalogUseCase(service: catalogService)
+        AdventureCatalogViewModel(service: catalogService)
+    }
+    
+    func makeBookingsViewModel() -> AdventureBookingsViewModel {
+        AdventureBookingsViewModel(
+            observeBookingsUseCase: ObserveAdventureBookingsUseCase(service: bookingsService),
+            cancelBookingUseCase: CancelAdventureBookingUseCase(service: bookingsService)
         )
     }
 }
@@ -2118,10 +2235,9 @@ import SwiftUI
 struct AdventureCatalogView: View {
     @ObservedObject var adventureComboBuilderViewModel: AdventureComboBuilderViewModel
     @ObservedObject var menuViewModel: MenuViewModel
+    
     @StateObject private var catalogViewModel = AdventureCatalogViewModel(
-        fetchAdventureCatalogUseCase: FetchAdventureCatalogUseCase(
-            service: AdventureCatalogService()
-        )
+        service: AdventureCatalogService()
     )
 
     @Environment(\.colorScheme) private var colorScheme
@@ -2164,6 +2280,9 @@ struct AdventureCatalogView: View {
         }
         .onAppear {
             catalogViewModel.onAppear()
+        }
+        .onDisappear {
+            catalogViewModel.onDisappear()
         }
     }
 
@@ -2506,6 +2625,9 @@ struct AdventureComboBuilderView: View {
             syncProfileFieldsFromSession()
             adventureComboBuilderViewModel.onAppear()
         }
+        .onDisappear {
+            adventureComboBuilderViewModel.onDisappear()
+        }
         .onChange(of: authenticatedProfile?.id) { _, _ in
             syncProfileFieldsFromSession()
         }
@@ -2524,9 +2646,12 @@ struct AdventureComboBuilderView: View {
                 adventureComboBuilderViewModel.updateItem(updated)
             }
         }
-        .sheet(item: $editingFoodItem) { item in
+        .sheet(item: $editingFoodItem, onDismiss: {
+            editingFoodItem = nil
+        }) { item in
             ReservationFoodItemEditorView(item: item) { updated in
                 adventureComboBuilderViewModel.updateFoodItem(updated)
+                editingFoodItem = nil
             }
         }
         .alert(
@@ -2737,10 +2862,14 @@ struct AdventureComboBuilderView: View {
                         onDecrease: { adventureComboBuilderViewModel.decreaseFoodQuantity(item.id) },
                         onRemove: { adventureComboBuilderViewModel.removeFoodItem(item.id) }
                     )
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        editingFoodItem = item
+                    }
                     .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
                     .listRowBackground(Color.clear)
                     .listRowSeparator(.hidden)
-                    .swipeActions(edge: .trailing) {
+                    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                         Button {
                             editingFoodItem = item
                         } label: {
@@ -2884,20 +3013,28 @@ struct AdventureComboBuilderView: View {
 
                 Spacer()
 
-                HStack(spacing: 10) {
-                    Button(action: onDecrease) {
-                        Image(systemName: "minus.circle.fill")
+                VStack(alignment: .trailing, spacing: 10) {
+                    Button(action: onEdit) {
+                        Image(systemName: "pencil.circle.fill")
+                            .font(.title3)
                     }
                     .buttonStyle(.plain)
 
-                    Text("\(item.quantity)")
-                        .font(.headline)
-                        .frame(minWidth: 20)
+                    HStack(spacing: 10) {
+                        Button(action: onDecrease) {
+                            Image(systemName: "minus.circle.fill")
+                        }
+                        .buttonStyle(.plain)
 
-                    Button(action: onIncrease) {
-                        Image(systemName: "plus.circle.fill")
+                        Text("\(item.quantity)")
+                            .font(.headline)
+                            .frame(minWidth: 20)
+
+                        Button(action: onIncrease) {
+                            Image(systemName: "plus.circle.fill")
+                        }
+                        .buttonStyle(.plain)
                     }
-                    .buttonStyle(.plain)
                 }
             }
             .appCardStyle(.adventure)
@@ -5432,16 +5569,48 @@ final class AdventureCatalogViewModel: ObservableObject {
     @Published private(set) var state = AdventureCatalogState()
 
     private let fetchAdventureCatalogUseCase: FetchAdventureCatalogUseCase
-    private var hasLoadedOnce = false
+    private let observeAdventureCatalogUseCase: ObserveAdventureCatalogUseCase
+    private var listenerToken: AdventureListenerToken?
 
-    init(fetchAdventureCatalogUseCase: FetchAdventureCatalogUseCase) {
+    init(service: AdventureCatalogServiceable) {
+        self.fetchAdventureCatalogUseCase = FetchAdventureCatalogUseCase(service: service)
+        self.observeAdventureCatalogUseCase = ObserveAdventureCatalogUseCase(service: service)
+    }
+
+    init(
+        fetchAdventureCatalogUseCase: FetchAdventureCatalogUseCase,
+        observeAdventureCatalogUseCase: ObserveAdventureCatalogUseCase
+    ) {
         self.fetchAdventureCatalogUseCase = fetchAdventureCatalogUseCase
+        self.observeAdventureCatalogUseCase = observeAdventureCatalogUseCase
     }
 
     func onAppear() {
-        guard !hasLoadedOnce else { return }
-        hasLoadedOnce = true
-        Task { await load() }
+        guard listenerToken == nil else { return }
+
+        state.isLoading = true
+        state.errorMessage = nil
+
+        listenerToken = observeAdventureCatalogUseCase.execute { [weak self] result in
+            Task { @MainActor in
+                guard let self else { return }
+
+                switch result {
+                case .success(let catalog):
+                    self.state.catalog = catalog
+                    self.state.isLoading = false
+
+                case .failure(let error):
+                    self.state.errorMessage = error.localizedDescription
+                    self.state.isLoading = false
+                }
+            }
+        }
+    }
+
+    func onDisappear() {
+        listenerToken?.remove()
+        listenerToken = nil
     }
 
     func refresh() {
@@ -5453,8 +5622,7 @@ final class AdventureCatalogViewModel: ObservableObject {
         state.errorMessage = nil
 
         do {
-            let catalog = try await fetchAdventureCatalogUseCase.execute()
-            state.catalog = catalog
+            state.catalog = try await fetchAdventureCatalogUseCase.execute()
         } catch {
             state.errorMessage = error.localizedDescription
         }
@@ -5520,13 +5688,17 @@ final class AdventureComboBuilderViewModel: ObservableObject {
     private let createBookingUseCase: CreateAdventureBookingUseCase
     private let fetchAdventureCatalogUseCase: FetchAdventureCatalogUseCase
     private var hasLoadedCatalog = false
+    
+    private let observeAdventureCatalogUseCase: ObserveAdventureCatalogUseCase
+    private var catalogListenerToken: AdventureListenerToken?
 
     init(
         prefilledItems: [AdventureReservationItemDraft],
         initialPackageDiscountAmount: Double,
         getAvailabilityUseCase: GetAdventureAvailabilityUseCase,
         createBookingUseCase: CreateAdventureBookingUseCase,
-        fetchAdventureCatalogUseCase: FetchAdventureCatalogUseCase
+        fetchAdventureCatalogUseCase: FetchAdventureCatalogUseCase,
+        observeAdventureCatalogUseCase: ObserveAdventureCatalogUseCase
     ) {
         self.state = AdventureComboBuilderState(
             items: prefilledItems.isEmpty ? [AdventureActivityType.defaultDraft(for: .offRoad)] : prefilledItems,
@@ -5535,15 +5707,65 @@ final class AdventureComboBuilderViewModel: ObservableObject {
         self.getAvailabilityUseCase = getAvailabilityUseCase
         self.createBookingUseCase = createBookingUseCase
         self.fetchAdventureCatalogUseCase = fetchAdventureCatalogUseCase
+        self.observeAdventureCatalogUseCase = observeAdventureCatalogUseCase
 
         keepCampingAtEnd()
     }
 
     func onAppear() {
+        startCatalogObservationIfNeeded()
+
         Task {
             await loadCatalogIfNeeded()
             await loadAvailability()
         }
+    }
+    
+    private func startCatalogObservationIfNeeded() {
+        guard catalogListenerToken == nil else { return }
+
+        catalogListenerToken = observeAdventureCatalogUseCase.execute { [weak self] result in
+            Task { @MainActor in
+                guard let self else { return }
+
+                switch result {
+                case .success(let catalog):
+                    self.applyCatalog(catalog)
+                    Task { await self.loadAvailability() }
+
+                case .failure(let error):
+                    self.state.errorMessage = error.localizedDescription
+                    self.state.isLoadingCatalog = false
+                }
+            }
+        }
+    }
+
+    private func applyCatalog(_ catalog: AdventureCatalogSnapshot) {
+        state.catalog = catalog
+
+        state.items = state.items.map { current in
+            if let config = catalog.activity(for: current.activity) {
+                return AdventureReservationItemDraft(
+                    id: current.id,
+                    activity: current.activity,
+                    durationMinutes: normalizeDuration(current.durationMinutes, for: config),
+                    peopleCount: max(current.peopleCount, config.defaults.peopleCount),
+                    vehicleCount: max(current.vehicleCount, config.defaults.vehicleCount),
+                    offRoadRiderCount: max(current.offRoadRiderCount, config.defaults.offRoadRiderCount),
+                    nights: max(current.nights, config.defaults.nights)
+                )
+            }
+            return current
+        }
+
+        keepCampingAtEnd()
+        state.isLoadingCatalog = false
+    }
+
+    func onDisappear() {
+        catalogListenerToken?.remove()
+        catalogListenerToken = nil
     }
 
     var activeActivityConfigs: [AdventureActivityCatalogItem] {
@@ -5681,12 +5903,10 @@ final class AdventureComboBuilderViewModel: ObservableObject {
     }
     
     func updateFoodItem(_ item: ReservationFoodItemDraft) {
-        guard let index = state.foodItems.firstIndex(where: { $0.id == item.id }) else { return }
-
         let trimmedNotes = item.notes?.trimmingCharacters(in: .whitespacesAndNewlines)
         let finalNotes = (trimmedNotes?.isEmpty == false) ? trimmedNotes : nil
 
-        state.foodItems[index] = ReservationFoodItemDraft(
+        let updatedItem = ReservationFoodItemDraft(
             id: item.id,
             menuItemId: item.menuItemId,
             name: item.name,
@@ -5694,6 +5914,14 @@ final class AdventureComboBuilderViewModel: ObservableObject {
             quantity: max(1, item.quantity),
             notes: finalNotes
         )
+
+        if let index = state.foodItems.firstIndex(where: { $0.id == item.id }) {
+            state.foodItems[index] = updatedItem
+        } else {
+            // Defensive fix: if the row was removed by UI interaction,
+            // saving the editor restores it instead of losing the change.
+            state.foodItems.append(updatedItem)
+        }
 
         state.selectedSlot = nil
         Task { await loadAvailability() }
@@ -5801,28 +6029,11 @@ final class AdventureComboBuilderViewModel: ObservableObject {
         state.isLoadingCatalog = true
         do {
             let catalog = try await fetchAdventureCatalogUseCase.execute()
-            state.catalog = catalog
-
-            state.items = state.items.map { current in
-                if let config = catalog.activity(for: current.activity) {
-                    return AdventureReservationItemDraft(
-                        id: current.id,
-                        activity: current.activity,
-                        durationMinutes: normalizeDuration(current.durationMinutes, for: config),
-                        peopleCount: max(current.peopleCount, config.defaults.peopleCount),
-                        vehicleCount: max(current.vehicleCount, config.defaults.vehicleCount),
-                        offRoadRiderCount: max(current.offRoadRiderCount, config.defaults.offRoadRiderCount),
-                        nights: max(current.nights, config.defaults.nights)
-                    )
-                }
-                return current
-            }
-
-            keepCampingAtEnd()
+            applyCatalog(catalog)
         } catch {
             state.errorMessage = error.localizedDescription
+            state.isLoadingCatalog = false
         }
-        state.isLoadingCatalog = false
     }
 
     private func normalizeDuration(_ value: Int, for config: AdventureActivityCatalogItem) -> Int {
@@ -17335,3 +17546,4 @@ extension OrderStatus {
 
 ---
 
+17549

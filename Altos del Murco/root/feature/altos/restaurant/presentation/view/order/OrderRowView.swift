@@ -1,6 +1,6 @@
 //
 //  OrderRowView.swift
-//  Altos del Murco
+//  Altaurante Altos del Murco
 //
 //  Created by José Ruiz on 12/3/26.
 //
@@ -36,7 +36,7 @@ struct OrderRowView: View {
     }
 
     private var progressText: String {
-        "\(order.preparedItemsCount)/\(order.totalItems) items"
+        "\(order.preparedItemsCount)/\(order.totalItems) productos"
     }
 
     private var progressValue: Double {
@@ -48,12 +48,12 @@ struct OrderRowView: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .top, spacing: 12) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(order.clientName.isEmpty ? "Walk-in customer" : order.clientName)
+                    Text(order.clientName.isEmpty ? "Cliente sin reserva" : order.clientName)
                         .font(.headline)
                         .foregroundStyle(palette.textPrimary)
 
                     HStack(spacing: 8) {
-                        Label("Table \(order.tableNumber)", systemImage: "tablecells")
+                        Label("Mesa \(order.tableNumber)", systemImage: "tablecells")
                         Label(order.createdAt.relativeTimeString, systemImage: "clock")
                     }
                     .font(.caption)
@@ -85,11 +85,11 @@ struct OrderRowView: View {
             }
 
             if order.requiresReconfirmation {
-                Label("Edited after confirmation", systemImage: "exclamationmark.arrow.trianglehead.2.clockwise")
+                Label("Editado después de la confirmación", systemImage: "exclamationmark.arrow.trianglehead.2.clockwise")
                     .font(.caption)
                     .foregroundStyle(palette.warning)
             } else if order.wasEditedAfterConfirmation {
-                Label("Updated order", systemImage: "pencil.circle")
+                Label("Pedido actualizado", systemImage: "pencil.circle")
                     .font(.caption)
                     .foregroundStyle(palette.textSecondary)
             }

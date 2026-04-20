@@ -20,7 +20,7 @@ struct ProfilePreferencesHubView: View {
                     AppearanceSettingsView(viewModel: viewModel)
                 } label: {
                     row(
-                        title: "Appearance",
+                        title: "Apariencia",
                         subtitle: viewModel.appearanceTitle,
                         systemImage: "circle.lefthalf.filled"
                     )
@@ -32,8 +32,8 @@ struct ProfilePreferencesHubView: View {
                     openURL(settingsURL)
                 } label: {
                     row(
-                        title: "App Permissions",
-                        subtitle: "Notifications, location and device settings",
+                        title: "Permisos de la app",
+                        subtitle: "Notificaciones, ubicación y ajustes del dispositivo",
                         systemImage: "gearshape.2.fill"
                     )
                 }
@@ -41,7 +41,7 @@ struct ProfilePreferencesHubView: View {
             }
             .padding(16)
         }
-        .navigationTitle("Preferences")
+        .navigationTitle("Preferencias")
         .appScreenStyle(theme)
     }
 

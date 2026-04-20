@@ -18,6 +18,7 @@ struct AdventureComboBuilderView: View {
     
     @State private var isFoodPickerPresented = false
     @State private var editingFoodItem: ReservationFoodItemDraft?
+    @State private var isContactSectionExpanded = false
     
     private var authenticatedProfile: ClientProfile? {
         sessionViewModel.authenticatedProfile
@@ -140,7 +141,7 @@ struct AdventureComboBuilderView: View {
                         .foregroundStyle(.secondary)
                         .padding(.top, 2)
                 }
-                
+            
                 if adventureComboBuilderViewModel.state.items.contains(where: { $0.activity == .offRoad }) {
                     HStack(alignment: .top, spacing: 12) {
                         BrandIconBubble(theme: .adventure, systemImage: "info.circle", size: 34)
@@ -275,12 +276,13 @@ struct AdventureComboBuilderView: View {
             .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
             .listRowBackground(Color.clear)
             .listRowSeparator(.hidden)
-
+            
             if adventureComboBuilderViewModel.state.foodItems.isEmpty {
                 Text("No hay platos agregados todavía.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
-                    .appCardStyle(.adventure, emphasized: false)
+                    .frame(maxWidth: .infinity, alignment: .leading) // or .center
+                    .appCardStyle(.adventure)
                     .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
                     .listRowBackground(Color.clear)
                     .listRowSeparator(.hidden)
@@ -685,7 +687,7 @@ struct AdventureComboBuilderView: View {
                 }
 
                 if isBlockedForSelectedDate {
-                    Text("For today this is out of stock and cannot be ordered")
+                    Text("Por hoy está agotado y no se puede pedir")
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(.red)
                 }
@@ -746,11 +748,11 @@ struct AdventureComboBuilderView: View {
                         VStack(alignment: .leading, spacing: 10) {
                             BrandSectionHeader(
                                 theme: .adventure,
-                                title: "Availability",
-                                subtitle: "This restriction only applies for today's reservations."
+                                title: "Disponibilidad",
+                                subtitle: "Esta restricción solo aplica para las reservas de hoy."
                             )
 
-                            Text("For today this is out of stock and cannot be ordered. Select tomorrow or another future day to reserve it.")
+                            Text("Por hoy está agotado y no se puede pedir. Selecciona mañana u otro día futuro para reservarlo.")
                                 .font(.subheadline)
                                 .foregroundStyle(.secondary)
                         }
@@ -987,73 +989,101 @@ struct AdventureComboBuilderView: View {
     private var contactSection: some View {
         Section {
             VStack(alignment: .leading, spacing: 16) {
-                BrandSectionHeader(
-                    theme: .adventure,
-                    title: "Contacto",
-                    subtitle: "Your profile information is used automatically for this reservation."
-                )
-                
-                TextField(
-                    "",
-                    text: Binding(
-                        get: { authenticatedProfile?.nationalId ?? adventureComboBuilderViewModel.state.nationalId },
-                        set: { _ in }
-                    ),
-                    prompt: Text("Cédula")
-                )
-                .disabled(true)
-                .keyboardType(.numberPad)
-                .appTextFieldStyle(.adventure)
-                
-                TextField(
-                    "",
-                    text: Binding(
-                        get: { authenticatedProfile?.fullName ?? adventureComboBuilderViewModel.state.clientName },
-                        set: { _ in }
-                    ),
-                    prompt: Text("Nombre")
-                )
-                .disabled(true)
-                .appTextFieldStyle(.adventure)
-                
-                TextField(
-                    "",
-                    text: Binding(
-                        get: { authenticatedProfile?.phoneNumber ?? adventureComboBuilderViewModel.state.whatsappNumber },
-                        set: { _ in }
-                    ),
-                    prompt: Text("WhatsApp")
-                )
-                .disabled(true)
-                .keyboardType(.phonePad)
-                .appTextFieldStyle(.adventure)
-                
-                HStack(alignment: .top, spacing: 12) {
-                    BrandIconBubble(theme: .adventure, systemImage: "person.crop.circle.badge.checkmark", size: 38)
-                    
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Need to update your information?")
-                            .font(.subheadline.weight(.semibold))
-                        
-                        Text("Please change your personal details from the Edit Profile page.")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
+                Button {
+                    withAnimation(.spring(response: 0.38, dampingFraction: 0.86)) {
+                        isContactSectionExpanded.toggle()
                     }
-                    
-                    Spacer()
+                } label: {
+                    HStack {
+                        BrandSectionHeader(
+                            theme: .adventure,
+                            title: "Contacto",
+                            subtitle: "La información de tu perfil se utiliza automáticamente para esta reserva."
+                        )
+
+                        Spacer(minLength: 12)
+
+                        Image(systemName: "chevron.down")
+                            .font(.footnote.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                            .rotationEffect(.degrees(isContactSectionExpanded ? 180 : 0))
+                            .animation(.spring(response: 0.32, dampingFraction: 0.82), value: isContactSectionExpanded)
+                    }
+                    .contentShape(Rectangle())
                 }
-                .appCardStyle(.adventure)
-                
-                TextField(
-                    "Notas generales (opcional)",
-                    text: Binding(
-                        get: { adventureComboBuilderViewModel.state.notes },
-                        set: { adventureComboBuilderViewModel.setNotes($0) }
-                    ),
-                    axis: .vertical
-                )
-                .lineLimit(3...5)
-                .appTextFieldStyle(.adventure)
+                .buttonStyle(.plain)
+
+                if isContactSectionExpanded {
+                    VStack(alignment: .leading, spacing: 16) {
+                        TextField(
+                            "",
+                            text: Binding(
+                                get: { authenticatedProfile?.nationalId ?? adventureComboBuilderViewModel.state.nationalId },
+                                set: { _ in }
+                            ),
+                            prompt: Text("Cédula")
+                        )
+                        .disabled(true)
+                        .keyboardType(.numberPad)
+                        .appTextFieldStyle(.adventure)
+
+                        TextField(
+                            "",
+                            text: Binding(
+                                get: { authenticatedProfile?.fullName ?? adventureComboBuilderViewModel.state.clientName },
+                                set: { _ in }
+                            ),
+                            prompt: Text("Nombre")
+                        )
+                        .disabled(true)
+                        .appTextFieldStyle(.adventure)
+
+                        TextField(
+                            "",
+                            text: Binding(
+                                get: { authenticatedProfile?.phoneNumber ?? adventureComboBuilderViewModel.state.whatsappNumber },
+                                set: { _ in }
+                            ),
+                            prompt: Text("WhatsApp")
+                        )
+                        .disabled(true)
+                        .keyboardType(.phonePad)
+                        .appTextFieldStyle(.adventure)
+
+                        HStack(alignment: .top, spacing: 12) {
+                            BrandIconBubble(theme: .adventure, systemImage: "person.crop.circle.badge.checkmark", size: 38)
+
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("¿Necesitas actualizar tu información?")
+                                    .font(.subheadline.weight(.semibold))
+
+                                Text("Por favor, cambia tus datos personales desde la página Editar perfil.")
+                                    .font(.subheadline)
+                                    .foregroundStyle(.secondary)
+                            }
+                            
+                            Spacer()
+                        }
+                        .appCardStyle(.adventure)
+
+                        TextField(
+                            "Notas generales (opcional)",
+                            text: Binding(
+                                get: { adventureComboBuilderViewModel.state.notes },
+                                set: { adventureComboBuilderViewModel.setNotes($0) }
+                            ),
+                            axis: .vertical
+                        )
+                        .lineLimit(3...5)
+                        .appTextFieldStyle(.adventure)
+                    }
+                    .transition(
+                        .asymmetric(
+                            insertion: .move(edge: .top).combined(with: .opacity),
+                            removal: .opacity.combined(with: .scale(scale: 0.98, anchor: .top))
+                        )
+                    )
+                }
             }
             .appCardStyle(.adventure)
             .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
@@ -1157,7 +1187,7 @@ struct AdventureComboBuilderView: View {
                 Button {
                     guard blockedFoodItemsForToday.isEmpty else {
                         adventureComboBuilderViewModel.presentError(
-                            "For today some selected items are out of stock and cannot be ordered. Choose tomorrow or another future day."
+                            "Por hoy, algunos productos seleccionados están agotados y no se pueden pedir. Elige mañana u otro día futuro."
                         )
                         return
                     }

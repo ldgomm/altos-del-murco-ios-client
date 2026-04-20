@@ -26,10 +26,10 @@ struct ProfileContainerView: View {
                                 .scaleEffect(1.1)
                             
                             VStack(spacing: 6) {
-                                Text("Loading profile...")
+                                Text("Cargando perfil...")
                                     .font(.headline)
                                 
-                                Text("Preparing your account and preferences.")
+                                Text("Preparando tu cuenta y preferencias.")
                                     .font(.subheadline)
                                     .foregroundStyle(.secondary)
                                     .multilineTextAlignment(.center)
@@ -40,7 +40,7 @@ struct ProfileContainerView: View {
                         .appCardStyle(.neutral, emphasized: true)
                         .padding()
                     }
-                    .navigationTitle("Profile")
+                    .navigationTitle("Perfil")
                     .appScreenStyle(.neutral)
                 }
             }

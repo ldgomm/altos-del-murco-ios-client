@@ -84,7 +84,7 @@ struct MenuListView: View {
             .padding(.horizontal, 16)
             .padding(.vertical, 20)
         }
-        .navigationTitle("Restaurant")
+        .navigationTitle("Restaurante")
         .navigationBarTitleDisplayMode(.large)
         .appScreenStyle(.restaurant)
         .task {
@@ -159,7 +159,7 @@ struct MenuListView: View {
             BrandSectionHeader(
                 theme: .restaurant,
                 title: "Popular",
-                subtitle: "Customer favorites and featured dishes"
+                subtitle: "Favoritos de los clientes y platos destacados"
             )
 
             TabView {
@@ -179,7 +179,7 @@ struct MenuListView: View {
         VStack(alignment: .leading, spacing: 12) {
             BrandSectionHeader(
                 theme: .restaurant,
-                title: "Browse by category"
+                title: "Explorar por categoría"
             )
 
             ScrollView(.horizontal, showsIndicators: false) {

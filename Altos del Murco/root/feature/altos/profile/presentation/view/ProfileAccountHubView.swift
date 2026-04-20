@@ -16,22 +16,22 @@ struct ProfileAccountHubView: View {
         ScrollView {
             VStack(spacing: 16) {
                 actionRow(
-                    title: "Personal Information",
-                    subtitle: "Edit your contact and emergency details",
+                    title: "Información personal",
+                    subtitle: "Edita tus datos de contacto y emergencia",
                     systemImage: "person.text.rectangle"
                 ) {
                     viewModel.openEditProfile()
                 }
 
                 actionRow(
-                    title: "Rewards & Points",
-                    subtitle: "\(viewModel.stats.level.title) • \(viewModel.stats.points) points",
+                    title: "Recompensas y puntos",
+                    subtitle: "\(viewModel.stats.level.title) • \(viewModel.stats.points) puntos",
                     systemImage: "gift.fill"
                 ) { }
 
                 actionRow(
-                    title: "Birthday Benefits",
-                    subtitle: "Used for special promos and discounts",
+                    title: "Beneficios de cumpleaños",
+                    subtitle: "Se usa para promociones y descuentos especiales",
                     systemImage: "birthday.cake.fill"
                 ) { }
 
@@ -39,8 +39,8 @@ struct ProfileAccountHubView: View {
                     AccountActionsView(viewModel: viewModel)
                 } label: {
                     row(
-                        title: "Account Actions",
-                        subtitle: "Sign out and other sensitive account actions",
+                        title: "Acciones de la cuenta",
+                        subtitle: "Cerrar sesión y otras acciones sensibles de la cuenta",
                         systemImage: "exclamationmark.shield.fill"
                     )
                 }
@@ -48,7 +48,7 @@ struct ProfileAccountHubView: View {
             }
             .padding(16)
         }
-        .navigationTitle("Account")
+        .navigationTitle("Cuenta")
         .appScreenStyle(theme)
     }
 

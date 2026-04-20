@@ -21,11 +21,11 @@ struct AppearanceSettingsView: View {
         List {
             Section {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("Appearance")
+                    Text("Apariencia")
                         .font(.title3.bold())
                         .foregroundStyle(palette.textPrimary)
                     
-                    Text("Choose how the app looks across the interface.")
+                    Text("Elige cómo se verá la app en toda la interfaz.")
                         .font(.subheadline)
                         .foregroundStyle(palette.textSecondary)
                 }
@@ -82,7 +82,7 @@ struct AppearanceSettingsView: View {
         }
         .scrollContentBackground(.hidden)
         .background(Color.clear)
-        .navigationTitle("Appearance")
+        .navigationTitle("Apariencia")
         .navigationBarTitleDisplayMode(.inline)
         .appScreenStyle(theme)
     }

@@ -17,17 +17,17 @@ enum AppAppearance: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .system: return "System"
-        case .light: return "Light"
-        case .dark: return "Dark"
+        case .system: return "Sistema"
+        case .light: return "Claro"
+        case .dark: return "Oscuro"
         }
     }
 
     var subtitle: String {
         switch self {
-        case .system: return "Follow the device appearance"
-        case .light: return "Always use light mode"
-        case .dark: return "Always use dark mode"
+        case .system: return "Seguir la apariencia del dispositivo"
+        case .light: return "Usar siempre el modo claro"
+        case .dark: return "Usar siempre el modo oscuro"
         }
     }
 

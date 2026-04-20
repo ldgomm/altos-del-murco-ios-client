@@ -28,7 +28,7 @@ struct OrderSuccessView: View {
                 Button {
                     path = NavigationPath()
                 } label: {
-                    Text("Done")
+                    Text("Listo")
                 }
                 .buttonStyle(BrandPrimaryButtonStyle(theme: theme))
             }
@@ -36,7 +36,7 @@ struct OrderSuccessView: View {
             .padding(.vertical, 28)
         }
         .scrollIndicators(.hidden)
-        .navigationTitle("Success")
+        .navigationTitle("Éxito")
         .navigationBarTitleDisplayMode(.inline)
         .navigationBarBackButtonHidden(true)
         .appScreenStyle(theme)
@@ -65,11 +65,11 @@ struct OrderSuccessView: View {
             }
             
             VStack(spacing: 8) {
-                Text("Order Sent")
+                Text("Pedido enviado")
                     .font(.system(.largeTitle, design: .rounded, weight: .bold))
                     .foregroundStyle(palette.textPrimary)
                 
-                Text("Your order was created successfully.")
+                Text("Tu pedido fue creado correctamente.")
                     .font(.body)
                     .foregroundStyle(palette.textSecondary)
                     .multilineTextAlignment(.center)
@@ -83,17 +83,17 @@ struct OrderSuccessView: View {
         VStack(alignment: .leading, spacing: 18) {
             BrandSectionHeader(
                 theme: theme,
-                title: "Order summary",
-                subtitle: "Your restaurant order has been registered correctly."
+                title: "Resumen del pedido",
+                subtitle: "Tu pedido del restaurante ha sido registrado correctamente."
             )
             
             VStack(spacing: 14) {
-                InfoRow(title: "Order ID", value: String(order.id.prefix(7)), theme: theme)
-                InfoRow(title: "Client", value: order.clientName, theme: theme)
-                InfoRow(title: "Table", value: order.tableNumber, theme: theme)
-                InfoRow(title: "Status", value: order.status.title, theme: theme)
+                InfoRow(title: "ID del pedido", value: String(order.id.prefix(7)), theme: theme)
+                InfoRow(title: "Cliente", value: order.clientName, theme: theme)
+                InfoRow(title: "Mesa", value: order.tableNumber, theme: theme)
+                InfoRow(title: "Estado", value: order.status.title, theme: theme)
                 InfoRow(
-                    title: "Time",
+                    title: "Hora",
                     value: order.createdAt.formatted(date: .omitted, time: .shortened),
                     theme: theme
                 )
