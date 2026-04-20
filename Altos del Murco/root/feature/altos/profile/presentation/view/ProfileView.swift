@@ -298,53 +298,148 @@ struct ProfileView: View {
     }
 
     private var levelCard: some View {
-        HStack(spacing: 14) {
-            ZStack {
-                Circle()
-                    .fill(palette.chipGradient)
-                    .frame(width: 56, height: 56)
+        NavigationLink {
+            LoyaltyProgramView(
+                currentLevel: viewModel.stats.level,
+                totalSpent: viewModel.stats.totalSpent,
+                points: viewModel.stats.points,
+                completedOrders: viewModel.stats.completedOrders,
+                completedBookings: viewModel.stats.completedBookings
+            )
+        } label: {
+            VStack(alignment: .leading, spacing: 16) {
+                HStack(spacing: 14) {
+                    ZStack {
+                        Circle()
+                            .fill(palette.chipGradient)
+                            .frame(width: 60, height: 60)
 
-                Image(systemName: levelIcon)
-                    .font(.title3.bold())
-                    .foregroundStyle(palette.primary)
-            }
+                        Image(systemName: viewModel.stats.level.systemImage)
+                            .font(.title3.bold())
+                            .foregroundStyle(palette.primary)
+                    }
 
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Nivel \(viewModel.stats.level.title)")
-                    .font(.headline)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Nivel \(viewModel.stats.level.title)")
+                            .font(.headline)
+                            .foregroundStyle(palette.textPrimary)
+
+                        Text(viewModel.stats.level.badgeSubtitle)
+                            .font(.subheadline)
+                            .foregroundStyle(palette.textSecondary)
+
+                        Text("Consumo acumulado: \(viewModel.stats.totalSpent.priceText)")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(palette.primary)
+                    }
+
+                    Spacer()
+
+                    Image(systemName: "chevron.right.circle.fill")
+                        .font(.title3)
+                        .foregroundStyle(palette.primary)
+                }
+
+                Text("Vuelve, acumula y desbloquea descuentos, regalos y premios gratis en platos, jugos, bebidas y postres.")
+                    .font(.subheadline)
                     .foregroundStyle(palette.textPrimary)
 
-                Text(viewModel.stats.level.badgeSubtitle)
-                    .font(.subheadline)
-                    .foregroundStyle(palette.textSecondary)
+                if let nextLevel = viewModel.stats.level.nextLevel {
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            Text("Progreso a \(nextLevel.title)")
+                                .font(.caption.bold())
+                                .foregroundStyle(palette.textSecondary)
 
-                Text("Consumo acumulado: \(viewModel.stats.totalSpent.priceText)")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(palette.primary)
+                            Spacer()
+
+                            Text("\(Int(LoyaltyLevel.progress(for: viewModel.stats.totalSpent) * 100))%")
+                                .font(.caption.bold())
+                                .foregroundStyle(palette.primary)
+                        }
+
+                        ProgressView(value: LoyaltyLevel.progress(for: viewModel.stats.totalSpent))
+                            .tint(palette.primary)
+
+                        Text("Te faltan \(viewModel.stats.level.remainingSpend(from: viewModel.stats.totalSpent).priceText) para subir.")
+                            .font(.caption.weight(.medium))
+                            .foregroundStyle(palette.textSecondary)
+                    }
+                } else {
+                    Label("Ya estás en el nivel más alto", systemImage: "sparkles")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(palette.primary)
+                }
+
+                HStack(spacing: 10) {
+                    loyaltyMiniStat(
+                        title: "Puntos",
+                        value: "\(viewModel.stats.points)",
+                        systemImage: "star.fill"
+                    )
+
+                    loyaltyMiniStat(
+                        title: "Pedidos",
+                        value: "\(viewModel.stats.completedOrders)",
+                        systemImage: "fork.knife"
+                    )
+
+                    loyaltyMiniStat(
+                        title: "Reservas",
+                        value: "\(viewModel.stats.completedBookings)",
+                        systemImage: "calendar"
+                    )
+                }
             }
-
-            Spacer()
+            .padding(18)
+            .background(
+                RoundedRectangle(cornerRadius: 24, style: .continuous)
+                    .fill(palette.cardGradient)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 24, style: .continuous)
+                    .stroke(palette.stroke, lineWidth: 1)
+            )
+            .shadow(
+                color: palette.shadow.opacity(colorScheme == .dark ? 0.14 : 0.06),
+                radius: 8,
+                x: 0,
+                y: 4
+            )
         }
-        .padding(16)
-        .background(
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .fill(palette.cardGradient)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .stroke(palette.stroke, lineWidth: 1)
-        )
+        .buttonStyle(.plain)
     }
 
-    private var levelIcon: String {
-        switch viewModel.stats.level {
-        case .silver:
-            return "seal.fill"
-        case .gold:
-            return "star.circle.fill"
-        case .diamond:
-            return "diamond.fill"
+    private func loyaltyMiniStat(
+        title: String,
+        value: String,
+        systemImage: String
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Image(systemName: systemImage)
+                .font(.caption.weight(.bold))
+                .foregroundStyle(palette.primary)
+
+            Text(value)
+                .font(.subheadline.bold())
+                .foregroundStyle(palette.textPrimary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+
+            Text(title)
+                .font(.caption)
+                .foregroundStyle(palette.textSecondary)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(palette.elevatedCard)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(palette.stroke, lineWidth: 1)
+        )
     }
 
     private func profileStatCard(

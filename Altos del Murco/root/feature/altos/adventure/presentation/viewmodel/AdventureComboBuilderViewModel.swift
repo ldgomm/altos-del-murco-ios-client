@@ -120,6 +120,7 @@ final class AdventureComboBuilderViewModel: ObservableObject {
         }
 
         keepCampingAtEnd()
+        refreshPackageDiscount()
         state.isLoadingCatalog = false
     }
 
@@ -155,31 +156,23 @@ final class AdventureComboBuilderViewModel: ObservableObject {
         state.items.append(
             AdventureActivityType.defaultDraft(for: activity, catalog: state.catalog)
         )
-        keepCampingAtEnd()
-        state.selectedSlot = nil
-        Task { await loadAvailability() }
+        refreshAfterActivitiesChanged()
     }
 
     func updateItem(_ item: AdventureReservationItemDraft) {
         guard let index = state.items.firstIndex(where: { $0.id == item.id }) else { return }
         state.items[index] = item
-        keepCampingAtEnd()
-        state.selectedSlot = nil
-        Task { await loadAvailability() }
+        refreshAfterActivitiesChanged()
     }
 
     func removeItem(at offsets: IndexSet) {
         state.items.remove(atOffsets: offsets)
-        keepCampingAtEnd()
-        state.selectedSlot = nil
-        Task { await loadAvailability() }
+        refreshAfterActivitiesChanged()
     }
 
     func moveItems(from source: IndexSet, to destination: Int) {
         state.items.move(fromOffsets: source, toOffset: destination)
-        keepCampingAtEnd()
-        state.selectedSlot = nil
-        Task { await loadAvailability() }
+        refreshAfterActivitiesChanged()
     }
 
     func addFoodItem(
@@ -191,7 +184,7 @@ final class AdventureComboBuilderViewModel: ObservableObject {
         let isTodayReservation = AdventureDateHelper.calendar.isDateInToday(selectedDate)
 
         guard !(isTodayReservation && !menuItem.canBeOrdered) else {
-            state.errorMessage = "For today this item is out of stock and cannot be ordered."
+            state.errorMessage = "Para hoy este producto está agotado y no se puede pedir."
             state.successMessage = nil
             return
         }
@@ -278,8 +271,6 @@ final class AdventureComboBuilderViewModel: ObservableObject {
         if let index = state.foodItems.firstIndex(where: { $0.id == item.id }) {
             state.foodItems[index] = updatedItem
         } else {
-            // Defensive fix: if the row was removed by UI interaction,
-            // saving the editor restores it instead of losing the change.
             state.foodItems.append(updatedItem)
         }
 
@@ -376,6 +367,7 @@ final class AdventureComboBuilderViewModel: ObservableObject {
         state.items = uniqueItems.isEmpty ? [] : uniqueItems
         state.packageDiscountAmount = max(0, packageDiscountAmount)
         keepCampingAtEnd()
+        refreshPackageDiscount()
         state.selectedSlot = nil
         state.errorMessage = nil
         state.successMessage = nil
@@ -440,83 +432,334 @@ final class AdventureComboBuilderViewModel: ObservableObject {
 
         state.isLoadingAvailability = false
     }
+    
+    private struct PackageSignature: Hashable, Comparable {
+        let activity: AdventureActivityType
+        let durationMinutes: Int
+        let peopleCount: Int
+        let vehicleCount: Int
+        let offRoadRiderCount: Int
+        let nights: Int
 
+        static func < (lhs: PackageSignature, rhs: PackageSignature) -> Bool {
+            if lhs.activity.rawValue != rhs.activity.rawValue { return lhs.activity.rawValue < rhs.activity.rawValue }
+            if lhs.durationMinutes != rhs.durationMinutes { return lhs.durationMinutes < rhs.durationMinutes }
+            if lhs.peopleCount != rhs.peopleCount { return lhs.peopleCount < rhs.peopleCount }
+            if lhs.vehicleCount != rhs.vehicleCount { return lhs.vehicleCount < rhs.vehicleCount }
+            if lhs.offRoadRiderCount != rhs.offRoadRiderCount { return lhs.offRoadRiderCount < rhs.offRoadRiderCount }
+            return lhs.nights < rhs.nights
+        }
+    }
+
+    private struct PackageCandidate: Hashable {
+        let matchedItemIDs: Set<String>
+        let discountAmount: Double
+    }
+
+    private func signature(for item: AdventureReservationItemDraft) -> PackageSignature {
+        PackageSignature(
+            activity: item.activity,
+            durationMinutes: item.durationMinutes,
+            peopleCount: item.peopleCount,
+            vehicleCount: item.vehicleCount,
+            offRoadRiderCount: item.offRoadRiderCount,
+            nights: item.nights
+        )
+    }
+
+    private func matchingPackageCandidates() -> [PackageCandidate] {
+        guard !state.items.isEmpty else { return [] }
+
+        let availableItems = state.items.map { (id: $0.id, signature: signature(for: $0)) }
+
+        return state.catalog.activePackagesSorted.compactMap { package in
+            // A single activity is never a combo discount.
+            guard package.items.count >= 2 else { return nil }
+            guard package.packageDiscountAmount > 0 else { return nil }
+
+            var remaining = availableItems
+            var matchedIDs: Set<String> = []
+
+            for packageItem in package.items {
+                let target = signature(for: packageItem)
+
+                guard let index = remaining.firstIndex(where: { $0.signature == target }) else {
+                    return nil
+                }
+
+                matchedIDs.insert(remaining[index].id)
+                remaining.remove(at: index)
+            }
+
+            return PackageCandidate(
+                matchedItemIDs: matchedIDs,
+                discountAmount: package.packageDiscountAmount
+            )
+        }
+    }
+
+    private func bestPackageDiscountAmount() -> Double {
+        let candidates = matchingPackageCandidates()
+        guard !candidates.isEmpty else { return 0 }
+
+        func solve(from index: Int, used: Set<String>) -> Double {
+            guard index < candidates.count else { return 0 }
+
+            let skip = solve(from: index + 1, used: used)
+            let candidate = candidates[index]
+
+            if !used.isDisjoint(with: candidate.matchedItemIDs) {
+                return skip
+            }
+
+            let take = candidate.discountAmount + solve(
+                from: index + 1,
+                used: used.union(candidate.matchedItemIDs)
+            )
+
+            return max(skip, take)
+        }
+
+        return solve(from: 0, used: [])
+    }
+
+    private func refreshPackageDiscount() {
+        state.packageDiscountAmount = bestPackageDiscountAmount()
+    }
+
+    private func refreshAfterActivitiesChanged() {
+        keepCampingAtEnd()
+        refreshPackageDiscount()
+        state.selectedSlot = nil
+        Task { await loadAvailability() }
+    }
+    
     private func submitReservation(clientId: String?) async {
+        guard !state.isSubmitting else { return }
+
         let foodDraft = buildFoodDraft()
         let hasFood = !(foodDraft?.isEmpty ?? true)
-        let hasActivities = !state.items.isEmpty
 
-        guard hasActivities || hasFood else {
-            state.errorMessage = "Add at least one activity or one food item."
-            return
-        }
-
-        guard !state.clientName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            state.errorMessage = "Please enter the client name."
-            return
-        }
-
-        let whatsappDigits = state.whatsappNumber.filter(\.isNumber)
-        guard whatsappDigits.count >= 7 else {
-            state.errorMessage = "Please enter a valid WhatsApp number."
-            return
-        }
-
-        let nationalIdDigits = state.nationalId.filter(\.isNumber)
-        guard nationalIdDigits.count >= 8 else {
-            state.errorMessage = "Please enter a valid national ID."
-            return
-        }
-
-        guard state.guestCount > 0 else {
-            state.errorMessage = "Please enter at least one guest."
-            return
-        }
-
-        if state.eventType == .custom,
-           state.customEventTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            state.errorMessage = "Please enter the custom event title."
-            return
-        }
-
-        guard let slot = state.selectedSlot else {
-            state.errorMessage = "Please choose an available start time."
-            return
-        }
-
-        state.isSubmitting = true
         state.errorMessage = nil
-
-        let cleanNotes = state.notes.trimmingCharacters(in: .whitespacesAndNewlines)
-        let cleanEventNotes = state.eventNotes.trimmingCharacters(in: .whitespacesAndNewlines)
-        let cleanCustomEventTitle = state.customEventTitle.trimmingCharacters(in: .whitespacesAndNewlines)
-
-        let request = AdventureBookingRequest(
-            clientId: clientId,
-            clientName: state.clientName.trimmingCharacters(in: .whitespacesAndNewlines),
-            whatsappNumber: whatsappDigits,
-            nationalId: nationalIdDigits,
-            date: state.selectedDate,
-            selectedStartAt: slot.startAt,
-            guestCount: state.guestCount,
-            eventType: state.eventType,
-            customEventTitle: state.eventType == .custom && !cleanCustomEventTitle.isEmpty ? cleanCustomEventTitle : nil,
-            eventNotes: cleanEventNotes.isEmpty ? nil : cleanEventNotes,
-            items: state.items,
-            foodReservation: foodDraft,
-            packageDiscountAmount: state.packageDiscountAmount,
-            notes: cleanNotes.isEmpty ? nil : cleanNotes
-        )
+        state.successMessage = nil
 
         do {
+            let validated = try validateReservationInput(hasFood: hasFood)
+
+            state.isSubmitting = true
+            defer { state.isSubmitting = false }
+
+            let request = AdventureBookingRequest(
+                clientId: clientId,
+                clientName: validated.clientName,
+                whatsappNumber: validated.whatsappNumber,
+                nationalId: validated.nationalId,
+                date: state.selectedDate,
+                selectedStartAt: validated.selectedStartAt,
+                guestCount: state.guestCount,
+                eventType: state.eventType,
+                customEventTitle: validated.customEventTitle,
+                eventNotes: validated.eventNotes,
+                items: state.items,
+                foodReservation: foodDraft,
+                packageDiscountAmount: state.packageDiscountAmount,
+                notes: validated.notes
+            )
+
             let booking = try await createBookingUseCase.execute(request)
-            state.successMessage = "Reservation confirmed for \(booking.clientName) at \(AdventureDateHelper.timeText(booking.startAt))."
+            state.successMessage = "Reserva confirmada para \(booking.clientName) a las \(AdventureDateHelper.timeText(booking.startAt))."
             await loadAvailability()
         } catch {
             state.errorMessage = error.localizedDescription
         }
+    }
+    
+    private struct ValidatedReservationInput {
+        let clientName: String
+        let whatsappNumber: String
+        let nationalId: String
+        let selectedStartAt: Date
+        let customEventTitle: String?
+        let eventNotes: String?
+        let notes: String?
+    }
 
-        state.isSubmitting = false
+    private struct ReservationValidationError: LocalizedError {
+        let message: String
+        var errorDescription: String? { message }
+    }
+
+    private func validateReservationInput(hasFood: Bool) throws -> ValidatedReservationInput {
+        let hasActivities = !state.items.isEmpty
+
+        guard hasActivities || hasFood else {
+            throw ReservationValidationError(message: "Agrega al menos una actividad o un producto de comida.")
+        }
+
+        let cleanClientName = normalizedText(state.clientName)
+        guard isValidPersonName(cleanClientName) else {
+            throw ReservationValidationError(message: "Ingresa un nombre válido del cliente.")
+        }
+
+        guard let normalizedWhatsApp = normalizeEcuadorWhatsApp(state.whatsappNumber) else {
+            throw ReservationValidationError(message: "Ingresa un número de WhatsApp de Ecuador válido.")
+        }
+
+        guard let normalizedNationalId = normalizeEcuadorNationalId(state.nationalId) else {
+            throw ReservationValidationError(message: "Ingresa una cédula ecuatoriana o un RUC personal válido.")
+        }
+
+        guard state.guestCount > 0 else {
+            throw ReservationValidationError(message: "Ingresa al menos un invitado.")
+        }
+
+        let cleanCustomEventTitle = normalizedText(state.customEventTitle)
+        if state.eventType == .custom {
+            guard cleanCustomEventTitle.count >= 3 else {
+                throw ReservationValidationError(message: "Ingresa un título válido para el evento personalizado.")
+            }
+
+            guard cleanCustomEventTitle.count <= 80 else {
+                throw ReservationValidationError(message: "El título del evento personalizado es demasiado largo.")
+            }
+        }
+
+        let cleanNotes = normalizedText(state.notes)
+        guard cleanNotes.count <= 500 else {
+            throw ReservationValidationError(message: "Las notas de la reserva son demasiado largas.")
+        }
+
+        let cleanEventNotes = normalizedText(state.eventNotes)
+        guard cleanEventNotes.count <= 300 else {
+            throw ReservationValidationError(message: "Las notas del evento son demasiado largas.")
+        }
+
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: Date())
+        let selectedDay = calendar.startOfDay(for: state.selectedDate)
+
+        guard selectedDay >= today else {
+            throw ReservationValidationError(message: "No puedes crear una reserva para una fecha pasada.")
+        }
+
+        guard let slot = state.selectedSlot else {
+            throw ReservationValidationError(message: "Selecciona una hora de inicio disponible.")
+        }
+
+        guard calendar.isDate(slot.startAt, inSameDayAs: state.selectedDate) else {
+            throw ReservationValidationError(message: "La hora seleccionada no pertenece a la fecha elegida.")
+        }
+
+        guard slot.startAt > Date() else {
+            throw ReservationValidationError(message: "La hora de inicio seleccionada ya pasó. Elige otra hora.")
+        }
+
+        return ValidatedReservationInput(
+            clientName: cleanClientName,
+            whatsappNumber: normalizedWhatsApp,
+            nationalId: normalizedNationalId,
+            selectedStartAt: slot.startAt,
+            customEventTitle: state.eventType == .custom ? cleanCustomEventTitle : nil,
+            eventNotes: cleanEventNotes.isEmpty ? nil : cleanEventNotes,
+            notes: cleanNotes.isEmpty ? nil : cleanNotes
+        )
+    }
+    
+    private func normalizedText(_ value: String) -> String {
+        value
+            .components(separatedBy: .whitespacesAndNewlines)
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func isValidPersonName(_ name: String) -> Bool {
+        let allowedSymbols: Set<Character> = [" ", "-", "'", "."]
+        let letterCount = name.unicodeScalars.filter { CharacterSet.letters.contains($0) }.count
+
+        guard letterCount >= 3 else { return false }
+        guard name.count >= 3 else { return false }
+
+        return name.allSatisfy { character in
+            if allowedSymbols.contains(character) { return true }
+            return character.unicodeScalars.allSatisfy { CharacterSet.letters.contains($0) }
+        }
+    }
+
+    private func normalizeEcuadorWhatsApp(_ rawValue: String) -> String? {
+        let digits = rawValue.filter(\.isNumber)
+
+        let normalized: String?
+
+        switch digits.count {
+        case 10:
+            normalized = digits.hasPrefix("09") ? digits : nil
+        case 12:
+            if digits.hasPrefix("593"), digits.dropFirst(3).hasPrefix("9") {
+                normalized = "0" + digits.dropFirst(3)
+            } else {
+                normalized = nil
+            }
+        default:
+            normalized = nil
+        }
+
+        guard let normalized else { return nil }
+        guard Set(normalized).count > 1 else { return nil } // rejects 0999999999, 0000000000, etc.
+
+        return normalized
+    }
+
+    private func normalizeEcuadorNationalId(_ rawValue: String) -> String? {
+        let digits = rawValue.filter(\.isNumber)
+
+        if isValidEcuadorCedula(digits) {
+            return digits
+        }
+
+        if isValidEcuadorPersonalRUC(digits) {
+            return digits
+        }
+
+        return nil
+    }
+
+    private func isValidEcuadorCedula(_ digits: String) -> Bool {
+        guard digits.count == 10 else { return false }
+        guard Set(digits).count > 1 else { return false }
+
+        let numbers = digits.compactMap(\.wholeNumberValue)
+        guard numbers.count == 10 else { return false }
+
+        let provinceCode = numbers[0] * 10 + numbers[1]
+        guard (1...24).contains(provinceCode) else { return false }
+
+        let thirdDigit = numbers[2]
+        guard (0...5).contains(thirdDigit) else { return false }
+
+        var sum = 0
+
+        for index in 0..<9 {
+            var value = numbers[index]
+
+            if index.isMultiple(of: 2) {
+                value *= 2
+                if value > 9 { value -= 9 }
+            }
+
+            sum += value
+        }
+
+        let verifier = sum % 10 == 0 ? 0 : 10 - (sum % 10)
+        return verifier == numbers[9]
+    }
+
+    private func isValidEcuadorPersonalRUC(_ digits: String) -> Bool {
+        guard digits.count == 13 else { return false }
+        guard String(digits.suffix(3)) != "000" else { return false }
+
+        let cedulaPart = String(digits.prefix(10))
+        return isValidEcuadorCedula(cedulaPart)
     }
 
     private func keepCampingAtEnd() {
@@ -548,5 +791,62 @@ final class AdventureComboBuilderViewModel: ObservableObject {
             second: 0,
             of: state.selectedDate
         )
+    }
+    
+    private func normalizedPackageSignature(
+        for items: [AdventureReservationItemDraft]
+    ) -> [PackageItemSignature] {
+        items
+            .map(PackageItemSignature.init)
+            .sorted()
+    }
+
+    private func resolvedPackageDiscountAmount(
+        for items: [AdventureReservationItemDraft]
+    ) -> Double {
+        guard items.count >= 2 else { return 0 }
+
+        let currentSignature = normalizedPackageSignature(for: items)
+
+        return state.catalog.activePackagesSorted.first(where: { package in
+            normalizedPackageSignature(for: package.items) == currentSignature
+        })?.packageDiscountAmount ?? 0
+    }
+
+    private struct PackageItemSignature: Hashable, Comparable {
+        let activity: AdventureActivityType
+        let durationMinutes: Int
+        let peopleCount: Int
+        let vehicleCount: Int
+        let offRoadRiderCount: Int
+        let nights: Int
+
+        init(_ item: AdventureReservationItemDraft) {
+            self.activity = item.activity
+            self.durationMinutes = item.durationMinutes
+            self.peopleCount = item.peopleCount
+            self.vehicleCount = item.vehicleCount
+            self.offRoadRiderCount = item.offRoadRiderCount
+            self.nights = item.nights
+        }
+
+        static func < (lhs: PackageItemSignature, rhs: PackageItemSignature) -> Bool {
+            if lhs.activity.rawValue != rhs.activity.rawValue {
+                return lhs.activity.rawValue < rhs.activity.rawValue
+            }
+            if lhs.durationMinutes != rhs.durationMinutes {
+                return lhs.durationMinutes < rhs.durationMinutes
+            }
+            if lhs.peopleCount != rhs.peopleCount {
+                return lhs.peopleCount < rhs.peopleCount
+            }
+            if lhs.vehicleCount != rhs.vehicleCount {
+                return lhs.vehicleCount < rhs.vehicleCount
+            }
+            if lhs.offRoadRiderCount != rhs.offRoadRiderCount {
+                return lhs.offRoadRiderCount < rhs.offRoadRiderCount
+            }
+            return lhs.nights < rhs.nights
+        }
     }
 }

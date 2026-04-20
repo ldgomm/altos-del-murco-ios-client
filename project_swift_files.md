@@ -2195,24 +2195,243 @@ struct CancelAdventureBookingUseCase {
 
 import Foundation
 
-struct ProfileStats {
-    let points: Int
-    let completedOrders: Int
-    let completedBookings: Int
-    let restaurantSpent: Double
-    let adventureSpent: Double
-    let totalSpent: Double
-    let level: LoyaltyLevel
+enum LoyaltyLevel: String, Codable, CaseIterable, Hashable {
+    case bronze
+    case silver
+    case gold
+    case platinum
+    case diamond
 
-    static let empty = ProfileStats(
-        points: 0,
-        completedOrders: 0,
-        completedBookings: 0,
-        restaurantSpent: 0,
-        adventureSpent: 0,
-        totalSpent: 0,
-        level: .silver
-    )
+    var title: String {
+        switch self {
+        case .bronze: return "Bronce"
+        case .silver: return "Plata"
+        case .gold: return "Oro"
+        case .platinum: return "Platino"
+        case .diamond: return "Diamante"
+        }
+    }
+
+    var badgeSubtitle: String {
+        switch self {
+        case .bronze:
+            return "Tus primeras visitas ya empiezan a premiarte"
+        case .silver:
+            return "Más beneficios cada vez que vuelves"
+        case .gold:
+            return "Descuentos más fuertes y regalos más frecuentes"
+        case .platinum:
+            return "Nivel preferente con premios premium"
+        case .diamond:
+            return "Nuestro máximo nivel para clientes top"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .bronze:
+            return "sparkles"
+        case .silver:
+            return "seal.fill"
+        case .gold:
+            return "star.circle.fill"
+        case .platinum:
+            return "crown.fill"
+        case .diamond:
+            return "diamond.fill"
+        }
+    }
+
+    var minimumSpent: Double {
+        switch self {
+        case .bronze: return 0
+        case .silver: return 100
+        case .gold: return 300
+        case .platinum: return 800
+        case .diamond: return 1500
+        }
+    }
+
+    var spendRangeText: String {
+        switch self {
+        case .bronze:
+            return "De $0 a $99"
+        case .silver:
+            return "De $100 a $299"
+        case .gold:
+            return "De $400 a $799"
+        case .platinum:
+            return "De $800 a $1499"
+        case .diamond:
+            return "Desde $1500"
+        }
+    }
+
+    var benefits: [LoyaltyBenefit] {
+        switch self {
+        case .bronze:
+            return [
+                LoyaltyBenefit(
+                    id: "bronze_jugo_discount",
+                    title: "5% de descuento",
+                    detail: "Válido en jugo natural personal",
+                    kind: .percentageDiscount(5),
+                    productName: "Jugo natural personal",
+                    requiredVisits: nil
+                ),
+                LoyaltyBenefit(
+                    id: "bronze_coffee_free",
+                    title: "Café gratis",
+                    detail: "1 café americano gratis al completar 3 visitas",
+                    kind: .freeProduct,
+                    productName: "Café americano",
+                    requiredVisits: 3
+                )
+            ]
+
+        case .silver:
+            return [
+                LoyaltyBenefit(
+                    id: "silver_main_discount",
+                    title: "10% de descuento",
+                    detail: "En platos fuertes seleccionados",
+                    kind: .percentageDiscount(10),
+                    productName: "Platos fuertes seleccionados",
+                    requiredVisits: nil
+                ),
+                LoyaltyBenefit(
+                    id: "silver_jugo_free",
+                    title: "Jugo gratis",
+                    detail: "1 jugo natural personal gratis al completar 5 visitas",
+                    kind: .freeProduct,
+                    productName: "Jugo natural personal",
+                    requiredVisits: 5
+                )
+            ]
+
+        case .gold:
+            return [
+                LoyaltyBenefit(
+                    id: "gold_parrillada_discount",
+                    title: "12% de descuento",
+                    detail: "En platos fuertes y parrilladas seleccionadas",
+                    kind: .percentageDiscount(12),
+                    productName: "Platos fuertes y parrilladas seleccionadas",
+                    requiredVisits: nil
+                ),
+                LoyaltyBenefit(
+                    id: "gold_dessert_free",
+                    title: "Postre gratis",
+                    detail: "1 postre individual gratis cada 6 visitas completadas",
+                    kind: .freeProduct,
+                    productName: "Postre individual",
+                    requiredVisits: 6
+                )
+            ]
+
+        case .platinum:
+            return [
+                LoyaltyBenefit(
+                    id: "platinum_rest_discount",
+                    title: "15% de descuento",
+                    detail: "En platos, jugos y postres seleccionados",
+                    kind: .percentageDiscount(15),
+                    productName: "Platos, jugos y postres seleccionados",
+                    requiredVisits: nil
+                ),
+                LoyaltyBenefit(
+                    id: "platinum_drink_free",
+                    title: "Bebida gratis",
+                    detail: "1 bebida o jugo gratis en visitas elegibles",
+                    kind: .freeProduct,
+                    productName: "Bebida o jugo",
+                    requiredVisits: nil
+                )
+            ]
+
+        case .diamond:
+            return [
+                LoyaltyBenefit(
+                    id: "diamond_rest_discount",
+                    title: "20% de descuento",
+                    detail: "En consumo seleccionado de restaurante",
+                    kind: .percentageDiscount(20),
+                    productName: "Consumo seleccionado",
+                    requiredVisits: nil
+                ),
+                LoyaltyBenefit(
+                    id: "diamond_free_item",
+                    title: "Producto gratis VIP",
+                    detail: "1 plato individual o postre premium gratis en campañas VIP",
+                    kind: .freeProduct,
+                    productName: "Plato individual o postre premium",
+                    requiredVisits: nil
+                )
+            ]
+        }
+    }
+
+    var nextLevel: LoyaltyLevel? {
+        switch self {
+        case .bronze: return .silver
+        case .silver: return .gold
+        case .gold: return .platinum
+        case .platinum: return .diamond
+        case .diamond: return nil
+        }
+    }
+
+    func remainingSpend(from totalSpent: Double) -> Double {
+        guard let nextLevel else { return 0 }
+        return max(nextLevel.minimumSpent - totalSpent, 0)
+    }
+
+    static func from(totalSpent: Double) -> LoyaltyLevel {
+        switch totalSpent {
+        case 0..<99:
+            return .bronze
+        case 100..<299:
+            return .silver
+        case 300..<799:
+            return .gold
+        case 800..<1500:
+            return .platinum
+        default:
+            return .diamond
+        }
+    }
+
+    static func progress(for totalSpent: Double) -> Double {
+        let current = from(totalSpent: totalSpent)
+
+        guard let next = current.nextLevel else {
+            return 1
+        }
+
+        let start = current.minimumSpent
+        let end = next.minimumSpent
+        guard end > start else { return 1 }
+
+        let raw = (totalSpent - start) / (end - start)
+        return min(max(raw, 0), 1)
+    }
+    
+    
+}
+
+struct LoyaltyBenefit: Codable, Hashable, Identifiable {
+    let id: String
+    let title: String
+    let detail: String
+    let kind: LoyaltyRewardKind
+    let productName: String?
+    let requiredVisits: Int?
+}
+
+enum LoyaltyRewardKind: Codable, Hashable {
+    case percentageDiscount(Double)
+    case freeProduct
+    case campaignReward
 }
 
 ```
@@ -2587,6 +2806,7 @@ struct AdventureComboBuilderView: View {
     
     @State private var isFoodPickerPresented = false
     @State private var editingFoodItem: ReservationFoodItemDraft?
+    @State private var isContactSectionExpanded = false
     
     private var authenticatedProfile: ClientProfile? {
         sessionViewModel.authenticatedProfile
@@ -2709,7 +2929,7 @@ struct AdventureComboBuilderView: View {
                         .foregroundStyle(.secondary)
                         .padding(.top, 2)
                 }
-                
+            
                 if adventureComboBuilderViewModel.state.items.contains(where: { $0.activity == .offRoad }) {
                     HStack(alignment: .top, spacing: 12) {
                         BrandIconBubble(theme: .adventure, systemImage: "info.circle", size: 34)
@@ -2844,12 +3064,13 @@ struct AdventureComboBuilderView: View {
             .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
             .listRowBackground(Color.clear)
             .listRowSeparator(.hidden)
-
+            
             if adventureComboBuilderViewModel.state.foodItems.isEmpty {
                 Text("No hay platos agregados todavía.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
-                    .appCardStyle(.adventure, emphasized: false)
+                    .frame(maxWidth: .infinity, alignment: .leading) // or .center
+                    .appCardStyle(.adventure)
                     .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
                     .listRowBackground(Color.clear)
                     .listRowSeparator(.hidden)
@@ -3254,7 +3475,7 @@ struct AdventureComboBuilderView: View {
                 }
 
                 if isBlockedForSelectedDate {
-                    Text("For today this is out of stock and cannot be ordered")
+                    Text("Por hoy está agotado y no se puede pedir")
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(.red)
                 }
@@ -3315,11 +3536,11 @@ struct AdventureComboBuilderView: View {
                         VStack(alignment: .leading, spacing: 10) {
                             BrandSectionHeader(
                                 theme: .adventure,
-                                title: "Availability",
-                                subtitle: "This restriction only applies for today's reservations."
+                                title: "Disponibilidad",
+                                subtitle: "Esta restricción solo aplica para las reservas de hoy."
                             )
 
-                            Text("For today this is out of stock and cannot be ordered. Select tomorrow or another future day to reserve it.")
+                            Text("Por hoy está agotado y no se puede pedir. Selecciona mañana u otro día futuro para reservarlo.")
                                 .font(.subheadline)
                                 .foregroundStyle(.secondary)
                         }
@@ -3556,73 +3777,101 @@ struct AdventureComboBuilderView: View {
     private var contactSection: some View {
         Section {
             VStack(alignment: .leading, spacing: 16) {
-                BrandSectionHeader(
-                    theme: .adventure,
-                    title: "Contacto",
-                    subtitle: "Your profile information is used automatically for this reservation."
-                )
-                
-                TextField(
-                    "",
-                    text: Binding(
-                        get: { authenticatedProfile?.nationalId ?? adventureComboBuilderViewModel.state.nationalId },
-                        set: { _ in }
-                    ),
-                    prompt: Text("Cédula")
-                )
-                .disabled(true)
-                .keyboardType(.numberPad)
-                .appTextFieldStyle(.adventure)
-                
-                TextField(
-                    "",
-                    text: Binding(
-                        get: { authenticatedProfile?.fullName ?? adventureComboBuilderViewModel.state.clientName },
-                        set: { _ in }
-                    ),
-                    prompt: Text("Nombre")
-                )
-                .disabled(true)
-                .appTextFieldStyle(.adventure)
-                
-                TextField(
-                    "",
-                    text: Binding(
-                        get: { authenticatedProfile?.phoneNumber ?? adventureComboBuilderViewModel.state.whatsappNumber },
-                        set: { _ in }
-                    ),
-                    prompt: Text("WhatsApp")
-                )
-                .disabled(true)
-                .keyboardType(.phonePad)
-                .appTextFieldStyle(.adventure)
-                
-                HStack(alignment: .top, spacing: 12) {
-                    BrandIconBubble(theme: .adventure, systemImage: "person.crop.circle.badge.checkmark", size: 38)
-                    
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Need to update your information?")
-                            .font(.subheadline.weight(.semibold))
-                        
-                        Text("Please change your personal details from the Edit Profile page.")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
+                Button {
+                    withAnimation(.spring(response: 0.38, dampingFraction: 0.86)) {
+                        isContactSectionExpanded.toggle()
                     }
-                    
-                    Spacer()
+                } label: {
+                    HStack {
+                        BrandSectionHeader(
+                            theme: .adventure,
+                            title: "Contacto",
+                            subtitle: "La información de tu perfil se utiliza automáticamente para esta reserva."
+                        )
+
+                        Spacer(minLength: 12)
+
+                        Image(systemName: "chevron.down")
+                            .font(.footnote.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                            .rotationEffect(.degrees(isContactSectionExpanded ? 180 : 0))
+                            .animation(.spring(response: 0.32, dampingFraction: 0.82), value: isContactSectionExpanded)
+                    }
+                    .contentShape(Rectangle())
                 }
-                .appCardStyle(.adventure)
-                
-                TextField(
-                    "Notas generales (opcional)",
-                    text: Binding(
-                        get: { adventureComboBuilderViewModel.state.notes },
-                        set: { adventureComboBuilderViewModel.setNotes($0) }
-                    ),
-                    axis: .vertical
-                )
-                .lineLimit(3...5)
-                .appTextFieldStyle(.adventure)
+                .buttonStyle(.plain)
+
+                if isContactSectionExpanded {
+                    VStack(alignment: .leading, spacing: 16) {
+                        TextField(
+                            "",
+                            text: Binding(
+                                get: { authenticatedProfile?.nationalId ?? adventureComboBuilderViewModel.state.nationalId },
+                                set: { _ in }
+                            ),
+                            prompt: Text("Cédula")
+                        )
+                        .disabled(true)
+                        .keyboardType(.numberPad)
+                        .appTextFieldStyle(.adventure)
+
+                        TextField(
+                            "",
+                            text: Binding(
+                                get: { authenticatedProfile?.fullName ?? adventureComboBuilderViewModel.state.clientName },
+                                set: { _ in }
+                            ),
+                            prompt: Text("Nombre")
+                        )
+                        .disabled(true)
+                        .appTextFieldStyle(.adventure)
+
+                        TextField(
+                            "",
+                            text: Binding(
+                                get: { authenticatedProfile?.phoneNumber ?? adventureComboBuilderViewModel.state.whatsappNumber },
+                                set: { _ in }
+                            ),
+                            prompt: Text("WhatsApp")
+                        )
+                        .disabled(true)
+                        .keyboardType(.phonePad)
+                        .appTextFieldStyle(.adventure)
+
+                        HStack(alignment: .top, spacing: 12) {
+                            BrandIconBubble(theme: .adventure, systemImage: "person.crop.circle.badge.checkmark", size: 38)
+
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("¿Necesitas actualizar tu información?")
+                                    .font(.subheadline.weight(.semibold))
+
+                                Text("Por favor, cambia tus datos personales desde la página Editar perfil.")
+                                    .font(.subheadline)
+                                    .foregroundStyle(.secondary)
+                            }
+                            
+                            Spacer()
+                        }
+                        .appCardStyle(.adventure)
+
+                        TextField(
+                            "Notas generales (opcional)",
+                            text: Binding(
+                                get: { adventureComboBuilderViewModel.state.notes },
+                                set: { adventureComboBuilderViewModel.setNotes($0) }
+                            ),
+                            axis: .vertical
+                        )
+                        .lineLimit(3...5)
+                        .appTextFieldStyle(.adventure)
+                    }
+                    .transition(
+                        .asymmetric(
+                            insertion: .move(edge: .top).combined(with: .opacity),
+                            removal: .opacity.combined(with: .scale(scale: 0.98, anchor: .top))
+                        )
+                    )
+                }
             }
             .appCardStyle(.adventure)
             .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
@@ -3726,7 +3975,7 @@ struct AdventureComboBuilderView: View {
                 Button {
                     guard blockedFoodItemsForToday.isEmpty else {
                         adventureComboBuilderViewModel.presentError(
-                            "For today some selected items are out of stock and cannot be ordered. Choose tomorrow or another future day."
+                            "Por hoy, algunos productos seleccionados están agotados y no se pueden pedir. Elige mañana u otro día futuro."
                         )
                         return
                     }
@@ -5760,6 +6009,7 @@ final class AdventureComboBuilderViewModel: ObservableObject {
         }
 
         keepCampingAtEnd()
+        refreshPackageDiscount()
         state.isLoadingCatalog = false
     }
 
@@ -5796,6 +6046,7 @@ final class AdventureComboBuilderViewModel: ObservableObject {
             AdventureActivityType.defaultDraft(for: activity, catalog: state.catalog)
         )
         keepCampingAtEnd()
+        refreshPackageDiscount()
         state.selectedSlot = nil
         Task { await loadAvailability() }
     }
@@ -5804,6 +6055,7 @@ final class AdventureComboBuilderViewModel: ObservableObject {
         guard let index = state.items.firstIndex(where: { $0.id == item.id }) else { return }
         state.items[index] = item
         keepCampingAtEnd()
+        refreshPackageDiscount()
         state.selectedSlot = nil
         Task { await loadAvailability() }
     }
@@ -5811,6 +6063,7 @@ final class AdventureComboBuilderViewModel: ObservableObject {
     func removeItem(at offsets: IndexSet) {
         state.items.remove(atOffsets: offsets)
         keepCampingAtEnd()
+        refreshPackageDiscount()
         state.selectedSlot = nil
         Task { await loadAvailability() }
     }
@@ -5818,6 +6071,7 @@ final class AdventureComboBuilderViewModel: ObservableObject {
     func moveItems(from source: IndexSet, to destination: Int) {
         state.items.move(fromOffsets: source, toOffset: destination)
         keepCampingAtEnd()
+        refreshPackageDiscount()
         state.selectedSlot = nil
         Task { await loadAvailability() }
     }
@@ -5831,7 +6085,7 @@ final class AdventureComboBuilderViewModel: ObservableObject {
         let isTodayReservation = AdventureDateHelper.calendar.isDateInToday(selectedDate)
 
         guard !(isTodayReservation && !menuItem.canBeOrdered) else {
-            state.errorMessage = "For today this item is out of stock and cannot be ordered."
+            state.errorMessage = "Para hoy este producto está agotado y no se puede pedir."
             state.successMessage = nil
             return
         }
@@ -5918,8 +6172,6 @@ final class AdventureComboBuilderViewModel: ObservableObject {
         if let index = state.foodItems.firstIndex(where: { $0.id == item.id }) {
             state.foodItems[index] = updatedItem
         } else {
-            // Defensive fix: if the row was removed by UI interaction,
-            // saving the editor restores it instead of losing the change.
             state.foodItems.append(updatedItem)
         }
 
@@ -6014,8 +6266,14 @@ final class AdventureComboBuilderViewModel: ObservableObject {
         }
 
         state.items = uniqueItems.isEmpty ? [] : uniqueItems
-        state.packageDiscountAmount = max(0, packageDiscountAmount)
         keepCampingAtEnd()
+
+        if state.catalog.featuredPackages.isEmpty {
+            state.packageDiscountAmount = max(0, packageDiscountAmount)
+        } else {
+            refreshPackageDiscount()
+        }
+
         state.selectedSlot = nil
         state.errorMessage = nil
         state.successMessage = nil
@@ -6080,83 +6338,232 @@ final class AdventureComboBuilderViewModel: ObservableObject {
 
         state.isLoadingAvailability = false
     }
-
     private func submitReservation(clientId: String?) async {
+        guard !state.isSubmitting else { return }
+
         let foodDraft = buildFoodDraft()
         let hasFood = !(foodDraft?.isEmpty ?? true)
-        let hasActivities = !state.items.isEmpty
 
-        guard hasActivities || hasFood else {
-            state.errorMessage = "Add at least one activity or one food item."
-            return
-        }
-
-        guard !state.clientName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            state.errorMessage = "Please enter the client name."
-            return
-        }
-
-        let whatsappDigits = state.whatsappNumber.filter(\.isNumber)
-        guard whatsappDigits.count >= 7 else {
-            state.errorMessage = "Please enter a valid WhatsApp number."
-            return
-        }
-
-        let nationalIdDigits = state.nationalId.filter(\.isNumber)
-        guard nationalIdDigits.count >= 8 else {
-            state.errorMessage = "Please enter a valid national ID."
-            return
-        }
-
-        guard state.guestCount > 0 else {
-            state.errorMessage = "Please enter at least one guest."
-            return
-        }
-
-        if state.eventType == .custom,
-           state.customEventTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            state.errorMessage = "Please enter the custom event title."
-            return
-        }
-
-        guard let slot = state.selectedSlot else {
-            state.errorMessage = "Please choose an available start time."
-            return
-        }
-
-        state.isSubmitting = true
         state.errorMessage = nil
-
-        let cleanNotes = state.notes.trimmingCharacters(in: .whitespacesAndNewlines)
-        let cleanEventNotes = state.eventNotes.trimmingCharacters(in: .whitespacesAndNewlines)
-        let cleanCustomEventTitle = state.customEventTitle.trimmingCharacters(in: .whitespacesAndNewlines)
-
-        let request = AdventureBookingRequest(
-            clientId: clientId,
-            clientName: state.clientName.trimmingCharacters(in: .whitespacesAndNewlines),
-            whatsappNumber: whatsappDigits,
-            nationalId: nationalIdDigits,
-            date: state.selectedDate,
-            selectedStartAt: slot.startAt,
-            guestCount: state.guestCount,
-            eventType: state.eventType,
-            customEventTitle: state.eventType == .custom && !cleanCustomEventTitle.isEmpty ? cleanCustomEventTitle : nil,
-            eventNotes: cleanEventNotes.isEmpty ? nil : cleanEventNotes,
-            items: state.items,
-            foodReservation: foodDraft,
-            packageDiscountAmount: state.packageDiscountAmount,
-            notes: cleanNotes.isEmpty ? nil : cleanNotes
-        )
+        state.successMessage = nil
 
         do {
+            let validated = try validateReservationInput(hasFood: hasFood)
+
+            state.isSubmitting = true
+            defer { state.isSubmitting = false }
+
+            let request = AdventureBookingRequest(
+                clientId: clientId,
+                clientName: validated.clientName,
+                whatsappNumber: validated.whatsappNumber,
+                nationalId: validated.nationalId,
+                date: state.selectedDate,
+                selectedStartAt: validated.selectedStartAt,
+                guestCount: state.guestCount,
+                eventType: state.eventType,
+                customEventTitle: validated.customEventTitle,
+                eventNotes: validated.eventNotes,
+                items: state.items,
+                foodReservation: foodDraft,
+                packageDiscountAmount: state.packageDiscountAmount,
+                notes: validated.notes
+            )
+
             let booking = try await createBookingUseCase.execute(request)
-            state.successMessage = "Reservation confirmed for \(booking.clientName) at \(AdventureDateHelper.timeText(booking.startAt))."
+            state.successMessage = "Reserva confirmada para \(booking.clientName) a las \(AdventureDateHelper.timeText(booking.startAt))."
             await loadAvailability()
         } catch {
             state.errorMessage = error.localizedDescription
         }
+    }
+    
+    private struct ValidatedReservationInput {
+        let clientName: String
+        let whatsappNumber: String
+        let nationalId: String
+        let selectedStartAt: Date
+        let customEventTitle: String?
+        let eventNotes: String?
+        let notes: String?
+    }
 
-        state.isSubmitting = false
+    private struct ReservationValidationError: LocalizedError {
+        let message: String
+        var errorDescription: String? { message }
+    }
+
+    private func validateReservationInput(hasFood: Bool) throws -> ValidatedReservationInput {
+        let hasActivities = !state.items.isEmpty
+
+        guard hasActivities || hasFood else {
+            throw ReservationValidationError(message: "Agrega al menos una actividad o un producto de comida.")
+        }
+
+        let cleanClientName = normalizedText(state.clientName)
+        guard isValidPersonName(cleanClientName) else {
+            throw ReservationValidationError(message: "Ingresa un nombre válido del cliente.")
+        }
+
+        guard let normalizedWhatsApp = normalizeEcuadorWhatsApp(state.whatsappNumber) else {
+            throw ReservationValidationError(message: "Ingresa un número de WhatsApp de Ecuador válido.")
+        }
+
+        guard let normalizedNationalId = normalizeEcuadorNationalId(state.nationalId) else {
+            throw ReservationValidationError(message: "Ingresa una cédula ecuatoriana o un RUC personal válido.")
+        }
+
+        guard state.guestCount > 0 else {
+            throw ReservationValidationError(message: "Ingresa al menos un invitado.")
+        }
+
+        let cleanCustomEventTitle = normalizedText(state.customEventTitle)
+        if state.eventType == .custom {
+            guard cleanCustomEventTitle.count >= 3 else {
+                throw ReservationValidationError(message: "Ingresa un título válido para el evento personalizado.")
+            }
+
+            guard cleanCustomEventTitle.count <= 80 else {
+                throw ReservationValidationError(message: "El título del evento personalizado es demasiado largo.")
+            }
+        }
+
+        let cleanNotes = normalizedText(state.notes)
+        guard cleanNotes.count <= 500 else {
+            throw ReservationValidationError(message: "Las notas de la reserva son demasiado largas.")
+        }
+
+        let cleanEventNotes = normalizedText(state.eventNotes)
+        guard cleanEventNotes.count <= 300 else {
+            throw ReservationValidationError(message: "Las notas del evento son demasiado largas.")
+        }
+
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: Date())
+        let selectedDay = calendar.startOfDay(for: state.selectedDate)
+
+        guard selectedDay >= today else {
+            throw ReservationValidationError(message: "No puedes crear una reserva para una fecha pasada.")
+        }
+
+        guard let slot = state.selectedSlot else {
+            throw ReservationValidationError(message: "Selecciona una hora de inicio disponible.")
+        }
+
+        guard calendar.isDate(slot.startAt, inSameDayAs: state.selectedDate) else {
+            throw ReservationValidationError(message: "La hora seleccionada no pertenece a la fecha elegida.")
+        }
+
+        guard slot.startAt > Date() else {
+            throw ReservationValidationError(message: "La hora de inicio seleccionada ya pasó. Elige otra hora.")
+        }
+
+        return ValidatedReservationInput(
+            clientName: cleanClientName,
+            whatsappNumber: normalizedWhatsApp,
+            nationalId: normalizedNationalId,
+            selectedStartAt: slot.startAt,
+            customEventTitle: state.eventType == .custom ? cleanCustomEventTitle : nil,
+            eventNotes: cleanEventNotes.isEmpty ? nil : cleanEventNotes,
+            notes: cleanNotes.isEmpty ? nil : cleanNotes
+        )
+    }
+    
+    private func normalizedText(_ value: String) -> String {
+        value
+            .components(separatedBy: .whitespacesAndNewlines)
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func isValidPersonName(_ name: String) -> Bool {
+        let allowedSymbols: Set<Character> = [" ", "-", "'", "."]
+        let letterCount = name.unicodeScalars.filter { CharacterSet.letters.contains($0) }.count
+
+        guard letterCount >= 3 else { return false }
+        guard name.count >= 3 else { return false }
+
+        return name.allSatisfy { character in
+            if allowedSymbols.contains(character) { return true }
+            return character.unicodeScalars.allSatisfy { CharacterSet.letters.contains($0) }
+        }
+    }
+
+    private func normalizeEcuadorWhatsApp(_ rawValue: String) -> String? {
+        let digits = rawValue.filter(\.isNumber)
+
+        let normalized: String?
+
+        switch digits.count {
+        case 10:
+            normalized = digits.hasPrefix("09") ? digits : nil
+        case 12:
+            if digits.hasPrefix("593"), digits.dropFirst(3).hasPrefix("9") {
+                normalized = "0" + digits.dropFirst(3)
+            } else {
+                normalized = nil
+            }
+        default:
+            normalized = nil
+        }
+
+        guard let normalized else { return nil }
+        guard Set(normalized).count > 1 else { return nil } // rejects 0999999999, 0000000000, etc.
+
+        return normalized
+    }
+
+    private func normalizeEcuadorNationalId(_ rawValue: String) -> String? {
+        let digits = rawValue.filter(\.isNumber)
+
+        if isValidEcuadorCedula(digits) {
+            return digits
+        }
+
+        if isValidEcuadorPersonalRUC(digits) {
+            return digits
+        }
+
+        return nil
+    }
+
+    private func isValidEcuadorCedula(_ digits: String) -> Bool {
+        guard digits.count == 10 else { return false }
+        guard Set(digits).count > 1 else { return false }
+
+        let numbers = digits.compactMap(\.wholeNumberValue)
+        guard numbers.count == 10 else { return false }
+
+        let provinceCode = numbers[0] * 10 + numbers[1]
+        guard (1...24).contains(provinceCode) else { return false }
+
+        let thirdDigit = numbers[2]
+        guard (0...5).contains(thirdDigit) else { return false }
+
+        var sum = 0
+
+        for index in 0..<9 {
+            var value = numbers[index]
+
+            if index.isMultiple(of: 2) {
+                value *= 2
+                if value > 9 { value -= 9 }
+            }
+
+            sum += value
+        }
+
+        let verifier = sum % 10 == 0 ? 0 : 10 - (sum % 10)
+        return verifier == numbers[9]
+    }
+
+    private func isValidEcuadorPersonalRUC(_ digits: String) -> Bool {
+        guard digits.count == 13 else { return false }
+        guard String(digits.suffix(3)) != "000" else { return false }
+
+        let cedulaPart = String(digits.prefix(10))
+        return isValidEcuadorCedula(cedulaPart)
     }
 
     private func keepCampingAtEnd() {
@@ -6188,6 +6595,67 @@ final class AdventureComboBuilderViewModel: ObservableObject {
             second: 0,
             of: state.selectedDate
         )
+    }
+    
+    private func normalizedPackageSignature(
+        for items: [AdventureReservationItemDraft]
+    ) -> [PackageItemSignature] {
+        items
+            .map(PackageItemSignature.init)
+            .sorted()
+    }
+
+    private func resolvedPackageDiscountAmount(
+        for items: [AdventureReservationItemDraft]
+    ) -> Double {
+        guard items.count >= 2 else { return 0 }
+
+        let currentSignature = normalizedPackageSignature(for: items)
+
+        return state.catalog.activePackagesSorted.first(where: { package in
+            normalizedPackageSignature(for: package.items) == currentSignature
+        })?.packageDiscountAmount ?? 0
+    }
+
+    private func refreshPackageDiscount() {
+        state.packageDiscountAmount = resolvedPackageDiscountAmount(for: state.items)
+    }
+
+    private struct PackageItemSignature: Hashable, Comparable {
+        let activity: AdventureActivityType
+        let durationMinutes: Int
+        let peopleCount: Int
+        let vehicleCount: Int
+        let offRoadRiderCount: Int
+        let nights: Int
+
+        init(_ item: AdventureReservationItemDraft) {
+            self.activity = item.activity
+            self.durationMinutes = item.durationMinutes
+            self.peopleCount = item.peopleCount
+            self.vehicleCount = item.vehicleCount
+            self.offRoadRiderCount = item.offRoadRiderCount
+            self.nights = item.nights
+        }
+
+        static func < (lhs: PackageItemSignature, rhs: PackageItemSignature) -> Bool {
+            if lhs.activity.rawValue != rhs.activity.rawValue {
+                return lhs.activity.rawValue < rhs.activity.rawValue
+            }
+            if lhs.durationMinutes != rhs.durationMinutes {
+                return lhs.durationMinutes < rhs.durationMinutes
+            }
+            if lhs.peopleCount != rhs.peopleCount {
+                return lhs.peopleCount < rhs.peopleCount
+            }
+            if lhs.vehicleCount != rhs.vehicleCount {
+                return lhs.vehicleCount < rhs.vehicleCount
+            }
+            if lhs.offRoadRiderCount != rhs.offRoadRiderCount {
+                return lhs.offRoadRiderCount < rhs.offRoadRiderCount
+            }
+            return lhs.nights < rhs.nights
+        }
     }
 }
 
@@ -6798,8 +7266,8 @@ struct AuthenticationView: View {
                 Text("Altos del Murco")
                     .font(.system(size: 34, weight: .bold, design: .rounded))
                     .foregroundStyle(palette.textPrimary)
-                
-                Text("Restaurant, adventure and rewards in one account.")
+
+                Text("Restaurante, aventura y recompensas en una sola cuenta.")
                     .font(.subheadline)
                     .foregroundStyle(palette.textSecondary)
                     .multilineTextAlignment(.center)
@@ -6807,9 +7275,9 @@ struct AuthenticationView: View {
             }
             
             HStack(spacing: 10) {
-                BrandBadge(theme: .restaurant, title: "Restaurant")
-                BrandBadge(theme: .adventure, title: "Adventure")
-                BrandBadge(theme: .neutral, title: "Rewards")
+                BrandBadge(theme: .restaurant, title: "Restaurante")
+                BrandBadge(theme: .adventure, title: "Aventura")
+                BrandBadge(theme: .neutral, title: "Recompensas")
             }
         }
         .frame(maxWidth: .infinity)
@@ -6820,33 +7288,33 @@ struct AuthenticationView: View {
         VStack(alignment: .leading, spacing: 18) {
             BrandSectionHeader(
                 theme: .neutral,
-                title: "Everything in one place",
-                subtitle: "Your account connects food, bookings, rewards and personalized offers."
+                title: "Todo en un solo lugar",
+                subtitle: "Tu cuenta conecta pedidos, reservas, recompensas y ofertas personalizadas."
             )
             
             VStack(spacing: 14) {
                 FeatureRow(
                     theme: .restaurant,
                     icon: "fork.knife",
-                    text: "Restaurant orders and loyalty"
+                    text: "Pedidos del restaurante y fidelización"
                 )
-                
+
                 FeatureRow(
                     theme: .neutral,
                     icon: "birthday.cake.fill",
-                    text: "Birthday discounts and special promos"
+                    text: "Descuentos de cumpleaños y promociones especiales"
                 )
-                
+
                 FeatureRow(
                     theme: .adventure,
                     icon: "figure.outdoor.cycle",
-                    text: "Adventure bookings in one place"
+                    text: "Reservas de aventura en un solo lugar"
                 )
-                
+
                 FeatureRow(
                     theme: .neutral,
                     icon: "lock.shield.fill",
-                    text: "Private and secure Apple sign in"
+                    text: "Inicio de sesión con Apple seguro y privado"
                 )
             }
         }
@@ -6856,11 +7324,11 @@ struct AuthenticationView: View {
     private var signInCard: some View {
         VStack(spacing: 18) {
             VStack(spacing: 8) {
-                Text("Sign in to continue")
+                Text("Inicia sesión para continuar")
                     .font(.title3.bold())
                     .foregroundStyle(palette.textPrimary)
                 
-                Text("Your profile helps us personalize reservations, discounts and contact details.")
+                Text("Tu perfil nos ayuda a personalizar tus reservas, descuentos y datos de contacto.")
                     .font(.footnote)
                     .multilineTextAlignment(.center)
                     .foregroundStyle(palette.textSecondary)
@@ -6880,7 +7348,7 @@ struct AuthenticationView: View {
                 y: 8
             )
             
-            Text("By continuing, your account will be linked to your Apple sign in.")
+            Text("Al continuar, tu cuenta se vinculará con tu inicio de sesión de Apple.")
                 .font(.footnote)
                 .foregroundStyle(palette.textTertiary)
                 .multilineTextAlignment(.center)
@@ -9278,34 +9746,24 @@ struct ClientProfileDocument: Codable {
 
 import Foundation
 
-enum LoyaltyLevel: String, Codable, CaseIterable, Hashable {
-    case silver
-    case gold
-    case diamond
+struct ProfileStats {
+    let points: Int
+    let completedOrders: Int
+    let completedBookings: Int
+    let restaurantSpent: Double
+    let adventureSpent: Double
+    let totalSpent: Double
+    let level: LoyaltyLevel
 
-    var title: String { rawValue.capitalized }
-
-    var badgeSubtitle: String {
-        switch self {
-        case .silver:
-            return "Building your rewards history"
-        case .gold:
-            return "Strong loyalty across experiences"
-        case .diamond:
-            return "Top guest level"
-        }
-    }
-
-    static func from(totalSpent: Double) -> LoyaltyLevel {
-        switch totalSpent {
-        case 0..<200:
-            return .silver
-        case 200..<800:
-            return .gold
-        default:
-            return .diamond
-        }
-    }
+    static let empty = ProfileStats(
+        points: 0,
+        completedOrders: 0,
+        completedBookings: 0,
+        restaurantSpent: 0,
+        adventureSpent: 0,
+        totalSpent: 0,
+        level: .silver
+    )
 }
 
 ```
@@ -9340,8 +9798,8 @@ struct AccountActionsView: View {
         ScrollView {
             VStack(spacing: 16) {
                 dangerRow(
-                    title: "Sign Out",
-                    subtitle: "Close your current session on this device",
+                    title: "Cerrar sesión",
+                    subtitle: "Cierra tu sesión actual en este dispositivo",
                     systemImage: "rectangle.portrait.and.arrow.right",
                     tint: .orange
                 ) {
@@ -9349,8 +9807,8 @@ struct AccountActionsView: View {
                 }
 
                 dangerRow(
-                    title: "Delete Account",
-                    subtitle: "Permanently remove your account and profile",
+                    title: "Eliminar cuenta",
+                    subtitle: "Elimina permanentemente tu cuenta y perfil",
                     systemImage: "trash.fill",
                     tint: .red
                 ) {
@@ -9359,29 +9817,29 @@ struct AccountActionsView: View {
             }
             .padding(16)
         }
-        .navigationTitle("Account Actions")
+        .navigationTitle("Acciones de la cuenta")
         .appScreenStyle(theme)
         .confirmationDialog(
-            "Sign out?",
+            "¿Cerrar sesión?",
             isPresented: $showSignOutDialog,
             titleVisibility: .visible
         ) {
-            Button("Sign Out", role: .destructive) {
+            Button("Cerrar sesión", role: .destructive) {
                 viewModel.signOutTapped()
             }
-            Button("Cancel", role: .cancel) { }
+            Button("Cancelar", role: .cancel) { }
         }
         .confirmationDialog(
-            "Delete account?",
+            "¿Eliminar cuenta?",
             isPresented: $showDeleteDialog,
             titleVisibility: .visible
         ) {
-            Button("Delete Account", role: .destructive) {
+            Button("Eliminar cuenta", role: .destructive) {
                 viewModel.askForDeleteAccount()
             }
-            Button("Cancel", role: .cancel) { }
+            Button("Cancelar", role: .cancel) { }
         } message: {
-            Text("These actions affect your account and should be confirmed first.")
+            Text("Estas acciones afectan tu cuenta y deben confirmarse primero.")
         }
     }
 
@@ -9487,17 +9945,17 @@ enum AppAppearance: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .system: return "System"
-        case .light: return "Light"
-        case .dark: return "Dark"
+        case .system: return "Sistema"
+        case .light: return "Claro"
+        case .dark: return "Oscuro"
         }
     }
 
     var subtitle: String {
         switch self {
-        case .system: return "Follow the device appearance"
-        case .light: return "Always use light mode"
-        case .dark: return "Always use dark mode"
+        case .system: return "Seguir la apariencia del dispositivo"
+        case .light: return "Usar siempre el modo claro"
+        case .dark: return "Usar siempre el modo oscuro"
         }
     }
 
@@ -9565,11 +10023,11 @@ struct AppearanceSettingsView: View {
         List {
             Section {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("Appearance")
+                    Text("Apariencia")
                         .font(.title3.bold())
                         .foregroundStyle(palette.textPrimary)
                     
-                    Text("Choose how the app looks across the interface.")
+                    Text("Elige cómo se verá la app en toda la interfaz.")
                         .font(.subheadline)
                         .foregroundStyle(palette.textSecondary)
                 }
@@ -9626,7 +10084,7 @@ struct AppearanceSettingsView: View {
         }
         .scrollContentBackground(.hidden)
         .background(Color.clear)
-        .navigationTitle("Appearance")
+        .navigationTitle("Apariencia")
         .navigationBarTitleDisplayMode(.inline)
         .appScreenStyle(theme)
     }
@@ -9680,7 +10138,7 @@ struct DeleteAccountConfirmationView: View {
                         actionSection
                         
                         if viewModel.isDeletingAccount {
-                            ProgressView("Deleting account...")
+                            ProgressView("Eliminando cuenta...")
                                 .tint(palette.destructive)
                                 .foregroundStyle(palette.textSecondary)
                                 .padding(.top, 4)
@@ -9689,7 +10147,7 @@ struct DeleteAccountConfirmationView: View {
                     .padding(24)
                 }
             }
-            .navigationTitle("Confirm Deletion")
+            .navigationTitle("Confirmar eliminación")
             .navigationBarTitleDisplayMode(.inline)
         }
         .presentationDetents([.medium, .large])
@@ -9713,11 +10171,11 @@ struct DeleteAccountConfirmationView: View {
             }
             
             VStack(spacing: 10) {
-                Text("Delete account")
+                Text("Eliminar cuenta")
                     .font(.title2.bold())
                     .foregroundStyle(palette.textPrimary)
                 
-                Text("This action is permanent. Your profile will be removed and you will lose access to your account.")
+                Text("Esta acción es permanente. Tu perfil será eliminado y perderás el acceso a tu cuenta.")
                     .font(.body)
                     .foregroundStyle(palette.textSecondary)
                     .multilineTextAlignment(.center)
@@ -9732,17 +10190,17 @@ struct DeleteAccountConfirmationView: View {
         VStack(alignment: .leading, spacing: 14) {
             warningRow(
                 systemImage: "person.crop.circle.badge.xmark",
-                text: "Your client profile will be deleted"
+                text: "Tu perfil de cliente será eliminado"
             )
             
             warningRow(
                 systemImage: "rectangle.portrait.and.arrow.right",
-                text: "You will be signed out immediately"
+                text: "Se cerrará tu sesión inmediatamente"
             )
             
             warningRow(
                 systemImage: "exclamationmark.triangle.fill",
-                text: "This action cannot be undone"
+                text: "Esta acción no se puede deshacer"
             )
         }
         .appCardStyle(.neutral, emphasized: true)
@@ -9750,7 +10208,7 @@ struct DeleteAccountConfirmationView: View {
     
     private var actionSection: some View {
         VStack(spacing: 14) {
-            Text("To continue, confirm your identity with Apple.")
+            Text("Para continuar, confirma tu identidad con Apple.")
                 .font(.footnote)
                 .foregroundStyle(palette.textSecondary)
                 .multilineTextAlignment(.center)
@@ -9829,46 +10287,46 @@ struct EditProfileView: View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 18) {
-                    ProfileFieldSection(theme: theme, title: "Account") {
+                    ProfileFieldSection(theme: theme, title: "Cuenta") {
                         ReadOnlyFieldCard(
                             theme: theme,
-                            title: "Email",
-                            value: viewModel.email.isEmpty ? "Hidden by Apple" : viewModel.email
+                            title: "Correo electrónico",
+                            value: viewModel.email.isEmpty ? "Oculto por Apple" : viewModel.email
                         )
                     }
 
-                    ProfileFieldSection(theme: theme, title: "Personal information") {
+                    ProfileFieldSection(theme: theme, title: "Información personal") {
                         EditableFieldCard(
                             theme: theme,
-                            title: "Full name",
-                            placeholder: "Enter your full name",
+                            title: "Nombre completo",
+                            placeholder: "Ingresa tu nombre completo",
                             text: $viewModel.fullName,
                             keyboardType: .default
                         )
 
                         EditableFieldCard(
                             theme: theme,
-                            title: "National unique number",
-                            placeholder: "Example: 0501234567",
+                            title: "Número de cédula",
+                            placeholder: "Ejemplo: 0501234567",
                             text: $viewModel.nationalId,
                             keyboardType: .numberPad
                         )
 
                         EditableFieldCard(
                             theme: theme,
-                            title: "Phone number",
-                            placeholder: "Example: 0987654321",
+                            title: "Número de teléfono",
+                            placeholder: "Ejemplo: 0987654321",
                             text: $viewModel.phoneNumber,
                             keyboardType: .phonePad
                         )
 
                         VStack(alignment: .leading, spacing: 10) {
-                            Label("Birthday", systemImage: "calendar")
+                            Label("Fecha de nacimiento", systemImage: "calendar")
                                 .font(.subheadline.bold())
                                 .foregroundStyle(palette.textPrimary)
 
                             DatePicker(
-                                "Birthday",
+                                "Fecha de nacimiento",
                                 selection: $viewModel.birthday,
                                 in: viewModel.validBirthdayRange,
                                 displayedComponents: .date
@@ -9890,13 +10348,13 @@ struct EditProfileView: View {
                         }
                     }
 
-                    ProfileFieldSection(theme: theme, title: "Address") {
+                    ProfileFieldSection(theme: theme, title: "Dirección") {
                         VStack(alignment: .leading, spacing: 10) {
-                            Label("Address", systemImage: "house")
+                            Label("Dirección", systemImage: "house")
                                 .font(.subheadline.bold())
                                 .foregroundStyle(palette.textPrimary)
 
-                            TextField("Street, reference, sector...", text: $viewModel.address, axis: .vertical)
+                            TextField("Calle, referencia, sector...", text: $viewModel.address, axis: .vertical)
                                 .textInputAutocapitalization(.words)
                                 .autocorrectionDisabled()
                                 .foregroundStyle(palette.textPrimary)
@@ -9914,19 +10372,19 @@ struct EditProfileView: View {
                         }
                     }
 
-                    ProfileFieldSection(theme: theme, title: "Emergency contact") {
+                    ProfileFieldSection(theme: theme, title: "Contacto de emergencia") {
                         EditableFieldCard(
                             theme: theme,
-                            title: "Emergency contact name",
-                            placeholder: "Who should we contact if needed?",
+                            title: "Nombre del contacto de emergencia",
+                            placeholder: "¿A quién debemos contactar si es necesario?",
                             text: $viewModel.emergencyContactName,
                             keyboardType: .default
                         )
 
                         EditableFieldCard(
                             theme: theme,
-                            title: "Emergency contact phone",
-                            placeholder: "Example: 0999999999",
+                            title: "Teléfono del contacto de emergencia",
+                            placeholder: "Ejemplo: 0999999999",
                             text: $viewModel.emergencyContactPhone,
                             keyboardType: .phonePad
                         )
@@ -9955,11 +10413,11 @@ struct EditProfileView: View {
                 }
                 .padding()
             }
-            .navigationTitle("Edit Profile")
+            .navigationTitle("Editar perfil")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    Button("Close") {
+                    Button("Cerrar") {
                         dismiss()
                     }
                 }
@@ -9972,7 +10430,7 @@ struct EditProfileView: View {
                             ProgressView()
                                 .tint(palette.primary)
                         } else {
-                            Text("Save")
+                            Text("Guardar")
                                 .fontWeight(.semibold)
                         }
                     }
@@ -10059,6 +10517,656 @@ private struct ReadOnlyFieldCard: View {
 
 ---
 
+# Altos del Murco/root/feature/altos/profile/presentation/view/LoyaltyProgramView.swift
+
+```swift
+//
+//  LoyaltyProgramView.swift
+//  Altos del Murco
+//
+//  Created by José Ruiz on 20/4/26.
+//
+
+import SwiftUI
+
+struct LoyaltyProgramView: View {
+    @Environment(\.colorScheme) private var colorScheme
+
+    private let theme: AppSectionTheme = .neutral
+
+    let currentLevel: LoyaltyLevel
+    let totalSpent: Double
+    let points: Int
+    let completedOrders: Int
+    let completedBookings: Int
+
+    private var palette: ThemePalette {
+        AppTheme.palette(for: theme, scheme: colorScheme)
+    }
+
+    private var totalVisits: Int {
+        completedOrders + completedBookings
+    }
+
+    private var nextLevel: LoyaltyLevel? {
+        currentLevel.nextLevel
+    }
+
+    private var remainingToNextLevel: Double {
+        currentLevel.remainingSpend(from: totalSpent)
+    }
+
+    private var progressToNextLevel: Double {
+        LoyaltyLevel.progress(for: totalSpent)
+    }
+
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 18) {
+                heroSection
+                howItWorksSection
+                currentBenefitsSection
+                progressSection
+                levelsSection
+                rewardsSection
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 12)
+            .padding(.bottom, 28)
+        }
+        .navigationTitle("Murco Loyalty")
+        .navigationBarTitleDisplayMode(.inline)
+        .appScreenStyle(theme)
+    }
+
+    private var heroSection: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            HStack(alignment: .top, spacing: 14) {
+                ZStack {
+                    Circle()
+                        .fill(palette.chipGradient)
+                        .frame(width: 68, height: 68)
+
+                    Image(systemName: currentLevel.systemImage)
+                        .font(.title2.bold())
+                        .foregroundStyle(palette.primary)
+                }
+
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Tu nivel actual")
+                        .font(.caption.bold())
+                        .foregroundStyle(palette.textSecondary)
+
+                    Text(currentLevel.title)
+                        .font(.system(size: 28, weight: .bold, design: .rounded))
+                        .foregroundStyle(palette.textPrimary)
+
+                    Text(currentLevel.badgeSubtitle)
+                        .font(.subheadline)
+                        .foregroundStyle(palette.textSecondary)
+                }
+
+                Spacer()
+            }
+
+            Text("Cada vez que vuelves a Altos del Murco acumulas más valor en tu cuenta, subes de nivel y desbloqueas descuentos y regalos en platos, jugos, bebidas y postres.")
+                .font(.subheadline)
+                .foregroundStyle(palette.textPrimary)
+
+            HStack(spacing: 12) {
+                heroMetric(
+                    title: "Consumo",
+                    value: totalSpent.priceText,
+                    systemImage: "creditcard.fill"
+                )
+
+                heroMetric(
+                    title: "Puntos",
+                    value: "\(points)",
+                    systemImage: "star.fill"
+                )
+
+                heroMetric(
+                    title: "Visitas",
+                    value: "\(totalVisits)",
+                    systemImage: "figure.walk"
+                )
+            }
+
+            if let nextLevel {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Text("Progreso a \(nextLevel.title)")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(palette.textPrimary)
+
+                        Spacer()
+
+                        Text("\(Int(progressToNextLevel * 100))%")
+                            .font(.caption.bold())
+                            .foregroundStyle(palette.primary)
+                    }
+
+                    ProgressView(value: progressToNextLevel)
+                        .tint(palette.primary)
+
+                    Text("Te faltan \(remainingToNextLevel.priceText) en consumo acumulado para subir al nivel \(nextLevel.title).")
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(palette.textSecondary)
+                }
+            } else {
+                Label("Ya alcanzaste el nivel más alto del programa", systemImage: "sparkles")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(palette.primary)
+            }
+        }
+        .padding(20)
+        .background(
+            RoundedRectangle(cornerRadius: 28, style: .continuous)
+                .fill(palette.cardGradient)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 28, style: .continuous)
+                .stroke(palette.stroke, lineWidth: 1)
+        )
+        .shadow(
+            color: palette.shadow.opacity(colorScheme == .dark ? 0.16 : 0.08),
+            radius: 10,
+            x: 0,
+            y: 6
+        )
+    }
+
+    private var howItWorksSection: some View {
+        sectionCard(
+            title: "¿Cómo funciona?",
+            subtitle: "Simple: disfruta, vuelve y desbloquea mejores recompensas."
+        ) {
+            VStack(spacing: 12) {
+                loyaltyStep(
+                    title: "1. Consume y disfruta",
+                    description: "Tus pedidos y reservas completadas suman consumo acumulado y fortalecen tu nivel.",
+                    systemImage: "fork.knife"
+                )
+
+                loyaltyStep(
+                    title: "2. Regresa y sube",
+                    description: "Cada nueva visita te acerca al siguiente nivel con mejores descuentos y premios.",
+                    systemImage: "arrow.up.right.circle.fill"
+                )
+
+                loyaltyStep(
+                    title: "3. Recibe recompensas",
+                    description: "Mientras más fiel seas, más opciones tendrás de ganar platos, jugos, bebidas y postres gratis.",
+                    systemImage: "gift.fill"
+                )
+            }
+
+            Text("Solo cuentan los pedidos y reservas completadas.")
+                .font(.caption.weight(.medium))
+                .foregroundStyle(palette.textSecondary)
+        }
+    }
+
+    private var currentBenefitsSection: some View {
+        sectionCard(
+            title: "Tus beneficios actuales",
+            subtitle: "Esto es lo que ya tienes disponible en tu nivel \(currentLevel.title)."
+        ) {
+            VStack(spacing: 12) {
+                ForEach(currentLevel.benefits) { benefit in
+                    benefitRow(benefit)
+                }
+            }
+        }
+    }
+    
+    private var progressSection: some View {
+        sectionCard(
+            title: "Tu siguiente meta",
+            subtitle: nextLevel == nil
+                ? "Ya alcanzaste el nivel más alto del programa."
+                : "Sigue acumulando para desbloquear recompensas mejores y más valiosas."
+        ) {
+            if let nextLevel {
+                VStack(alignment: .leading, spacing: 14) {
+                    HStack(alignment: .center) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Próximo nivel: \(nextLevel.title)")
+                                .font(.headline)
+                                .foregroundStyle(palette.textPrimary)
+
+                            Text(nextLevel.spendRangeText)
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(palette.textSecondary)
+                        }
+
+                        Spacer()
+
+                        ZStack {
+                            Circle()
+                                .fill(palette.chipGradient)
+                                .frame(width: 42, height: 42)
+
+                            Image(systemName: nextLevel.systemImage)
+                                .font(.subheadline.bold())
+                                .foregroundStyle(palette.primary)
+                        }
+                    }
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            Text("Progreso")
+                                .font(.caption.bold())
+                                .foregroundStyle(palette.textSecondary)
+
+                            Spacer()
+
+                            Text("\(Int(progressToNextLevel * 100))%")
+                                .font(.caption.bold())
+                                .foregroundStyle(palette.primary)
+                        }
+
+                        ProgressView(value: progressToNextLevel)
+                            .tint(palette.primary)
+
+                        Text("Te faltan \(remainingToNextLevel.priceText) de consumo acumulado para subir a \(nextLevel.title).")
+                            .font(.subheadline)
+                            .foregroundStyle(palette.textSecondary)
+                    }
+
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("Lo que desbloquearás")
+                            .font(.subheadline.bold())
+                            .foregroundStyle(palette.textPrimary)
+
+                        ForEach(Array(nextLevel.benefits.prefix(2))) { benefit in
+                            benefitRow(benefit, highlighted: true)
+                        }
+                    }
+                }
+            } else {
+                VStack(alignment: .leading, spacing: 14) {
+                    Label("Nivel \(currentLevel.title) desbloqueado", systemImage: currentLevel.systemImage)
+                        .font(.headline)
+                        .foregroundStyle(palette.primary)
+
+                    Text("Ya estás en el nivel más alto. Ahora puedes aprovechar los beneficios más fuertes del programa, con descuentos y regalos más valiosos.")
+                        .font(.subheadline)
+                        .foregroundStyle(palette.textSecondary)
+
+                    VStack(spacing: 12) {
+                        ForEach(currentLevel.benefits.prefix(2)) { benefit in
+                            benefitRow(benefit, highlighted: true)
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    private func benefitRow(
+        _ benefit: LoyaltyBenefit,
+        highlighted: Bool = false
+    ) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(highlighted ? AnyShapeStyle(palette.cardGradient) : AnyShapeStyle(palette.elevatedCard))
+                    .frame(width: 46, height: 46)
+
+                Image(systemName: benefitIcon(for: benefit))
+                    .font(.subheadline.bold())
+                    .foregroundStyle(highlighted ? palette.onPrimary : palette.primary)
+            }
+
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(alignment: .top, spacing: 8) {
+                    Text(benefit.title)
+                        .font(.subheadline.bold())
+                        .foregroundStyle(palette.textPrimary)
+
+                    Spacer()
+
+                    Text(benefitBadgeText(for: benefit))
+                        .font(.caption2.bold())
+                        .foregroundStyle(highlighted ? palette.onPrimary : palette.primary)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 5)
+                        .background(
+                            Capsule()
+                                .fill(highlighted ? palette.primary : palette.primary.opacity(0.12))
+                        )
+                }
+
+                Text(benefit.detail)
+                    .font(.subheadline)
+                    .foregroundStyle(palette.textSecondary)
+
+                HStack(spacing: 8) {
+                    if let productName = benefit.productName {
+                        benefitMetaChip(
+                            text: productName,
+                            systemImage: "fork.knife"
+                        )
+                    }
+
+                    if let requiredVisits = benefit.requiredVisits {
+                        benefitMetaChip(
+                            text: "\(requiredVisits) visitas",
+                            systemImage: "calendar.badge.clock"
+                        )
+                    }
+                }
+            }
+
+            Spacer(minLength: 0)
+        }
+        .padding(14)
+        .background(
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .fill(highlighted ? AnyShapeStyle(palette.cardGradient) : AnyShapeStyle(palette.elevatedCard))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .stroke(
+                    highlighted ? palette.primary.opacity(0.28) : palette.stroke,
+                    lineWidth: 1
+                )
+        )
+    }
+    
+    private func benefitMetaChip(
+        text: String,
+        systemImage: String
+    ) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: systemImage)
+                .font(.caption2.bold())
+
+            Text(text)
+                .font(.caption.weight(.semibold))
+                .lineLimit(1)
+        }
+        .foregroundStyle(palette.primary)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(
+            Capsule()
+                .fill(palette.primary.opacity(0.10))
+        )
+    }
+
+    private func benefitIcon(for benefit: LoyaltyBenefit) -> String {
+        switch benefit.kind {
+        case .percentageDiscount:
+            return "percent"
+        case .freeProduct:
+            return "gift.fill"
+        case .campaignReward:
+            return "sparkles"
+        }
+    }
+
+    private func benefitBadgeText(for benefit: LoyaltyBenefit) -> String {
+        switch benefit.kind {
+        case .percentageDiscount(let value):
+            return "\(Int(value))% OFF"
+        case .freeProduct:
+            return "GRATIS"
+        case .campaignReward:
+            return "PROMO"
+        }
+    }
+
+    private var levelsSection: some View {
+        sectionCard(
+            title: "Niveles de lealtad",
+            subtitle: "Cada escalón mejora tu experiencia y hace más valioso volver."
+        ) {
+            VStack(spacing: 12) {
+                ForEach(LoyaltyLevel.allCases, id: \.self) { level in
+                    levelRow(level)
+                }
+            }
+        }
+    }
+
+    private var rewardsSection: some View {
+        sectionCard(
+            title: "¿Qué puedes ganar?",
+            subtitle: "El programa está pensado para motivarte a regresar y disfrutar más en cada visita."
+        ) {
+            VStack(spacing: 10) {
+                rewardHighlight("Descuentos en platos y combos seleccionados", systemImage: "tag.fill")
+                rewardHighlight("Jugos o bebidas gratis en beneficios especiales", systemImage: "takeoutbag.and.cup.and.straw.fill")
+                rewardHighlight("Postres de cortesía para celebrar tu fidelidad", systemImage: "birthday.cake.fill")
+                rewardHighlight("Premios sorpresa al seguir subiendo de nivel", systemImage: "sparkles")
+            }
+        }
+    }
+
+    private func heroMetric(
+        title: String,
+        value: String,
+        systemImage: String
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Image(systemName: systemImage)
+                .font(.caption.bold())
+                .foregroundStyle(palette.primary)
+
+            Text(value)
+                .font(.headline.bold())
+                .foregroundStyle(palette.textPrimary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+
+            Text(title)
+                .font(.caption)
+                .foregroundStyle(palette.textSecondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(palette.elevatedCard)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(palette.stroke, lineWidth: 1)
+        )
+    }
+
+    private func loyaltyStep(
+        title: String,
+        description: String,
+        systemImage: String
+    ) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            ZStack {
+                Circle()
+                    .fill(palette.chipGradient)
+                    .frame(width: 40, height: 40)
+
+                Image(systemName: systemImage)
+                    .font(.subheadline.bold())
+                    .foregroundStyle(palette.primary)
+            }
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title)
+                    .font(.subheadline.bold())
+                    .foregroundStyle(palette.textPrimary)
+
+                Text(description)
+                    .font(.subheadline)
+                    .foregroundStyle(palette.textSecondary)
+            }
+
+            Spacer()
+        }
+        .padding(14)
+        .background(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(palette.elevatedCard)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(palette.stroke, lineWidth: 1)
+        )
+    }
+
+    private func benefitRow(_ text: String) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: "checkmark.seal.fill")
+                .font(.subheadline)
+                .foregroundStyle(palette.primary)
+                .padding(.top, 2)
+
+            Text(text)
+                .font(.subheadline)
+                .foregroundStyle(palette.textPrimary)
+
+            Spacer()
+        }
+    }
+
+    private func rewardHighlight(
+        _ title: String,
+        systemImage: String
+    ) -> some View {
+        HStack(spacing: 12) {
+            ZStack {
+                Circle()
+                    .fill(palette.chipGradient)
+                    .frame(width: 38, height: 38)
+
+                Image(systemName: systemImage)
+                    .font(.subheadline.weight(.bold))
+                    .foregroundStyle(palette.primary)
+            }
+
+            Text(title)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(palette.textPrimary)
+
+            Spacer()
+        }
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(palette.elevatedCard)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(palette.stroke, lineWidth: 1)
+        )
+    }
+
+    private func levelRow(_ level: LoyaltyLevel) -> some View {
+        let isCurrent = level == currentLevel
+        let isUnlocked = totalSpent >= level.minimumSpent
+
+        return HStack(alignment: .top, spacing: 14) {
+            ZStack {
+                Circle()
+                    .fill(isCurrent ? palette.heroGradient : palette.chipGradient)
+                    .frame(width: 52, height: 52)
+
+                Image(systemName: level.systemImage)
+                    .font(.headline.bold())
+                    .foregroundStyle(isCurrent ? palette.onPrimary : palette.primary)
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    Text(level.title)
+                        .font(.headline)
+                        .foregroundStyle(palette.textPrimary)
+
+                    Spacer()
+
+                    Text(isCurrent ? "Actual" : (isUnlocked ? "Desbloqueado" : "Bloqueado"))
+                        .font(.caption.bold())
+                        .foregroundStyle(isCurrent ? palette.onPrimary : palette.primary)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(
+                            Capsule()
+                                .fill(isCurrent ? palette.primary : palette.primary.opacity(0.12))
+                        )
+                }
+
+                Text(level.spendRangeText)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(palette.textSecondary)
+
+                Text(level.badgeSubtitle)
+                    .font(.subheadline)
+                    .foregroundStyle(palette.textPrimary)
+
+                Text(level.benefits.map { $0.title }.joined(separator: " • "))
+                    .font(.caption)
+                    .foregroundStyle(palette.textSecondary)
+            }
+        }
+        .padding(14)
+        .background(
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .fill(isCurrent ? AnyShapeStyle(palette.cardGradient) : AnyShapeStyle(palette.elevatedCard))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .stroke(isCurrent ? palette.primary.opacity(0.35) : palette.stroke, lineWidth: 1)
+        )
+        .opacity(isUnlocked || isCurrent ? 1 : 0.72)
+    }
+
+    private func sectionCard<Content: View>(
+        title: String,
+        subtitle: String? = nil,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title)
+                    .font(.headline)
+                    .foregroundStyle(palette.textPrimary)
+
+                if let subtitle {
+                    Text(subtitle)
+                        .font(.subheadline)
+                        .foregroundStyle(palette.textSecondary)
+                }
+            }
+
+            content()
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(18)
+        .background(
+            RoundedRectangle(cornerRadius: 26, style: .continuous)
+                .fill(palette.cardGradient)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 26, style: .continuous)
+                .stroke(palette.stroke, lineWidth: 1)
+        )
+        .shadow(
+            color: palette.shadow.opacity(colorScheme == .dark ? 0.14 : 0.06),
+            radius: 8,
+            x: 0,
+            y: 4
+        )
+    }
+}
+
+
+```
+
+---
+
 # Altos del Murco/root/feature/altos/profile/presentation/view/ProfileAccountHubView.swift
 
 ```swift
@@ -10080,22 +11188,22 @@ struct ProfileAccountHubView: View {
         ScrollView {
             VStack(spacing: 16) {
                 actionRow(
-                    title: "Personal Information",
-                    subtitle: "Edit your contact and emergency details",
+                    title: "Información personal",
+                    subtitle: "Edita tus datos de contacto y emergencia",
                     systemImage: "person.text.rectangle"
                 ) {
                     viewModel.openEditProfile()
                 }
 
                 actionRow(
-                    title: "Rewards & Points",
-                    subtitle: "\(viewModel.stats.level.title) • \(viewModel.stats.points) points",
+                    title: "Recompensas y puntos",
+                    subtitle: "\(viewModel.stats.level.title) • \(viewModel.stats.points) puntos",
                     systemImage: "gift.fill"
                 ) { }
 
                 actionRow(
-                    title: "Birthday Benefits",
-                    subtitle: "Used for special promos and discounts",
+                    title: "Beneficios de cumpleaños",
+                    subtitle: "Se usa para promociones y descuentos especiales",
                     systemImage: "birthday.cake.fill"
                 ) { }
 
@@ -10103,8 +11211,8 @@ struct ProfileAccountHubView: View {
                     AccountActionsView(viewModel: viewModel)
                 } label: {
                     row(
-                        title: "Account Actions",
-                        subtitle: "Sign out and other sensitive account actions",
+                        title: "Acciones de la cuenta",
+                        subtitle: "Cerrar sesión y otras acciones sensibles de la cuenta",
                         systemImage: "exclamationmark.shield.fill"
                     )
                 }
@@ -10112,7 +11220,7 @@ struct ProfileAccountHubView: View {
             }
             .padding(16)
         }
-        .navigationTitle("Account")
+        .navigationTitle("Cuenta")
         .appScreenStyle(theme)
     }
 
@@ -10210,10 +11318,10 @@ struct ProfileContainerView: View {
                                 .scaleEffect(1.1)
                             
                             VStack(spacing: 6) {
-                                Text("Loading profile...")
+                                Text("Cargando perfil...")
                                     .font(.headline)
                                 
-                                Text("Preparing your account and preferences.")
+                                Text("Preparando tu cuenta y preferencias.")
                                     .font(.subheadline)
                                     .foregroundStyle(.secondary)
                                     .multilineTextAlignment(.center)
@@ -10224,7 +11332,7 @@ struct ProfileContainerView: View {
                         .appCardStyle(.neutral, emphasized: true)
                         .padding()
                     }
-                    .navigationTitle("Profile")
+                    .navigationTitle("Perfil")
                     .appScreenStyle(.neutral)
                 }
             }
@@ -10261,7 +11369,7 @@ struct ProfilePreferencesHubView: View {
                     AppearanceSettingsView(viewModel: viewModel)
                 } label: {
                     row(
-                        title: "Appearance",
+                        title: "Apariencia",
                         subtitle: viewModel.appearanceTitle,
                         systemImage: "circle.lefthalf.filled"
                     )
@@ -10273,8 +11381,8 @@ struct ProfilePreferencesHubView: View {
                     openURL(settingsURL)
                 } label: {
                     row(
-                        title: "App Permissions",
-                        subtitle: "Notifications, location and device settings",
+                        title: "Permisos de la app",
+                        subtitle: "Notificaciones, ubicación y ajustes del dispositivo",
                         systemImage: "gearshape.2.fill"
                     )
                 }
@@ -10282,7 +11390,7 @@ struct ProfilePreferencesHubView: View {
             }
             .padding(16)
         }
-        .navigationTitle("Preferences")
+        .navigationTitle("Preferencias")
         .appScreenStyle(theme)
     }
 
@@ -10336,24 +11444,24 @@ struct ProfileSupportHubView: View {
         ScrollView {
             VStack(spacing: 16) {
                 supportRow(
-                    title: "Help & Support",
-                    subtitle: "Email our support team",
+                    title: "Ayuda y soporte",
+                    subtitle: "Escribe a nuestro equipo de soporte",
                     systemImage: "questionmark.circle.fill",
                     tint: .teal,
                     url: AppExternalLinks.supportEmail
                 )
 
                 supportRow(
-                    title: "Privacy Policy",
-                    subtitle: "Read how your data is used",
+                    title: "Política de privacidad",
+                    subtitle: "Lee cómo se usan tus datos",
                     systemImage: "hand.raised.fill",
                     tint: .indigo,
                     url: AppExternalLinks.privacyPolicy
                 )
 
                 supportRow(
-                    title: "Terms & Conditions",
-                    subtitle: "App and service terms",
+                    title: "Términos y condiciones",
+                    subtitle: "Términos de la app y del servicio",
                     systemImage: "doc.text.fill",
                     tint: .brown,
                     url: AppExternalLinks.terms
@@ -10361,7 +11469,7 @@ struct ProfileSupportHubView: View {
             }
             .padding(16)
         }
-        .navigationTitle("Help & Support")
+        .navigationTitle("Ayuda y soporte")
         .appScreenStyle(theme)
     }
 
@@ -10445,7 +11553,7 @@ struct ProfileView: View {
                 .padding(.bottom, 28)
             }
             .scrollIndicators(.hidden)
-            .navigationTitle("Profile")
+            .navigationTitle("Perfil")
             .appScreenStyle(theme)
             .sheet(isPresented: $viewModel.isShowingEditProfile) {
                 EditProfileView(
@@ -10459,7 +11567,7 @@ struct ProfileView: View {
                 Alert(
                     title: Text(item.title),
                     message: Text(item.message),
-                    dismissButton: .default(Text("OK"))
+                    dismissButton: .default(Text("Aceptar"))
                 )
             }
             .onAppear {
@@ -10526,20 +11634,20 @@ struct ProfileView: View {
                     .foregroundStyle(palette.textSecondary)
                     .multilineTextAlignment(.center)
 
-                Label("Member since \(viewModel.memberSinceText)", systemImage: "calendar")
+                Label("Miembro desde \(viewModel.memberSinceText)", systemImage: "calendar")
                     .font(.caption.weight(.medium))
                     .foregroundStyle(palette.textSecondary)
             }
 
             HStack(spacing: 10) {
                 compactInfoCard(
-                    title: "Phone",
+                    title: "Teléfono",
                     value: viewModel.phoneText,
                     systemImage: "phone.fill"
                 )
 
                 compactInfoCard(
-                    title: "Birthday",
+                    title: "Cumpleaños",
                     value: viewModel.birthdayText,
                     systemImage: "birthday.cake.fill"
                 )
@@ -10553,7 +11661,7 @@ struct ProfileView: View {
                 )
 
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Address")
+                    Text("Dirección")
                         .font(.caption.bold())
                         .foregroundStyle(palette.textSecondary)
 
@@ -10659,7 +11767,7 @@ struct ProfileView: View {
     private var statsSection: some View {
         VStack(spacing: 14) {
             HStack {
-                Text("Overview")
+                Text("Resumen")
                     .font(.headline)
                     .foregroundStyle(palette.textPrimary)
                 Spacer()
@@ -10669,19 +11777,19 @@ struct ProfileView: View {
 
             HStack(spacing: 12) {
                 profileStatCard(
-                    title: "Points",
-                    value: "\(viewModel.stats.points )",
+                    title: "Puntos",
+                    value: "\(viewModel.stats.points)",
                     systemImage: "star.fill"
                 )
 
                 profileStatCard(
-                    title: "Orders",
+                    title: "Pedidos",
                     value: "\(viewModel.stats.completedOrders)",
                     systemImage: "fork.knife"
                 )
 
                 profileStatCard(
-                    title: "Bookings",
+                    title: "Reservas",
                     value: "\(viewModel.stats.completedBookings)",
                     systemImage: "calendar"
                 )
@@ -10689,13 +11797,13 @@ struct ProfileView: View {
 
             HStack(spacing: 12) {
                 profileStatCard(
-                    title: "Restaurant",
+                    title: "Restaurante",
                     value: viewModel.stats.restaurantSpent.priceText,
                     systemImage: "takeoutbag.and.cup.and.straw.fill"
                 )
 
                 profileStatCard(
-                    title: "Adventure",
+                    title: "Aventura",
                     value: viewModel.stats.adventureSpent.priceText,
                     systemImage: "figure.hiking"
                 )
@@ -10704,53 +11812,148 @@ struct ProfileView: View {
     }
 
     private var levelCard: some View {
-        HStack(spacing: 14) {
-            ZStack {
-                Circle()
-                    .fill(palette.chipGradient)
-                    .frame(width: 56, height: 56)
+        NavigationLink {
+            LoyaltyProgramView(
+                currentLevel: viewModel.stats.level,
+                totalSpent: viewModel.stats.totalSpent,
+                points: viewModel.stats.points,
+                completedOrders: viewModel.stats.completedOrders,
+                completedBookings: viewModel.stats.completedBookings
+            )
+        } label: {
+            VStack(alignment: .leading, spacing: 16) {
+                HStack(spacing: 14) {
+                    ZStack {
+                        Circle()
+                            .fill(palette.chipGradient)
+                            .frame(width: 60, height: 60)
 
-                Image(systemName: levelIcon)
-                    .font(.title3.bold())
-                    .foregroundStyle(palette.primary)
-            }
+                        Image(systemName: viewModel.stats.level.systemImage)
+                            .font(.title3.bold())
+                            .foregroundStyle(palette.primary)
+                    }
 
-            VStack(alignment: .leading, spacing: 4) {
-                Text("\(viewModel.stats.level.title) Level")
-                    .font(.headline)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Nivel \(viewModel.stats.level.title)")
+                            .font(.headline)
+                            .foregroundStyle(palette.textPrimary)
+
+                        Text(viewModel.stats.level.badgeSubtitle)
+                            .font(.subheadline)
+                            .foregroundStyle(palette.textSecondary)
+
+                        Text("Consumo acumulado: \(viewModel.stats.totalSpent.priceText)")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(palette.primary)
+                    }
+
+                    Spacer()
+
+                    Image(systemName: "chevron.right.circle.fill")
+                        .font(.title3)
+                        .foregroundStyle(palette.primary)
+                }
+
+                Text("Vuelve, acumula y desbloquea descuentos, regalos y premios gratis en platos, jugos, bebidas y postres.")
+                    .font(.subheadline)
                     .foregroundStyle(palette.textPrimary)
 
-                Text(viewModel.stats.level.badgeSubtitle)
-                    .font(.subheadline)
-                    .foregroundStyle(palette.textSecondary)
+                if let nextLevel = viewModel.stats.level.nextLevel {
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            Text("Progreso a \(nextLevel.title)")
+                                .font(.caption.bold())
+                                .foregroundStyle(palette.textSecondary)
 
-                Text("Completed spend: \(viewModel.stats.totalSpent.priceText)")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(palette.primary)
+                            Spacer()
+
+                            Text("\(Int(LoyaltyLevel.progress(for: viewModel.stats.totalSpent) * 100))%")
+                                .font(.caption.bold())
+                                .foregroundStyle(palette.primary)
+                        }
+
+                        ProgressView(value: LoyaltyLevel.progress(for: viewModel.stats.totalSpent))
+                            .tint(palette.primary)
+
+                        Text("Te faltan \(viewModel.stats.level.remainingSpend(from: viewModel.stats.totalSpent).priceText) para subir.")
+                            .font(.caption.weight(.medium))
+                            .foregroundStyle(palette.textSecondary)
+                    }
+                } else {
+                    Label("Ya estás en el nivel más alto", systemImage: "sparkles")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(palette.primary)
+                }
+
+                HStack(spacing: 10) {
+                    loyaltyMiniStat(
+                        title: "Puntos",
+                        value: "\(viewModel.stats.points)",
+                        systemImage: "star.fill"
+                    )
+
+                    loyaltyMiniStat(
+                        title: "Pedidos",
+                        value: "\(viewModel.stats.completedOrders)",
+                        systemImage: "fork.knife"
+                    )
+
+                    loyaltyMiniStat(
+                        title: "Reservas",
+                        value: "\(viewModel.stats.completedBookings)",
+                        systemImage: "calendar"
+                    )
+                }
             }
-
-            Spacer()
+            .padding(18)
+            .background(
+                RoundedRectangle(cornerRadius: 24, style: .continuous)
+                    .fill(palette.cardGradient)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 24, style: .continuous)
+                    .stroke(palette.stroke, lineWidth: 1)
+            )
+            .shadow(
+                color: palette.shadow.opacity(colorScheme == .dark ? 0.14 : 0.06),
+                radius: 8,
+                x: 0,
+                y: 4
+            )
         }
-        .padding(16)
-        .background(
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .fill(palette.cardGradient)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .stroke(palette.stroke, lineWidth: 1)
-        )
+        .buttonStyle(.plain)
     }
 
-    private var levelIcon: String {
-        switch viewModel.stats.level {
-        case .silver:
-            return "seal.fill"
-        case .gold:
-            return "star.circle.fill"
-        case .diamond:
-            return "diamond.fill"
+    private func loyaltyMiniStat(
+        title: String,
+        value: String,
+        systemImage: String
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Image(systemName: systemImage)
+                .font(.caption.weight(.bold))
+                .foregroundStyle(palette.primary)
+
+            Text(value)
+                .font(.subheadline.bold())
+                .foregroundStyle(palette.textPrimary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+
+            Text(title)
+                .font(.caption)
+                .foregroundStyle(palette.textSecondary)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(palette.elevatedCard)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(palette.stroke, lineWidth: 1)
+        )
     }
 
     private func profileStatCard(
@@ -10799,14 +12002,14 @@ struct ProfileView: View {
 
     private var mainMenuSection: some View {
         VStack(spacing: 12) {
-            sectionHeader("Settings")
+            sectionHeader("Configuración")
 
             NavigationLink {
                 ProfileAccountHubView(viewModel: viewModel)
             } label: {
                 navigationRow(
-                    title: "Account",
-                    subtitle: "Personal information, rewards and account actions",
+                    title: "Cuenta",
+                    subtitle: "Información personal, recompensas y acciones de la cuenta",
                     systemImage: "person.crop.circle",
                     tint: .blue
                 )
@@ -10817,8 +12020,8 @@ struct ProfileView: View {
                 ProfilePreferencesHubView(viewModel: viewModel)
             } label: {
                 navigationRow(
-                    title: "Preferences",
-                    subtitle: "Appearance and app permissions",
+                    title: "Preferencias",
+                    subtitle: "Apariencia y permisos de la app",
                     systemImage: "slider.horizontal.3",
                     tint: .purple
                 )
@@ -10829,8 +12032,8 @@ struct ProfileView: View {
                 ProfileSupportHubView()
             } label: {
                 navigationRow(
-                    title: "Help & Support",
-                    subtitle: "Support, privacy policy and terms",
+                    title: "Ayuda y soporte",
+                    subtitle: "Soporte, política de privacidad y términos",
                     systemImage: "questionmark.circle",
                     tint: .teal
                 )
@@ -10841,7 +12044,7 @@ struct ProfileView: View {
 
     private var socialCompactSection: some View {
         VStack(spacing: 12) {
-            sectionHeader("Social & Visit Us")
+            sectionHeader("Redes y visítanos")
 
             HStack(spacing: 14) {
                 socialIconButton(
@@ -13288,20 +14491,20 @@ struct CartView: View {
         VStack(spacing: 0) {
             if cartManager.isEmpty {
                 ContentUnavailableView(
-                    "Your cart is empty",
+                    "Tu carrito está vacío",
                     systemImage: "cart",
-                    description: Text("Add some delicious dishes from the menu.")
+                    description: Text("Agrega algunos platos deliciosos del menú.")
                 )
             } else {
                 List {
-                    Section("Items") {
+                    Section("Productos") {
                         ForEach(cartManager.items) { cartItem in
                             CartItemRowView(cartItem: cartItem)
                         }
                         .onDelete(perform: deleteItems)
                     }
                     
-                    Section("Summary") {
+                    Section("Resumen") {
                         HStack {
                             Text("Subtotal")
                                 .font(.headline)
@@ -13312,7 +14515,7 @@ struct CartView: View {
                         }
                         
                         HStack {
-                            Text("Items")
+                            Text("Productos")
                                 .foregroundStyle(.secondary)
                             Spacer()
                             Text("\(cartManager.totalItems)")
@@ -13323,24 +14526,24 @@ struct CartView: View {
                 .listStyle(.insetGrouped)
             }
         }
-        .navigationTitle("Cart")
+        .navigationTitle("Carrito")
         .appScreenStyle(.restaurant)
         .toolbar {
             if !cartManager.isEmpty {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("Clear") {
+                    Button("Vaciar") {
                         showClearCartAlert = true
                     }
                 }
             }
         }
-        .alert("Clear cart?", isPresented: $showClearCartAlert) {
-            Button("Cancel", role: .cancel) { }
-            Button("Clear", role: .destructive) {
+        .alert("¿Vaciar carrito?", isPresented: $showClearCartAlert) {
+            Button("Cancelar", role: .cancel) { }
+            Button("Vaciar", role: .destructive) {
                 cartManager.clear()
             }
         } message: {
-            Text("Are you sure you want to remove all items from your cart?")
+            Text("¿Estás seguro de que quieres eliminar todos los productos de tu carrito?")
         }
         .safeAreaInset(edge: .bottom) {
             if !cartManager.isEmpty {
@@ -13359,7 +14562,7 @@ struct CartView: View {
                         Spacer()
                         
                         NavigationLink(value: Route.checkout) {
-                            Text("Checkout")
+                            Text("Finalizar compra")
                                 .font(.headline)
                                 .frame(minWidth: 140)
                                 .padding(.vertical, 14)
@@ -13539,7 +14742,7 @@ struct FeaturedMenuCard: View {
 
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
-                    BrandBadge(theme: .restaurant, title: "Featured", selected: true)
+                    BrandBadge(theme: .restaurant, title: "Destacados", selected: true)
                     Spacer()
                 }
                 
@@ -13617,7 +14820,7 @@ struct MenuItemDetailView: View {
             .padding(.top, 12)
             .padding(.bottom, 120)
         }
-        .navigationTitle("Dish")
+        .navigationTitle("Plato")
         .navigationBarTitleDisplayMode(.inline)
         .appScreenStyle(.restaurant)
         .safeAreaInset(edge: .bottom) {
@@ -13701,8 +14904,8 @@ struct MenuItemDetailView: View {
         VStack(alignment: .leading, spacing: 10) {
             BrandSectionHeader(
                 theme: .restaurant,
-                title: "Description",
-                subtitle: "A closer look at this dish."
+                title: "Descripción",
+                subtitle: "Conoce más sobre este plato."
             )
             
             Text(item.description)
@@ -13717,8 +14920,8 @@ struct MenuItemDetailView: View {
         VStack(alignment: .leading, spacing: 12) {
             BrandSectionHeader(
                 theme: .restaurant,
-                title: "Ingredients",
-                subtitle: "Fresh components and accompaniments."
+                title: "Ingredientes",
+                subtitle: "Componentes frescos y acompañamientos."
             )
             
             ForEach(item.ingredients, id: \.self) { ingredient in
@@ -13741,8 +14944,8 @@ struct MenuItemDetailView: View {
         VStack(alignment: .leading, spacing: 12) {
             BrandSectionHeader(
                 theme: .restaurant,
-                title: "Price",
-                subtitle: item.hasOffer ? "Special offer available." : "Current regular price."
+                title: "Precio",
+                subtitle: item.hasOffer ? "Oferta especial disponible." : "Precio regular actual."
             )
             
             HStack(alignment: .lastTextBaseline, spacing: 10) {
@@ -13769,8 +14972,8 @@ struct MenuItemDetailView: View {
         VStack(alignment: .leading, spacing: 12) {
             BrandSectionHeader(
                 theme: .restaurant,
-                title: "Quantity",
-                subtitle: "Choose how many you want to add."
+                title: "Cantidad",
+                subtitle: "Elige cuántos quieres añadir."
             )
             
             QuantitySelectorView(
@@ -13789,11 +14992,11 @@ struct MenuItemDetailView: View {
         VStack(alignment: .leading, spacing: 12) {
             BrandSectionHeader(
                 theme: .restaurant,
-                title: "Notes",
-                subtitle: "Special instructions for the kitchen."
+                title: "Notas",
+                subtitle: "Instrucciones especiales para la cocina."
             )
             
-            TextField("Add any special notes (optional)", text: $notesText, axis: .vertical)
+            TextField("Agrega alguna nota especial (opcional)", text: $notesText, axis: .vertical)
                 .appTextFieldStyle(.restaurant)
                 .lineLimit(3, reservesSpace: true)
                 .disabled(!item.isAvailable)
@@ -13805,7 +15008,7 @@ struct MenuItemDetailView: View {
     private var bottomBar: some View {
         VStack(spacing: 12) {
             if showAddedMessage {
-                Text("Order has been added")
+                Text("El pedido ha sido agregado")
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(.white)
                     .padding(.horizontal, 16)
@@ -14151,7 +15354,7 @@ struct MenuListView: View {
             .padding(.horizontal, 16)
             .padding(.vertical, 20)
         }
-        .navigationTitle("Restaurant")
+        .navigationTitle("Restaurante")
         .navigationBarTitleDisplayMode(.large)
         .appScreenStyle(.restaurant)
         .task {
@@ -14226,7 +15429,7 @@ struct MenuListView: View {
             BrandSectionHeader(
                 theme: .restaurant,
                 title: "Popular",
-                subtitle: "Customer favorites and featured dishes"
+                subtitle: "Favoritos de los clientes y platos destacados"
             )
 
             TabView {
@@ -14246,7 +15449,7 @@ struct MenuListView: View {
         VStack(alignment: .leading, spacing: 12) {
             BrandSectionHeader(
                 theme: .restaurant,
-                title: "Browse by category"
+                title: "Explorar por categoría"
             )
 
             ScrollView(.horizontal, showsIndicators: false) {
@@ -14487,13 +15690,13 @@ struct CheckoutView: View {
             .padding(.top, 12)
             .padding(.bottom, 32)
         }
-        .navigationTitle("Checkout")
+        .navigationTitle("Confirmación")
         .appScreenStyle(.restaurant)
         .alert(
             "Error",
             isPresented: .constant(viewModel.state.errorMessage != nil),
             actions: {
-                Button("OK") {
+                Button("Aceptar") {
                     viewModel.clearError()
                 }
             },
@@ -14514,8 +15717,8 @@ struct CheckoutView: View {
         VStack(alignment: .leading, spacing: 16) {
             BrandSectionHeader(
                 theme: .restaurant,
-                title: "Client Details",
-                subtitle: "Your profile information is used automatically for this order."
+                title: "Datos del cliente",
+                subtitle: "La información de tu perfil se utiliza automáticamente para este pedido."
             )
             
             VStack(spacing: 14) {
@@ -14538,7 +15741,7 @@ struct CheckoutView: View {
                 .disabled(true)
                 
                 themedField(
-                    title: "Table number",
+                    title: "Número de mesa",
                     text: Binding(
                         get: { cartManager.tableNumber },
                         set: { cartManager.updateTableNumber($0) }
@@ -14550,11 +15753,11 @@ struct CheckoutView: View {
                     BrandIconBubble(theme: .restaurant, systemImage: "person.crop.circle.badge.checkmark", size: 38)
                     
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("Need to update your information?")
+                        Text("¿Necesitas actualizar tu información?")
                             .font(.subheadline.weight(.semibold))
                             .foregroundStyle(palette.textPrimary)
                         
-                        Text("Please change your name or cédula from the Edit Profile page.")
+                        Text("Por favor, cambia tu nombre o cédula desde la página Editar perfil.")
                             .font(.subheadline)
                             .foregroundStyle(palette.textSecondary)
                     }
@@ -14575,7 +15778,7 @@ struct CheckoutView: View {
                     BrandIconBubble(theme: .restaurant, systemImage: "clock.fill", size: 38)
                     
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("Order time")
+                        Text("Hora del pedido")
                             .font(.subheadline.weight(.semibold))
                             .foregroundStyle(palette.textPrimary)
                         
@@ -14604,13 +15807,13 @@ struct CheckoutView: View {
         VStack(alignment: .leading, spacing: 16) {
             BrandSectionHeader(
                 theme: .restaurant,
-                title: "Summary",
-                subtitle: "Quick review of the order before confirming."
+                title: "Resumen",
+                subtitle: "Revisión rápida del pedido antes de confirmar."
             )
             
             VStack(spacing: 14) {
                 summaryRow(
-                    title: "Items",
+                    title: "Productos",
                     value: "\(cartManager.totalItems)",
                     systemImage: "fork.knife"
                 )
@@ -14637,7 +15840,7 @@ struct CheckoutView: View {
                             .tint(.white)
                             .frame(maxWidth: .infinity)
                     } else {
-                        Text("Confirm Order")
+                        Text("Confirmar pedido")
                             .frame(maxWidth: .infinity)
                     }
                 }
@@ -14645,7 +15848,7 @@ struct CheckoutView: View {
             .buttonStyle(BrandPrimaryButtonStyle(theme: .restaurant))
             .disabled(viewModel.state.isSubmitting)
             
-            Text("Review the data carefully before creating the order.")
+            Text("Revisa los datos cuidadosamente antes de crear el pedido.")
                 .font(.footnote)
                 .foregroundStyle(palette.textSecondary)
                 .multilineTextAlignment(.center)
@@ -14737,9 +15940,9 @@ struct OrderDetailItemRow: View {
     }
 
     private var statusText: String {
-        if item.isCompleted { return "Ready" }
-        if item.isStarted { return "In progress" }
-        return "Waiting"
+        if item.isCompleted { return "Lista" }
+        if item.isStarted { return "En proceso" }
+        return "Esperando"
     }
 
     private var progressValue: Double {
@@ -14881,8 +16084,8 @@ struct OrderDetailView: View {
             } header: {
                 BrandSectionHeader(
                     theme: .restaurant,
-                    title: "Items",
-                    subtitle: "Everything included in this order"
+                    title: "Productos",
+                    subtitle: "Todo lo incluido en este pedido"
                 )
                 .padding(.horizontal, 16)
                 .padding(.top, 8)
@@ -14896,7 +16099,7 @@ struct OrderDetailView: View {
             } header: {
                 BrandSectionHeader(
                     theme: .restaurant,
-                    title: "Amounts"
+                    title: "Montos"
                 )
                 .padding(.horizontal, 16)
                 .padding(.top, 8)
@@ -14906,7 +16109,7 @@ struct OrderDetailView: View {
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
         .background(Color.clear)
-        .navigationTitle("Order Detail")
+        .navigationTitle("Detalle del pedido")
         .navigationBarTitleDisplayMode(.inline)
         .appScreenStyle(.restaurant)
     }
@@ -14915,11 +16118,11 @@ struct OrderDetailView: View {
         VStack(alignment: .leading, spacing: 18) {
             HStack(alignment: .top, spacing: 12) {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text(order.clientName.isEmpty ? "Walk-in customer" : order.clientName)
+                    Text(order.clientName.isEmpty ? "Cliente sin reserva" : order.clientName)
                         .font(.title3.bold())
                         .foregroundStyle(palette.textPrimary)
 
-                    Text("Order #\(order.id.prefix(8))")
+                    Text("Pedido #\(order.id.prefix(8))")
                         .font(.caption)
                         .foregroundStyle(palette.textSecondary)
                 }
@@ -14931,13 +16134,13 @@ struct OrderDetailView: View {
 
             HStack(spacing: 12) {
                 DetailMetricView(
-                    title: "Table",
+                    title: "Mesa",
                     value: order.tableNumber,
                     systemImage: "tablecells"
                 )
 
                 DetailMetricView(
-                    title: "Items",
+                    title: "Productos",
                     value: "\(order.totalItems)",
                     systemImage: "fork.knife"
                 )
@@ -14945,13 +16148,13 @@ struct OrderDetailView: View {
 
             HStack(spacing: 12) {
                 DetailMetricView(
-                    title: "Created",
+                    title: "Creado",
                     value: order.createdAt.shortDateTimeString,
                     systemImage: "calendar"
                 )
 
                 DetailMetricView(
-                    title: "Updated",
+                    title: "Actualizado",
                     value: order.updatedAt.shortDateTimeString,
                     systemImage: "clock.arrow.circlepath"
                 )
@@ -14959,7 +16162,7 @@ struct OrderDetailView: View {
 
             VStack(alignment: .leading, spacing: 10) {
                 HStack {
-                    Text("Preparation progress")
+                    Text("Progreso de preparación")
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(palette.textPrimary)
 
@@ -14975,7 +16178,7 @@ struct OrderDetailView: View {
             }
 
             if order.requiresReconfirmation {
-                Label("This order needs reconfirmation before kitchen proceeds.", systemImage: "exclamationmark.triangle.fill")
+                Label("Este pedido necesita reconfirmación antes de que cocina continúe.", systemImage: "exclamationmark.triangle.fill")
                     .font(.subheadline)
                     .foregroundStyle(palette.warning)
                     .padding(.top, 2)
@@ -15018,7 +16221,7 @@ struct OrderDetailView: View {
 ```swift
 //
 //  OrderRowView.swift
-//  Altos del Murco
+//  Altaurante Altos del Murco
 //
 //  Created by José Ruiz on 12/3/26.
 //
@@ -15054,7 +16257,7 @@ struct OrderRowView: View {
     }
 
     private var progressText: String {
-        "\(order.preparedItemsCount)/\(order.totalItems) items"
+        "\(order.preparedItemsCount)/\(order.totalItems) productos"
     }
 
     private var progressValue: Double {
@@ -15066,12 +16269,12 @@ struct OrderRowView: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .top, spacing: 12) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(order.clientName.isEmpty ? "Walk-in customer" : order.clientName)
+                    Text(order.clientName.isEmpty ? "Cliente sin reserva" : order.clientName)
                         .font(.headline)
                         .foregroundStyle(palette.textPrimary)
 
                     HStack(spacing: 8) {
-                        Label("Table \(order.tableNumber)", systemImage: "tablecells")
+                        Label("Mesa \(order.tableNumber)", systemImage: "tablecells")
                         Label(order.createdAt.relativeTimeString, systemImage: "clock")
                     }
                     .font(.caption)
@@ -15103,11 +16306,11 @@ struct OrderRowView: View {
             }
 
             if order.requiresReconfirmation {
-                Label("Edited after confirmation", systemImage: "exclamationmark.arrow.trianglehead.2.clockwise")
+                Label("Editado después de la confirmación", systemImage: "exclamationmark.arrow.trianglehead.2.clockwise")
                     .font(.caption)
                     .foregroundStyle(palette.warning)
             } else if order.wasEditedAfterConfirmation {
-                Label("Updated order", systemImage: "pencil.circle")
+                Label("Pedido actualizado", systemImage: "pencil.circle")
                     .font(.caption)
                     .foregroundStyle(palette.textSecondary)
             }
@@ -15351,7 +16554,7 @@ struct OrderSuccessView: View {
                 Button {
                     path = NavigationPath()
                 } label: {
-                    Text("Done")
+                    Text("Listo")
                 }
                 .buttonStyle(BrandPrimaryButtonStyle(theme: theme))
             }
@@ -15359,7 +16562,7 @@ struct OrderSuccessView: View {
             .padding(.vertical, 28)
         }
         .scrollIndicators(.hidden)
-        .navigationTitle("Success")
+        .navigationTitle("Éxito")
         .navigationBarTitleDisplayMode(.inline)
         .navigationBarBackButtonHidden(true)
         .appScreenStyle(theme)
@@ -15388,11 +16591,11 @@ struct OrderSuccessView: View {
             }
             
             VStack(spacing: 8) {
-                Text("Order Sent")
+                Text("Pedido enviado")
                     .font(.system(.largeTitle, design: .rounded, weight: .bold))
                     .foregroundStyle(palette.textPrimary)
                 
-                Text("Your order was created successfully.")
+                Text("Tu pedido fue creado correctamente.")
                     .font(.body)
                     .foregroundStyle(palette.textSecondary)
                     .multilineTextAlignment(.center)
@@ -15406,17 +16609,17 @@ struct OrderSuccessView: View {
         VStack(alignment: .leading, spacing: 18) {
             BrandSectionHeader(
                 theme: theme,
-                title: "Order summary",
-                subtitle: "Your restaurant order has been registered correctly."
+                title: "Resumen del pedido",
+                subtitle: "Tu pedido del restaurante ha sido registrado correctamente."
             )
             
             VStack(spacing: 14) {
-                InfoRow(title: "Order ID", value: String(order.id.prefix(7)), theme: theme)
-                InfoRow(title: "Client", value: order.clientName, theme: theme)
-                InfoRow(title: "Table", value: order.tableNumber, theme: theme)
-                InfoRow(title: "Status", value: order.status.title, theme: theme)
+                InfoRow(title: "ID del pedido", value: String(order.id.prefix(7)), theme: theme)
+                InfoRow(title: "Cliente", value: order.clientName, theme: theme)
+                InfoRow(title: "Mesa", value: order.tableNumber, theme: theme)
+                InfoRow(title: "Estado", value: order.status.title, theme: theme)
                 InfoRow(
-                    title: "Time",
+                    title: "Hora",
                     value: order.createdAt.formatted(date: .omitted, time: .shortened),
                     theme: theme
                 )
@@ -15503,7 +16706,7 @@ struct OrdersSummaryView: View {
         LazyVGrid(columns: columns, spacing: 12) {
             SummaryMetricCard(
                 theme: theme,
-                title: "Pending",
+                title: "Pendientes",
                 value: "\(pendingCount)",
                 systemImage: "clock",
                 tone: .warning
@@ -15511,7 +16714,7 @@ struct OrdersSummaryView: View {
 
             SummaryMetricCard(
                 theme: theme,
-                title: "Preparing",
+                title: "En preparación",
                 value: "\(preparingCount)",
                 systemImage: "flame.fill",
                 tone: .accent
@@ -15519,7 +16722,7 @@ struct OrdersSummaryView: View {
 
             SummaryMetricCard(
                 theme: theme,
-                title: "Completed",
+                title: "Completados",
                 value: "\(completedCount)",
                 systemImage: "checkmark.circle.fill",
                 tone: .success
@@ -15527,7 +16730,7 @@ struct OrdersSummaryView: View {
 
             SummaryMetricCard(
                 theme: theme,
-                title: "Revenue",
+                title: "Ingresos",
                 value: totalRevenue.priceText,
                 systemImage: "dollarsign.circle.fill",
                 tone: .primary,
@@ -15628,25 +16831,25 @@ struct SummaryMetricCard: View {
 import SwiftUI
 
 private enum OrdersGroupingOption: String, CaseIterable, Identifiable {
-    case byDate = "Date"
-    case byStatus = "Status"
+    case byDate = "Fecha"
+    case byStatus = "Estado"
     var id: String { rawValue }
 }
 
 private enum OrdersSortOption: String, CaseIterable, Identifiable {
-    case newestFirst = "Newest"
-    case oldestFirst = "Oldest"
-    case highestTotal = "Highest total"
+    case newestFirst = "Más recientes"
+    case oldestFirst = "Más antiguos"
+    case highestTotal = "Mayor total"
     var id: String { rawValue }
 }
 
 private enum OrdersStatusFilter: String, CaseIterable, Identifiable {
-    case all = "All"
-    case pending = "Pending"
-    case confirmed = "Confirmed"
-    case preparing = "Preparing"
-    case completed = "Completed"
-    case canceled = "Canceled"
+    case all = "Todos"
+    case pending = "Pendiente"
+    case confirmed = "Confirmado"
+    case preparing = "Preparando"
+    case completed = "Completado"
+    case canceled = "Cancelado"
 
     var id: String { rawValue }
 
@@ -15748,7 +16951,7 @@ struct OrdersView: View {
             BrandScreenBackground(theme: .restaurant)
             content
         }
-        .navigationTitle("Orders")
+        .navigationTitle("Pedidos")
         .navigationBarTitleDisplayMode(.large)
         .tint(palette.primary)
         .onAppear {
@@ -15765,15 +16968,15 @@ struct OrdersView: View {
             loadingView
         } else if let error = viewModel.state.errorMessage, viewModel.state.orders.isEmpty {
             stateCard(
-                title: "Something went wrong",
+                title: "Algo salió mal",
                 systemImage: "exclamationmark.triangle",
                 description: error
             )
         } else if viewModel.state.orders.isEmpty {
             stateCard(
-                title: "No orders yet",
+                title: "Aún no hay pedidos",
                 systemImage: "tray",
-                description: "Orders will appear here once customers place them."
+                description: "Los pedidos aparecerán aquí una vez que los clientes los realicen."
             )
         } else {
             ordersList
@@ -15782,7 +16985,7 @@ struct OrdersView: View {
 
     private var loadingView: some View {
         VStack {
-            ProgressView("Loading orders...")
+            ProgressView("Cargando pedidos...")
                 .tint(palette.primary)
                 .foregroundStyle(palette.textPrimary)
         }
@@ -15856,8 +17059,8 @@ struct OrdersView: View {
         } header: {
             BrandSectionHeader(
                 theme: .restaurant,
-                title: "Overview",
-                subtitle: "Track your orders with date grouping, filters and sorting."
+                title: "Resumen",
+                subtitle: "Haz seguimiento de tus pedidos con agrupación por fecha, filtros y ordenamiento."
             )
             .padding(.horizontal, 4)
             .padding(.bottom, 6)
@@ -15868,20 +17071,20 @@ struct OrdersView: View {
     private var controlsSection: some View {
         Section {
             VStack(spacing: 14) {
-                Picker("Group", selection: $grouping) {
+                Picker("Agrupar", selection: $grouping) {
                     ForEach(OrdersGroupingOption.allCases) { option in
                         Text(option.rawValue).tag(option)
                     }
                 }
                 .pickerStyle(.segmented)
 
-                Picker("Status", selection: $statusFilter) {
+                Picker("Estado", selection: $statusFilter) {
                     ForEach(OrdersStatusFilter.allCases) { option in
                         Text(option.rawValue).tag(option)
                     }
                 }
 
-                Picker("Sort", selection: $sortOption) {
+                Picker("Ordenar", selection: $sortOption) {
                     ForEach(OrdersSortOption.allCases) { option in
                         Text(option.rawValue).tag(option)
                     }
@@ -15892,7 +17095,7 @@ struct OrdersView: View {
             .listRowInsets(EdgeInsets(top: 8, leading: 8, bottom: 10, trailing: 8))
             .listRowBackground(Color.clear)
         } header: {
-            Text("Order tools")
+            Text("Herramientas de pedidos")
                 .font(.headline)
                 .foregroundStyle(palette.textSecondary)
                 .textCase(nil)
@@ -15932,8 +17135,8 @@ struct OrdersView: View {
 
     private func dateTitle(for day: Date) -> String {
         let calendar = Calendar.current
-        if calendar.isDateInToday(day) { return "Today" }
-        if calendar.isDateInYesterday(day) { return "Yesterday" }
+        if calendar.isDateInToday(day) { return "Hoy" }
+        if calendar.isDateInYesterday(day) { return "Ayer" }
         return day.formatted(date: .abbreviated, time: .omitted)
     }
 }
@@ -17546,4 +18749,3 @@ extension OrderStatus {
 
 ---
 
-17549
