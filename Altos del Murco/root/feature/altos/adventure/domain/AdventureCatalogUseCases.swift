@@ -14,3 +14,13 @@ struct FetchAdventureCatalogUseCase {
         try await service.fetchCatalog()
     }
 }
+
+struct ObserveAdventureCatalogUseCase {
+    let service: AdventureCatalogServiceable
+
+    func execute(
+        onChange: @escaping (Result<AdventureCatalogSnapshot, Error>) -> Void
+    ) -> AdventureListenerToken {
+        service.observeCatalog(onChange: onChange)
+    }
+}

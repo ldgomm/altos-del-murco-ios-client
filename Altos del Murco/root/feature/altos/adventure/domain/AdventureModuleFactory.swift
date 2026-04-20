@@ -28,20 +28,19 @@ final class AdventureModuleFactory {
             initialPackageDiscountAmount: packageDiscountAmount,
             getAvailabilityUseCase: GetAdventureAvailabilityUseCase(service: bookingsService),
             createBookingUseCase: CreateAdventureBookingUseCase(service: bookingsService),
-            fetchAdventureCatalogUseCase: FetchAdventureCatalogUseCase(service: catalogService)
-        )
-    }
-
-    func makeBookingsViewModel() -> AdventureBookingsViewModel {
-        AdventureBookingsViewModel(
-            observeBookingsUseCase: ObserveAdventureBookingsUseCase(service: bookingsService),
-            cancelBookingUseCase: CancelAdventureBookingUseCase(service: bookingsService)
+            fetchAdventureCatalogUseCase: FetchAdventureCatalogUseCase(service: catalogService),
+            observeAdventureCatalogUseCase: ObserveAdventureCatalogUseCase(service: catalogService)
         )
     }
 
     func makeCatalogViewModel() -> AdventureCatalogViewModel {
-        AdventureCatalogViewModel(
-            fetchAdventureCatalogUseCase: FetchAdventureCatalogUseCase(service: catalogService)
+        AdventureCatalogViewModel(service: catalogService)
+    }
+    
+    func makeBookingsViewModel() -> AdventureBookingsViewModel {
+        AdventureBookingsViewModel(
+            observeBookingsUseCase: ObserveAdventureBookingsUseCase(service: bookingsService),
+            cancelBookingUseCase: CancelAdventureBookingUseCase(service: bookingsService)
         )
     }
 }

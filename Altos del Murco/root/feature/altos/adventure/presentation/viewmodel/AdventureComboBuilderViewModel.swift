@@ -48,13 +48,17 @@ final class AdventureComboBuilderViewModel: ObservableObject {
     private let createBookingUseCase: CreateAdventureBookingUseCase
     private let fetchAdventureCatalogUseCase: FetchAdventureCatalogUseCase
     private var hasLoadedCatalog = false
+    
+    private let observeAdventureCatalogUseCase: ObserveAdventureCatalogUseCase
+    private var catalogListenerToken: AdventureListenerToken?
 
     init(
         prefilledItems: [AdventureReservationItemDraft],
         initialPackageDiscountAmount: Double,
         getAvailabilityUseCase: GetAdventureAvailabilityUseCase,
         createBookingUseCase: CreateAdventureBookingUseCase,
-        fetchAdventureCatalogUseCase: FetchAdventureCatalogUseCase
+        fetchAdventureCatalogUseCase: FetchAdventureCatalogUseCase,
+        observeAdventureCatalogUseCase: ObserveAdventureCatalogUseCase
     ) {
         self.state = AdventureComboBuilderState(
             items: prefilledItems.isEmpty ? [AdventureActivityType.defaultDraft(for: .offRoad)] : prefilledItems,
@@ -63,15 +67,65 @@ final class AdventureComboBuilderViewModel: ObservableObject {
         self.getAvailabilityUseCase = getAvailabilityUseCase
         self.createBookingUseCase = createBookingUseCase
         self.fetchAdventureCatalogUseCase = fetchAdventureCatalogUseCase
+        self.observeAdventureCatalogUseCase = observeAdventureCatalogUseCase
 
         keepCampingAtEnd()
     }
 
     func onAppear() {
+        startCatalogObservationIfNeeded()
+
         Task {
             await loadCatalogIfNeeded()
             await loadAvailability()
         }
+    }
+    
+    private func startCatalogObservationIfNeeded() {
+        guard catalogListenerToken == nil else { return }
+
+        catalogListenerToken = observeAdventureCatalogUseCase.execute { [weak self] result in
+            Task { @MainActor in
+                guard let self else { return }
+
+                switch result {
+                case .success(let catalog):
+                    self.applyCatalog(catalog)
+                    Task { await self.loadAvailability() }
+
+                case .failure(let error):
+                    self.state.errorMessage = error.localizedDescription
+                    self.state.isLoadingCatalog = false
+                }
+            }
+        }
+    }
+
+    private func applyCatalog(_ catalog: AdventureCatalogSnapshot) {
+        state.catalog = catalog
+
+        state.items = state.items.map { current in
+            if let config = catalog.activity(for: current.activity) {
+                return AdventureReservationItemDraft(
+                    id: current.id,
+                    activity: current.activity,
+                    durationMinutes: normalizeDuration(current.durationMinutes, for: config),
+                    peopleCount: max(current.peopleCount, config.defaults.peopleCount),
+                    vehicleCount: max(current.vehicleCount, config.defaults.vehicleCount),
+                    offRoadRiderCount: max(current.offRoadRiderCount, config.defaults.offRoadRiderCount),
+                    nights: max(current.nights, config.defaults.nights)
+                )
+            }
+            return current
+        }
+
+        keepCampingAtEnd()
+        state.isLoadingCatalog = false
+    }
+
+    func onDisappear() {
+        catalogListenerToken?.remove()
+        catalogListenerToken = nil
     }
 
     var activeActivityConfigs: [AdventureActivityCatalogItem] {
@@ -209,12 +263,10 @@ final class AdventureComboBuilderViewModel: ObservableObject {
     }
     
     func updateFoodItem(_ item: ReservationFoodItemDraft) {
-        guard let index = state.foodItems.firstIndex(where: { $0.id == item.id }) else { return }
-
         let trimmedNotes = item.notes?.trimmingCharacters(in: .whitespacesAndNewlines)
         let finalNotes = (trimmedNotes?.isEmpty == false) ? trimmedNotes : nil
 
-        state.foodItems[index] = ReservationFoodItemDraft(
+        let updatedItem = ReservationFoodItemDraft(
             id: item.id,
             menuItemId: item.menuItemId,
             name: item.name,
@@ -222,6 +274,14 @@ final class AdventureComboBuilderViewModel: ObservableObject {
             quantity: max(1, item.quantity),
             notes: finalNotes
         )
+
+        if let index = state.foodItems.firstIndex(where: { $0.id == item.id }) {
+            state.foodItems[index] = updatedItem
+        } else {
+            // Defensive fix: if the row was removed by UI interaction,
+            // saving the editor restores it instead of losing the change.
+            state.foodItems.append(updatedItem)
+        }
 
         state.selectedSlot = nil
         Task { await loadAvailability() }
@@ -329,28 +389,11 @@ final class AdventureComboBuilderViewModel: ObservableObject {
         state.isLoadingCatalog = true
         do {
             let catalog = try await fetchAdventureCatalogUseCase.execute()
-            state.catalog = catalog
-
-            state.items = state.items.map { current in
-                if let config = catalog.activity(for: current.activity) {
-                    return AdventureReservationItemDraft(
-                        id: current.id,
-                        activity: current.activity,
-                        durationMinutes: normalizeDuration(current.durationMinutes, for: config),
-                        peopleCount: max(current.peopleCount, config.defaults.peopleCount),
-                        vehicleCount: max(current.vehicleCount, config.defaults.vehicleCount),
-                        offRoadRiderCount: max(current.offRoadRiderCount, config.defaults.offRoadRiderCount),
-                        nights: max(current.nights, config.defaults.nights)
-                    )
-                }
-                return current
-            }
-
-            keepCampingAtEnd()
+            applyCatalog(catalog)
         } catch {
             state.errorMessage = error.localizedDescription
+            state.isLoadingCatalog = false
         }
-        state.isLoadingCatalog = false
     }
 
     private func normalizeDuration(_ value: Int, for config: AdventureActivityCatalogItem) -> Int {

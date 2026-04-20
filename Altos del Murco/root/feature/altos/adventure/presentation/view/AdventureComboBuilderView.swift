@@ -56,6 +56,9 @@ struct AdventureComboBuilderView: View {
             syncProfileFieldsFromSession()
             adventureComboBuilderViewModel.onAppear()
         }
+        .onDisappear {
+            adventureComboBuilderViewModel.onDisappear()
+        }
         .onChange(of: authenticatedProfile?.id) { _, _ in
             syncProfileFieldsFromSession()
         }
@@ -74,9 +77,12 @@ struct AdventureComboBuilderView: View {
                 adventureComboBuilderViewModel.updateItem(updated)
             }
         }
-        .sheet(item: $editingFoodItem) { item in
+        .sheet(item: $editingFoodItem, onDismiss: {
+            editingFoodItem = nil
+        }) { item in
             ReservationFoodItemEditorView(item: item) { updated in
                 adventureComboBuilderViewModel.updateFoodItem(updated)
+                editingFoodItem = nil
             }
         }
         .alert(
@@ -287,10 +293,14 @@ struct AdventureComboBuilderView: View {
                         onDecrease: { adventureComboBuilderViewModel.decreaseFoodQuantity(item.id) },
                         onRemove: { adventureComboBuilderViewModel.removeFoodItem(item.id) }
                     )
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        editingFoodItem = item
+                    }
                     .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
                     .listRowBackground(Color.clear)
                     .listRowSeparator(.hidden)
-                    .swipeActions(edge: .trailing) {
+                    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                         Button {
                             editingFoodItem = item
                         } label: {
@@ -434,20 +444,28 @@ struct AdventureComboBuilderView: View {
 
                 Spacer()
 
-                HStack(spacing: 10) {
-                    Button(action: onDecrease) {
-                        Image(systemName: "minus.circle.fill")
+                VStack(alignment: .trailing, spacing: 10) {
+                    Button(action: onEdit) {
+                        Image(systemName: "pencil.circle.fill")
+                            .font(.title3)
                     }
                     .buttonStyle(.plain)
 
-                    Text("\(item.quantity)")
-                        .font(.headline)
-                        .frame(minWidth: 20)
+                    HStack(spacing: 10) {
+                        Button(action: onDecrease) {
+                            Image(systemName: "minus.circle.fill")
+                        }
+                        .buttonStyle(.plain)
 
-                    Button(action: onIncrease) {
-                        Image(systemName: "plus.circle.fill")
+                        Text("\(item.quantity)")
+                            .font(.headline)
+                            .frame(minWidth: 20)
+
+                        Button(action: onIncrease) {
+                            Image(systemName: "plus.circle.fill")
+                        }
+                        .buttonStyle(.plain)
                     }
-                    .buttonStyle(.plain)
                 }
             }
             .appCardStyle(.adventure)

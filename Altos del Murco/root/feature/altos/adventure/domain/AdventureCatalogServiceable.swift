@@ -9,4 +9,8 @@ import Foundation
 
 protocol AdventureCatalogServiceable {
     func fetchCatalog() async throws -> AdventureCatalogSnapshot
+
+    func observeCatalog(
+        onChange: @escaping (Result<AdventureCatalogSnapshot, Error>) -> Void
+    ) -> AdventureListenerToken
 }

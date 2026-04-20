@@ -11,10 +11,9 @@ import SwiftUI
 struct AdventureCatalogView: View {
     @ObservedObject var adventureComboBuilderViewModel: AdventureComboBuilderViewModel
     @ObservedObject var menuViewModel: MenuViewModel
+    
     @StateObject private var catalogViewModel = AdventureCatalogViewModel(
-        fetchAdventureCatalogUseCase: FetchAdventureCatalogUseCase(
-            service: AdventureCatalogService()
-        )
+        service: AdventureCatalogService()
     )
 
     @Environment(\.colorScheme) private var colorScheme
@@ -57,6 +56,9 @@ struct AdventureCatalogView: View {
         }
         .onAppear {
             catalogViewModel.onAppear()
+        }
+        .onDisappear {
+            catalogViewModel.onDisappear()
         }
     }
 
