@@ -60,6 +60,18 @@ struct AdventureActivityCatalogItem: Identifiable, Codable, Hashable {
     }
 }
 
+struct AdventureFeaturedPackageFoodItem: Identifiable, Codable, Hashable {
+    let menuItemId: String
+    let quantity: Int
+
+    var id: String { menuItemId }
+
+    init(menuItemId: String, quantity: Int) {
+        self.menuItemId = menuItemId.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.quantity = max(1, quantity)
+    }
+}
+
 struct AdventureFeaturedPackage: Identifiable, Codable, Hashable {
     let id: String
     let title: String
@@ -69,6 +81,7 @@ struct AdventureFeaturedPackage: Identifiable, Codable, Hashable {
     let sortOrder: Int
     let packageDiscountAmount: Double
     let items: [AdventureReservationItemDraft]
+    let foodItems: [AdventureFeaturedPackageFoodItem]
     let updatedAt: Date
 }
 

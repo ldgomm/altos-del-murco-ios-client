@@ -11,7 +11,7 @@ import SwiftUI
 struct AdventureCatalogView: View {
     @ObservedObject var adventureComboBuilderViewModel: AdventureComboBuilderViewModel
     @ObservedObject var menuViewModel: MenuViewModel
-    
+
     @StateObject private var catalogViewModel = AdventureCatalogViewModel(
         service: AdventureCatalogService()
     )
@@ -52,10 +52,10 @@ struct AdventureCatalogView: View {
             .navigationTitle("Aventura en Los Altos")
             .navigationBarTitleDisplayMode(.large)
             .appScreenStyle(.adventure)
-
         }
         .onAppear {
             catalogViewModel.onAppear()
+            menuViewModel.onAppear()
         }
         .onDisappear {
             catalogViewModel.onDisappear()
@@ -89,7 +89,7 @@ struct AdventureCatalogView: View {
                         .font(.system(size: 30, weight: .bold, design: .rounded))
                         .foregroundStyle(Color.white)
 
-                    Text("Ahora el catálogo y los paquetes destacados se cargan desde Firestore.")
+                    Text("Ahora el catálogo, los paquetes y la comida incluida se cargan desde Firestore.")
                         .font(.subheadline)
                         .foregroundStyle(Color.white.opacity(0.92))
                 }
@@ -137,15 +137,16 @@ struct AdventureCatalogView: View {
                             menuViewModel: menuViewModel
                         )
                         .onAppear {
-                            adventureComboBuilderViewModel.replaceItems(
-                                with: package.items,
-                                packageDiscountAmount: package.packageDiscountAmount
+                            adventureComboBuilderViewModel.replacePackage(
+                                package,
+                                menuSections: menuViewModel.state.sections
                             )
                         }
                     } label: {
                         FeaturedPackageCard(
                             package: package,
-                            catalog: catalogViewModel.state.catalog
+                            catalog: catalogViewModel.state.catalog,
+                            menuSections: menuViewModel.state.sections
                         )
                     }
                     .buttonStyle(.plain)
@@ -219,6 +220,7 @@ struct AdventureCatalogView: View {
 private struct FeaturedPackageCard: View {
     let package: AdventureFeaturedPackage
     let catalog: AdventureCatalogSnapshot
+    let menuSections: [MenuSection]
 
     @Environment(\.colorScheme) private var colorScheme
 
@@ -226,12 +228,39 @@ private struct FeaturedPackageCard: View {
         AppTheme.palette(for: .adventure, scheme: colorScheme)
     }
 
-    private var subtotal: Double {
+    private var menuItemsById: [String: MenuItem] {
+        Dictionary(
+            uniqueKeysWithValues: menuSections
+                .flatMap(\.items)
+                .map { ($0.id, $0) }
+        )
+    }
+
+    private var activitySubtotal: Double {
         AdventurePricingEngine.estimatedSubtotal(items: package.items, catalog: catalog)
+    }
+
+    private var foodSubtotal: Double {
+        package.foodItems.reduce(0) { partial, item in
+            let unitPrice = menuItemsById[item.menuItemId]?.finalPrice ?? 0
+            return partial + (Double(item.quantity) * unitPrice)
+        }
+    }
+
+    private var subtotal: Double {
+        activitySubtotal + foodSubtotal
     }
 
     private var total: Double {
         max(0, subtotal - package.packageDiscountAmount)
+    }
+
+    private var foodSummary: String {
+        package.foodItems.map { item in
+            let name = menuItemsById[item.menuItemId]?.name ?? item.menuItemId
+            return "\(item.quantity)x \(name)"
+        }
+        .joined(separator: " • ")
     }
 
     var body: some View {
@@ -254,6 +283,25 @@ private struct FeaturedPackageCard: View {
 
                 if let badge = package.badge, !badge.isEmpty {
                     BrandBadge(theme: .adventure, title: badge)
+                }
+            }
+
+            if !foodSummary.isEmpty {
+                Text(foodSummary)
+                    .font(.caption)
+                    .foregroundStyle(palette.textSecondary)
+                    .lineLimit(3)
+            }
+
+            HStack(spacing: 8) {
+                Text("Aventura \(activitySubtotal.priceText)")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(palette.textSecondary)
+
+                if foodSubtotal > 0 {
+                    Text("Comida \(foodSubtotal.priceText)")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(palette.textSecondary)
                 }
             }
 

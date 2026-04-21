@@ -47,9 +47,9 @@ final class AdventureComboBuilderViewModel: ObservableObject {
     private let getAvailabilityUseCase: GetAdventureAvailabilityUseCase
     private let createBookingUseCase: CreateAdventureBookingUseCase
     private let fetchAdventureCatalogUseCase: FetchAdventureCatalogUseCase
-    private var hasLoadedCatalog = false
-    
     private let observeAdventureCatalogUseCase: ObserveAdventureCatalogUseCase
+
+    private var hasLoadedCatalog = false
     private var catalogListenerToken: AdventureListenerToken?
 
     init(
@@ -61,7 +61,9 @@ final class AdventureComboBuilderViewModel: ObservableObject {
         observeAdventureCatalogUseCase: ObserveAdventureCatalogUseCase
     ) {
         self.state = AdventureComboBuilderState(
-            items: prefilledItems.isEmpty ? [AdventureActivityType.defaultDraft(for: .offRoad)] : prefilledItems,
+            items: prefilledItems.isEmpty
+                ? [AdventureActivityType.defaultDraft(for: .offRoad)]
+                : prefilledItems,
             packageDiscountAmount: max(0, initialPackageDiscountAmount)
         )
         self.getAvailabilityUseCase = getAvailabilityUseCase
@@ -80,7 +82,7 @@ final class AdventureComboBuilderViewModel: ObservableObject {
             await loadAvailability()
         }
     }
-    
+
     private func startCatalogObservationIfNeeded() {
         guard catalogListenerToken == nil else { return }
 
@@ -150,6 +152,7 @@ final class AdventureComboBuilderViewModel: ObservableObject {
     func addItem(_ activity: AdventureActivityType) {
         guard canAddItem(activity) else {
             state.errorMessage = "\(activity.legacyTitle) ya fue agregada a esta reserva."
+            state.successMessage = nil
             return
         }
 
@@ -196,7 +199,15 @@ final class AdventureComboBuilderViewModel: ObservableObject {
         if let index = state.foodItems.firstIndex(where: {
             $0.menuItemId == menuItem.id && $0.notes == finalNotes
         }) {
-            state.foodItems[index].quantity += safeQuantity
+            let current = state.foodItems[index]
+            state.foodItems[index] = ReservationFoodItemDraft(
+                id: current.id,
+                menuItemId: current.menuItemId,
+                name: current.name,
+                unitPrice: current.unitPrice,
+                quantity: current.quantity + safeQuantity,
+                notes: current.notes
+            )
         } else {
             state.foodItems.append(
                 ReservationFoodItemDraft(
@@ -207,15 +218,21 @@ final class AdventureComboBuilderViewModel: ObservableObject {
             )
         }
 
-        state.selectedSlot = nil
-        Task { await loadAvailability() }
+        refreshAfterFoodChanged()
     }
 
     func increaseFoodQuantity(_ id: String) {
         guard let index = state.foodItems.firstIndex(where: { $0.id == id }) else { return }
-        state.foodItems[index].quantity += 1
-        state.selectedSlot = nil
-        Task { await loadAvailability() }
+        let current = state.foodItems[index]
+        state.foodItems[index] = ReservationFoodItemDraft(
+            id: current.id,
+            menuItemId: current.menuItemId,
+            name: current.name,
+            unitPrice: current.unitPrice,
+            quantity: current.quantity + 1,
+            notes: current.notes
+        )
+        refreshAfterFoodChanged()
     }
 
     func decreaseFoodQuantity(_ id: String) {
@@ -225,36 +242,25 @@ final class AdventureComboBuilderViewModel: ObservableObject {
         if nextValue <= 0 {
             state.foodItems.remove(at: index)
         } else {
-            state.foodItems[index].quantity = nextValue
+            let current = state.foodItems[index]
+            state.foodItems[index] = ReservationFoodItemDraft(
+                id: current.id,
+                menuItemId: current.menuItemId,
+                name: current.name,
+                unitPrice: current.unitPrice,
+                quantity: nextValue,
+                notes: current.notes
+            )
         }
 
-        state.selectedSlot = nil
-        Task { await loadAvailability() }
+        refreshAfterFoodChanged()
     }
 
     func removeFoodItem(_ id: String) {
         state.foodItems.removeAll { $0.id == id }
-        state.selectedSlot = nil
-        Task { await loadAvailability() }
+        refreshAfterFoodChanged()
     }
 
-    func setDate(_ date: Date) {
-        state.selectedDate = date
-        state.selectedSlot = nil
-        Task { await loadAvailability() }
-    }
-
-    func setGuestCount(_ value: Int) {
-        state.guestCount = max(1, value)
-    }
-
-    func setEventType(_ value: ReservationEventType) {
-        state.eventType = value
-        if value != .custom {
-            state.customEventTitle = ""
-        }
-    }
-    
     func updateFoodItem(_ item: ReservationFoodItemDraft) {
         let trimmedNotes = item.notes?.trimmingCharacters(in: .whitespacesAndNewlines)
         let finalNotes = (trimmedNotes?.isEmpty == false) ? trimmedNotes : nil
@@ -274,8 +280,24 @@ final class AdventureComboBuilderViewModel: ObservableObject {
             state.foodItems.append(updatedItem)
         }
 
+        refreshAfterFoodChanged()
+    }
+
+    func setDate(_ date: Date) {
+        state.selectedDate = date
         state.selectedSlot = nil
         Task { await loadAvailability() }
+    }
+
+    func setGuestCount(_ value: Int) {
+        state.guestCount = max(1, value)
+    }
+
+    func setEventType(_ value: ReservationEventType) {
+        state.eventType = value
+        if value != .custom {
+            state.customEventTitle = ""
+        }
     }
 
     func setCustomEventTitle(_ value: String) { state.customEventTitle = value }
@@ -365,6 +387,10 @@ final class AdventureComboBuilderViewModel: ObservableObject {
         }
 
         state.items = uniqueItems.isEmpty ? [] : uniqueItems
+        state.foodItems = []
+        state.foodServingMoment = .afterActivities
+        state.foodServingTime = state.selectedDate
+        state.foodNotes = ""
         state.packageDiscountAmount = max(0, packageDiscountAmount)
         keepCampingAtEnd()
         refreshPackageDiscount()
@@ -372,6 +398,57 @@ final class AdventureComboBuilderViewModel: ObservableObject {
         state.errorMessage = nil
         state.successMessage = nil
         Task { await loadAvailability() }
+    }
+
+    func replacePackage(_ package: AdventureFeaturedPackage, menuSections: [MenuSection]) {
+        let uniqueItems = package.items.reduce(into: [AdventureReservationItemDraft]()) { result, item in
+            guard !result.contains(where: { $0.activity == item.activity }) else { return }
+            result.append(item)
+        }
+
+        state.items = uniqueItems
+        state.foodItems = materializePackageFoodItems(from: package, menuSections: menuSections)
+        state.foodServingMoment = state.items.isEmpty ? .onArrival : .afterActivities
+        state.foodServingTime = state.selectedDate
+        state.foodNotes = ""
+        state.packageDiscountAmount = max(0, package.packageDiscountAmount)
+        keepCampingAtEnd()
+        refreshPackageDiscount()
+        state.selectedSlot = nil
+        state.errorMessage = nil
+        state.successMessage = nil
+        Task { await loadAvailability() }
+    }
+
+    private func materializePackageFoodItems(
+        from package: AdventureFeaturedPackage,
+        menuSections: [MenuSection]
+    ) -> [ReservationFoodItemDraft] {
+        let menuItemsById = Dictionary(
+            uniqueKeysWithValues: menuSections
+                .flatMap(\.items)
+                .map { ($0.id, $0) }
+        )
+
+        return package.foodItems.map { packageItem in
+            if let menuItem = menuItemsById[packageItem.menuItemId] {
+                return ReservationFoodItemDraft(
+                    menuItemId: menuItem.id,
+                    name: menuItem.name,
+                    unitPrice: menuItem.finalPrice,
+                    quantity: packageItem.quantity,
+                    notes: nil
+                )
+            }
+
+            return ReservationFoodItemDraft(
+                menuItemId: packageItem.menuItemId,
+                name: packageItem.menuItemId,
+                unitPrice: 0,
+                quantity: packageItem.quantity,
+                notes: nil
+            )
+        }
     }
 
     private func loadCatalogIfNeeded() async {
@@ -432,7 +509,7 @@ final class AdventureComboBuilderViewModel: ObservableObject {
 
         state.isLoadingAvailability = false
     }
-    
+
     private struct PackageSignature: Hashable, Comparable {
         let activity: AdventureActivityType
         let durationMinutes: Int
@@ -453,6 +530,7 @@ final class AdventureComboBuilderViewModel: ObservableObject {
 
     private struct PackageCandidate: Hashable {
         let matchedItemIDs: Set<String>
+        let consumedFoodQuantities: [String: Int]
         let discountAmount: Double
     }
 
@@ -467,60 +545,115 @@ final class AdventureComboBuilderViewModel: ObservableObject {
         )
     }
 
-    private func matchingPackageCandidates() -> [PackageCandidate] {
-        guard !state.items.isEmpty else { return [] }
+    private func availableFoodQuantities() -> [String: Int] {
+        state.foodItems.reduce(into: [String: Int]()) { result, item in
+            result[item.menuItemId, default: 0] += item.quantity
+        }
+    }
 
+    private func matchingPackageCandidates() -> [PackageCandidate] {
         let availableItems = state.items.map { (id: $0.id, signature: signature(for: $0)) }
+        let availableFood = availableFoodQuantities()
 
         return state.catalog.activePackagesSorted.compactMap { package in
-            // A single activity is never a combo discount.
-            guard package.items.count >= 2 else { return nil }
             guard package.packageDiscountAmount > 0 else { return nil }
+            guard package.items.count >= 2 || !package.foodItems.isEmpty else { return nil }
 
-            var remaining = availableItems
+            var remainingItems = availableItems
             var matchedIDs: Set<String> = []
 
             for packageItem in package.items {
                 let target = signature(for: packageItem)
 
-                guard let index = remaining.firstIndex(where: { $0.signature == target }) else {
+                guard let index = remainingItems.firstIndex(where: { $0.signature == target }) else {
                     return nil
                 }
 
-                matchedIDs.insert(remaining[index].id)
-                remaining.remove(at: index)
+                matchedIDs.insert(remainingItems[index].id)
+                remainingItems.remove(at: index)
+            }
+
+            let requiredFood = package.foodItems.reduce(into: [String: Int]()) { result, item in
+                result[item.menuItemId, default: 0] += item.quantity
+            }
+
+            for (menuItemId, requiredQuantity) in requiredFood {
+                guard availableFood[menuItemId, default: 0] >= requiredQuantity else {
+                    return nil
+                }
             }
 
             return PackageCandidate(
                 matchedItemIDs: matchedIDs,
+                consumedFoodQuantities: requiredFood,
                 discountAmount: package.packageDiscountAmount
             )
         }
     }
 
+    private func canTake(
+        _ candidate: PackageCandidate,
+        usedItemIDs: Set<String>,
+        usedFoodQuantities: [String: Int],
+        availableFoodQuantities: [String: Int]
+    ) -> Bool {
+        guard usedItemIDs.isDisjoint(with: candidate.matchedItemIDs) else {
+            return false
+        }
+
+        for (menuItemId, quantityToConsume) in candidate.consumedFoodQuantities {
+            let alreadyUsed = usedFoodQuantities[menuItemId, default: 0]
+            let available = availableFoodQuantities[menuItemId, default: 0]
+            guard alreadyUsed + quantityToConsume <= available else {
+                return false
+            }
+        }
+
+        return true
+    }
+
+    private func applying(
+        _ candidate: PackageCandidate,
+        to usedFoodQuantities: [String: Int]
+    ) -> [String: Int] {
+        var next = usedFoodQuantities
+        for (menuItemId, quantityToConsume) in candidate.consumedFoodQuantities {
+            next[menuItemId, default: 0] += quantityToConsume
+        }
+        return next
+    }
+
     private func bestPackageDiscountAmount() -> Double {
         let candidates = matchingPackageCandidates()
+        let availableFood = availableFoodQuantities()
+
         guard !candidates.isEmpty else { return 0 }
 
-        func solve(from index: Int, used: Set<String>) -> Double {
+        func solve(from index: Int, usedItems: Set<String>, usedFood: [String: Int]) -> Double {
             guard index < candidates.count else { return 0 }
 
-            let skip = solve(from: index + 1, used: used)
+            let skip = solve(from: index + 1, usedItems: usedItems, usedFood: usedFood)
             let candidate = candidates[index]
 
-            if !used.isDisjoint(with: candidate.matchedItemIDs) {
+            guard canTake(
+                candidate,
+                usedItemIDs: usedItems,
+                usedFoodQuantities: usedFood,
+                availableFoodQuantities: availableFood
+            ) else {
                 return skip
             }
 
             let take = candidate.discountAmount + solve(
                 from: index + 1,
-                used: used.union(candidate.matchedItemIDs)
+                usedItems: usedItems.union(candidate.matchedItemIDs),
+                usedFood: applying(candidate, to: usedFood)
             )
 
             return max(skip, take)
         }
 
-        return solve(from: 0, used: [])
+        return solve(from: 0, usedItems: [], usedFood: [:])
     }
 
     private func refreshPackageDiscount() {
@@ -533,7 +666,13 @@ final class AdventureComboBuilderViewModel: ObservableObject {
         state.selectedSlot = nil
         Task { await loadAvailability() }
     }
-    
+
+    private func refreshAfterFoodChanged() {
+        refreshPackageDiscount()
+        state.selectedSlot = nil
+        Task { await loadAvailability() }
+    }
+
     private func submitReservation(clientId: String?) async {
         guard !state.isSubmitting else { return }
 
@@ -573,7 +712,7 @@ final class AdventureComboBuilderViewModel: ObservableObject {
             state.errorMessage = error.localizedDescription
         }
     }
-    
+
     private struct ValidatedReservationInput {
         let clientName: String
         let whatsappNumber: String
@@ -664,7 +803,7 @@ final class AdventureComboBuilderViewModel: ObservableObject {
             notes: cleanNotes.isEmpty ? nil : cleanNotes
         )
     }
-    
+
     private func normalizedText(_ value: String) -> String {
         value
             .components(separatedBy: .whitespacesAndNewlines)
@@ -705,7 +844,7 @@ final class AdventureComboBuilderViewModel: ObservableObject {
         }
 
         guard let normalized else { return nil }
-        guard Set(normalized).count > 1 else { return nil } // rejects 0999999999, 0000000000, etc.
+        guard Set(normalized).count > 1 else { return nil }
 
         return normalized
     }
@@ -791,62 +930,5 @@ final class AdventureComboBuilderViewModel: ObservableObject {
             second: 0,
             of: state.selectedDate
         )
-    }
-    
-    private func normalizedPackageSignature(
-        for items: [AdventureReservationItemDraft]
-    ) -> [PackageItemSignature] {
-        items
-            .map(PackageItemSignature.init)
-            .sorted()
-    }
-
-    private func resolvedPackageDiscountAmount(
-        for items: [AdventureReservationItemDraft]
-    ) -> Double {
-        guard items.count >= 2 else { return 0 }
-
-        let currentSignature = normalizedPackageSignature(for: items)
-
-        return state.catalog.activePackagesSorted.first(where: { package in
-            normalizedPackageSignature(for: package.items) == currentSignature
-        })?.packageDiscountAmount ?? 0
-    }
-
-    private struct PackageItemSignature: Hashable, Comparable {
-        let activity: AdventureActivityType
-        let durationMinutes: Int
-        let peopleCount: Int
-        let vehicleCount: Int
-        let offRoadRiderCount: Int
-        let nights: Int
-
-        init(_ item: AdventureReservationItemDraft) {
-            self.activity = item.activity
-            self.durationMinutes = item.durationMinutes
-            self.peopleCount = item.peopleCount
-            self.vehicleCount = item.vehicleCount
-            self.offRoadRiderCount = item.offRoadRiderCount
-            self.nights = item.nights
-        }
-
-        static func < (lhs: PackageItemSignature, rhs: PackageItemSignature) -> Bool {
-            if lhs.activity.rawValue != rhs.activity.rawValue {
-                return lhs.activity.rawValue < rhs.activity.rawValue
-            }
-            if lhs.durationMinutes != rhs.durationMinutes {
-                return lhs.durationMinutes < rhs.durationMinutes
-            }
-            if lhs.peopleCount != rhs.peopleCount {
-                return lhs.peopleCount < rhs.peopleCount
-            }
-            if lhs.vehicleCount != rhs.vehicleCount {
-                return lhs.vehicleCount < rhs.vehicleCount
-            }
-            if lhs.offRoadRiderCount != rhs.offRoadRiderCount {
-                return lhs.offRoadRiderCount < rhs.offRoadRiderCount
-            }
-            return lhs.nights < rhs.nights
-        }
     }
 }

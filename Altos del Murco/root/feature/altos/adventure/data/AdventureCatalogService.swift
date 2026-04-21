@@ -143,26 +143,14 @@ final class AdventureCatalogService: AdventureCatalogServiceable {
             let dto = try document.data(as: AdventureFeaturedPackageDto.self)
 
             guard dto.isActive else { return nil }
+            guard let package = dto.toDomain() else { return nil }
 
-            let items = dto.items.compactMap { $0.toDomain() }
-            guard items.count == dto.items.count else { return nil }
-
-            let allItemsActive = items.allSatisfy { item in
+            let allItemsActive = package.items.allSatisfy { item in
                 activitiesByType[item.activity]?.isActive == true
             }
             guard allItemsActive else { return nil }
 
-            return AdventureFeaturedPackage(
-                id: dto.id,
-                title: dto.title,
-                subtitle: dto.subtitle,
-                badge: dto.badge,
-                isActive: dto.isActive,
-                sortOrder: dto.sortOrder,
-                packageDiscountAmount: dto.packageDiscountAmount,
-                items: items,
-                updatedAt: dto.updatedAt.dateValue()
-            )
+            return package
         }
 
         return AdventureCatalogSnapshot(

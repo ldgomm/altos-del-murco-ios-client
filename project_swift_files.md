@@ -6045,35 +6045,23 @@ final class AdventureComboBuilderViewModel: ObservableObject {
         state.items.append(
             AdventureActivityType.defaultDraft(for: activity, catalog: state.catalog)
         )
-        keepCampingAtEnd()
-        refreshPackageDiscount()
-        state.selectedSlot = nil
-        Task { await loadAvailability() }
+        refreshAfterActivitiesChanged()
     }
 
     func updateItem(_ item: AdventureReservationItemDraft) {
         guard let index = state.items.firstIndex(where: { $0.id == item.id }) else { return }
         state.items[index] = item
-        keepCampingAtEnd()
-        refreshPackageDiscount()
-        state.selectedSlot = nil
-        Task { await loadAvailability() }
+        refreshAfterActivitiesChanged()
     }
 
     func removeItem(at offsets: IndexSet) {
         state.items.remove(atOffsets: offsets)
-        keepCampingAtEnd()
-        refreshPackageDiscount()
-        state.selectedSlot = nil
-        Task { await loadAvailability() }
+        refreshAfterActivitiesChanged()
     }
 
     func moveItems(from source: IndexSet, to destination: Int) {
         state.items.move(fromOffsets: source, toOffset: destination)
-        keepCampingAtEnd()
-        refreshPackageDiscount()
-        state.selectedSlot = nil
-        Task { await loadAvailability() }
+        refreshAfterActivitiesChanged()
     }
 
     func addFoodItem(
@@ -6266,14 +6254,9 @@ final class AdventureComboBuilderViewModel: ObservableObject {
         }
 
         state.items = uniqueItems.isEmpty ? [] : uniqueItems
+        state.packageDiscountAmount = max(0, packageDiscountAmount)
         keepCampingAtEnd()
-
-        if state.catalog.featuredPackages.isEmpty {
-            state.packageDiscountAmount = max(0, packageDiscountAmount)
-        } else {
-            refreshPackageDiscount()
-        }
-
+        refreshPackageDiscount()
         state.selectedSlot = nil
         state.errorMessage = nil
         state.successMessage = nil
@@ -6338,6 +6321,108 @@ final class AdventureComboBuilderViewModel: ObservableObject {
 
         state.isLoadingAvailability = false
     }
+    
+    private struct PackageSignature: Hashable, Comparable {
+        let activity: AdventureActivityType
+        let durationMinutes: Int
+        let peopleCount: Int
+        let vehicleCount: Int
+        let offRoadRiderCount: Int
+        let nights: Int
+
+        static func < (lhs: PackageSignature, rhs: PackageSignature) -> Bool {
+            if lhs.activity.rawValue != rhs.activity.rawValue { return lhs.activity.rawValue < rhs.activity.rawValue }
+            if lhs.durationMinutes != rhs.durationMinutes { return lhs.durationMinutes < rhs.durationMinutes }
+            if lhs.peopleCount != rhs.peopleCount { return lhs.peopleCount < rhs.peopleCount }
+            if lhs.vehicleCount != rhs.vehicleCount { return lhs.vehicleCount < rhs.vehicleCount }
+            if lhs.offRoadRiderCount != rhs.offRoadRiderCount { return lhs.offRoadRiderCount < rhs.offRoadRiderCount }
+            return lhs.nights < rhs.nights
+        }
+    }
+
+    private struct PackageCandidate: Hashable {
+        let matchedItemIDs: Set<String>
+        let discountAmount: Double
+    }
+
+    private func signature(for item: AdventureReservationItemDraft) -> PackageSignature {
+        PackageSignature(
+            activity: item.activity,
+            durationMinutes: item.durationMinutes,
+            peopleCount: item.peopleCount,
+            vehicleCount: item.vehicleCount,
+            offRoadRiderCount: item.offRoadRiderCount,
+            nights: item.nights
+        )
+    }
+
+    private func matchingPackageCandidates() -> [PackageCandidate] {
+        guard !state.items.isEmpty else { return [] }
+
+        let availableItems = state.items.map { (id: $0.id, signature: signature(for: $0)) }
+
+        return state.catalog.activePackagesSorted.compactMap { package in
+            // A single activity is never a combo discount.
+            guard package.items.count >= 2 else { return nil }
+            guard package.packageDiscountAmount > 0 else { return nil }
+
+            var remaining = availableItems
+            var matchedIDs: Set<String> = []
+
+            for packageItem in package.items {
+                let target = signature(for: packageItem)
+
+                guard let index = remaining.firstIndex(where: { $0.signature == target }) else {
+                    return nil
+                }
+
+                matchedIDs.insert(remaining[index].id)
+                remaining.remove(at: index)
+            }
+
+            return PackageCandidate(
+                matchedItemIDs: matchedIDs,
+                discountAmount: package.packageDiscountAmount
+            )
+        }
+    }
+
+    private func bestPackageDiscountAmount() -> Double {
+        let candidates = matchingPackageCandidates()
+        guard !candidates.isEmpty else { return 0 }
+
+        func solve(from index: Int, used: Set<String>) -> Double {
+            guard index < candidates.count else { return 0 }
+
+            let skip = solve(from: index + 1, used: used)
+            let candidate = candidates[index]
+
+            if !used.isDisjoint(with: candidate.matchedItemIDs) {
+                return skip
+            }
+
+            let take = candidate.discountAmount + solve(
+                from: index + 1,
+                used: used.union(candidate.matchedItemIDs)
+            )
+
+            return max(skip, take)
+        }
+
+        return solve(from: 0, used: [])
+    }
+
+    private func refreshPackageDiscount() {
+        state.packageDiscountAmount = bestPackageDiscountAmount()
+    }
+
+    private func refreshAfterActivitiesChanged() {
+        keepCampingAtEnd()
+        refreshPackageDiscount()
+        state.selectedSlot = nil
+        Task { await loadAvailability() }
+    }
+    
     private func submitReservation(clientId: String?) async {
         guard !state.isSubmitting else { return }
 
@@ -6615,10 +6700,6 @@ final class AdventureComboBuilderViewModel: ObservableObject {
         return state.catalog.activePackagesSorted.first(where: { package in
             normalizedPackageSignature(for: package.items) == currentSignature
         })?.packageDiscountAmount ?? 0
-    }
-
-    private func refreshPackageDiscount() {
-        state.packageDiscountAmount = resolvedPackageDiscountAmount(for: state.items)
     }
 
     private struct PackageItemSignature: Hashable, Comparable {
