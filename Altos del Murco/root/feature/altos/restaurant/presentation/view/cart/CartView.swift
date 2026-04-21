@@ -14,8 +14,8 @@ struct CartView: View {
     @EnvironmentObject private var cartManager: CartManager
     @State private var showClearCartAlert = false
 
-    private var rewardDiscountByMenuItemId: [String: Double] {
-        viewModel.allocatedDiscountByMenuItemId()
+    private var rowDiscounts: [UUID: Double] {
+        viewModel.allocatedDiscountByCartItemId(for: cartManager.items)
     }
 
     private var effectiveTotal: Double {
@@ -36,7 +36,7 @@ struct CartView: View {
                         ForEach(cartManager.items) { cartItem in
                             RewardAwareCartItemRow(
                                 cartItem: cartItem,
-                                allocatedDiscount: allocatedDiscount(for: cartItem)
+                                allocatedDiscount: rowDiscounts[cartItem.id, default: 0]
                             )
                         }
                         .onDelete(perform: deleteItems)
@@ -45,7 +45,9 @@ struct CartView: View {
                     Section("Resumen") {
                         summaryRow("Subtotal", cartManager.subtotal.priceText, emphasized: true)
 
-                        if viewModel.state.rewardPreview.discountAmount > 0 {
+                        if viewModel.state.isLoadingRewards {
+                            summaryRow("Murco Loyalty", "Calculando...", secondary: true)
+                        } else if viewModel.state.rewardPreview.discountAmount > 0 {
                             summaryRow(
                                 "Murco Loyalty",
                                 "-\(viewModel.state.rewardPreview.discountAmount.priceText)",
@@ -117,7 +119,11 @@ struct CartView: View {
                                 .font(.subheadline)
                                 .foregroundStyle(.secondary)
 
-                            if viewModel.state.rewardPreview.discountAmount > 0 {
+                            if viewModel.state.isLoadingRewards {
+                                Text("Calculando Murco Loyalty...")
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(.secondary)
+                            } else if viewModel.state.rewardPreview.discountAmount > 0 {
                                 Text("Incluye Murco Loyalty")
                                     .font(.caption.weight(.semibold))
                                     .foregroundStyle(.green)
@@ -155,22 +161,6 @@ struct CartView: View {
             let itemId = cartManager.items[index].menuItem.id
             cartManager.remove(itemId: itemId)
         }
-    }
-
-    private func allocatedDiscount(for cartItem: CartItem) -> Double {
-        let totalDiscount = rewardDiscountByMenuItemId[cartItem.menuItem.id, default: 0]
-        guard totalDiscount > 0 else { return 0 }
-
-        let siblingRows = cartManager.items.filter { $0.menuItem.id == cartItem.menuItem.id }
-        let totalSiblingSubtotal = siblingRows.reduce(0) { $0 + $1.totalPrice }
-        guard totalSiblingSubtotal > 0 else { return 0 }
-
-        if siblingRows.count == 1 {
-            return totalDiscount
-        }
-
-        let share = cartItem.totalPrice / totalSiblingSubtotal
-        return ((totalDiscount * share) * 100).rounded() / 100
     }
 
     private func summaryRow(

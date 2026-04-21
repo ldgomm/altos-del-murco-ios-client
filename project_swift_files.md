@@ -61,7 +61,6 @@ struct AltosDelMurcoApp: App {
 
             let cartPersistence = CartPersistenceService(context: container.mainContext)
             let sharedCartManager = CartManager(persistence: cartPersistence)
-
             _cartManager = StateObject(wrappedValue: sharedCartManager)
 
             let loyaltyRewardsService: LoyaltyRewardsServiceable = LoyaltyRewardsService()
@@ -72,18 +71,16 @@ struct AltosDelMurcoApp: App {
             let observeOrdersUseCase = ObserveOrdersUseCase(service: ordersService)
             let submitOrderUseCase = SubmitOrderUseCase(service: ordersService)
 
-            let ordersVM = OrdersViewModel(
-                observeOrdersUseCase: observeOrdersUseCase
+            _ordersViewModel = StateObject(
+                wrappedValue: OrdersViewModel(observeOrdersUseCase: observeOrdersUseCase)
             )
-
-            let checkoutVM = CheckoutViewModel(
-                submitOrderUseCase: submitOrderUseCase,
-                cartManager: sharedCartManager,
-                loyaltyRewardsService: loyaltyRewardsService
+            _checkoutViewModel = StateObject(
+                wrappedValue: CheckoutViewModel(
+                    submitOrderUseCase: submitOrderUseCase,
+                    cartManager: sharedCartManager,
+                    loyaltyRewardsService: loyaltyRewardsService
+                )
             )
-
-            _ordersViewModel = StateObject(wrappedValue: ordersVM)
-            _checkoutViewModel = StateObject(wrappedValue: checkoutVM)
 
             let adventureCatalogService = AdventureCatalogService()
             let adventureBookingsService = AdventureBookingsService(
@@ -91,7 +88,7 @@ struct AltosDelMurcoApp: App {
                 loyaltyRewardsService: loyaltyRewardsService
             )
 
-            self.adventureModuleFactory = AdventureModuleFactory(
+            adventureModuleFactory = AdventureModuleFactory(
                 bookingsService: adventureBookingsService,
                 catalogService: adventureCatalogService,
                 loyaltyRewardsService: loyaltyRewardsService
@@ -114,24 +111,24 @@ struct AltosDelMurcoApp: App {
             )
             let signOutUseCase = SignOutUseCase(repository: authRepository)
 
-            let sessionVM = AppSessionViewModel(
-                signInWithAppleUseCase: signInWithAppleUseCase,
-                resolveSessionUseCase: resolveSessionUseCase,
-                completeClientProfileUseCase: completeClientProfileUseCase,
-                deleteCurrentAccountUseCase: deleteCurrentAccountUseCase,
-                signOutUseCase: signOutUseCase,
-                loyaltyRewardsService: loyaltyRewardsService
+            _sessionViewModel = StateObject(
+                wrappedValue: AppSessionViewModel(
+                    signInWithAppleUseCase: signInWithAppleUseCase,
+                    resolveSessionUseCase: resolveSessionUseCase,
+                    completeClientProfileUseCase: completeClientProfileUseCase,
+                    deleteCurrentAccountUseCase: deleteCurrentAccountUseCase,
+                    signOutUseCase: signOutUseCase,
+                    loyaltyRewardsService: loyaltyRewardsService
+                )
             )
-
-            _sessionViewModel = StateObject(wrappedValue: sessionVM)
 
             let menuService = MenuService()
-            let menuViewModel = MenuViewModel(
-                service: menuService,
-                loyaltyRewardsService: loyaltyRewardsService
+            _menuViewModel = StateObject(
+                wrappedValue: MenuViewModel(
+                    service: menuService,
+                    loyaltyRewardsService: loyaltyRewardsService
+                )
             )
-            _menuViewModel = StateObject(wrappedValue: menuViewModel)
-
         } catch {
             fatalError("Failed to create SwiftData container: \(error)")
         }
@@ -9996,6 +9993,7 @@ final class LoyaltyRewardsService: LoyaltyRewardsServiceable {
 
         let eligibleTemplates = templates.filter { template in
             template.isActive &&
+            !template.isExpired &&
             template.triggerMode == .automatic &&
             template.isEligible(for: currentLevel) &&
             usageCount(
@@ -10129,6 +10127,8 @@ final class LoyaltyRewardsService: LoyaltyRewardsServiceable {
         guard !appliedRewards.isEmpty else { return }
 
         let cleanNationalId = nationalId.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleanNationalId.isEmpty else { return }
+
         let walletRef = db.collection(FirestoreConstants.client_loyalty_wallets).document(cleanNationalId)
 
         _ = try await db.runTransaction { transaction, errorPointer in
@@ -10157,6 +10157,14 @@ final class LoyaltyRewardsService: LoyaltyRewardsServiceable {
                     let templateDto = try templateSnapshot.data(as: LoyaltyRewardTemplateDto.self)
                     let template = templateDto.toDomain()
 
+                    guard template.isActive, !template.isExpired else {
+                        throw NSError(
+                            domain: "LoyaltyRewardsService",
+                            code: 11,
+                            userInfo: [NSLocalizedDescriptionKey: "The reward \(template.title) is no longer available."]
+                        )
+                    }
+
                     let alreadyUsed = Self.usageCount(
                         templateId: reward.templateId,
                         inside: events
@@ -10165,7 +10173,7 @@ final class LoyaltyRewardsService: LoyaltyRewardsServiceable {
                     guard alreadyUsed < max(1, template.maxUsesPerClient) else {
                         throw NSError(
                             domain: "LoyaltyRewardsService",
-                            code: 11,
+                            code: 12,
                             userInfo: [NSLocalizedDescriptionKey: "The reward \(template.title) is no longer available."]
                         )
                     }
@@ -11425,6 +11433,31 @@ struct LoyaltyRewardTemplate: Identifiable, Codable, Hashable {
     func isEligible(for level: LoyaltyLevel) -> Bool {
         level.minimumSpent >= minimumLevel.minimumSpent
     }
+
+    var expirationDate: Date? {
+        guard let expiresInDays, expiresInDays > 0 else { return nil }
+        return Calendar.current.date(byAdding: .day, value: expiresInDays, to: updatedAt)
+    }
+
+    var isExpired: Bool {
+        guard let expirationDate else { return false }
+        return Date() > expirationDate
+    }
+
+    var expirationText: String? {
+        guard let expirationDate else { return nil }
+        return "Vence \(expirationDate.formatted(date: .abbreviated, time: .omitted))"
+    }
+
+    var targetMenuItemId: String? {
+        let value = rule.menuItemId?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return value.isEmpty ? nil : value
+    }
+
+    var targetActivityId: String? {
+        let value = rule.activityId?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return value.isEmpty ? nil : value
+    }
 }
 
 enum LoyaltyRewardReferenceType: String, Codable, Hashable {
@@ -11734,12 +11767,12 @@ struct RewardPresentation: Identifiable, Hashable {
     }
 
     static func from(appliedReward reward: AppliedReward) -> RewardPresentation {
-        let lowercasedNote = reward.note.lowercased()
+        let lowered = reward.note.lowercased()
         let badge: String
 
-        if lowercasedNote.contains("gratis") {
+        if lowered.contains("gratis") {
             badge = "Gratis"
-        } else if lowercasedNote.contains("%") {
+        } else if lowered.contains("%") {
             badge = "Descuento"
         } else {
             badge = "Premio"
@@ -11760,22 +11793,20 @@ enum RewardPresentationFactory {
         for item: MenuItem,
         wallet: RewardWalletSnapshot
     ) -> RewardPresentation? {
-        for template in wallet.availableTemplates where template.scope.matchesRestaurant() {
+        for template in wallet.availableTemplates where template.scope.matchesRestaurant() && !template.isExpired {
             switch template.rule.type {
             case .freeMenuItem:
-                let targetId = template.rule.menuItemId?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-                guard targetId == item.id else { continue }
+                guard template.targetMenuItemId == item.id else { continue }
 
                 return RewardPresentation(
                     id: template.id,
                     badge: "Gratis",
                     title: template.title,
-                    message: "\(item.name) puede salirte gratis por tu nivel \(wallet.currentLevel.title)."
+                    message: "\(item.name) puede salir gratis por tu nivel \(wallet.currentLevel.title)."
                 )
 
             case .specificMenuItemPercentage:
-                let targetId = template.rule.menuItemId?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-                guard targetId == item.id else { continue }
+                guard template.targetMenuItemId == item.id else { continue }
 
                 let percentage = Int((template.rule.percentage ?? 0).rounded())
                 guard percentage > 0 else { continue }
@@ -11788,8 +11819,7 @@ enum RewardPresentationFactory {
                 )
 
             case .buyXGetYFree:
-                let targetId = template.rule.menuItemId?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-                guard targetId == item.id else { continue }
+                guard template.targetMenuItemId == item.id else { continue }
 
                 let buyQuantity = max(1, template.rule.buyQuantity ?? 1)
                 let freeQuantity = max(1, template.rule.freeQuantity ?? 1)
@@ -11809,7 +11839,7 @@ enum RewardPresentationFactory {
                     id: template.id,
                     badge: "\(percentage)% OFF",
                     title: template.title,
-                    message: "Puede aplicar \(percentage)% si este plato es el elegible más caro del pedido."
+                    message: "Puede aplicar \(percentage)% si este plato termina siendo el elegible más caro de tu pedido."
                 )
 
             case .activityPercentage:
@@ -11824,11 +11854,10 @@ enum RewardPresentationFactory {
         for activity: AdventureActivityCatalogItem,
         wallet: RewardWalletSnapshot
     ) -> RewardPresentation? {
-        for template in wallet.availableTemplates where template.scope.matchesAdventure() {
+        for template in wallet.availableTemplates where template.scope.matchesAdventure() && !template.isExpired {
             switch template.rule.type {
             case .activityPercentage:
-                let targetId = template.rule.activityId?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-                guard targetId == activity.id else { continue }
+                guard template.targetActivityId == activity.id else { continue }
 
                 let percentage = Int((template.rule.percentage ?? 0).rounded())
                 guard percentage > 0 else { continue }
@@ -14932,7 +14961,7 @@ final class OrdersService: OrdersServiceable {
             )
         }
 
-        let _ = try await db.runTransaction { transaction, errorPointer in
+        _ = try await db.runTransaction { transaction, errorPointer in
             do {
                 var loadedItems: [(ref: DocumentReference, dto: MenuItemDto, totalQuantity: Int)] = []
 
@@ -14952,9 +14981,7 @@ final class OrdersService: OrdersServiceable {
                         throw NSError(
                             domain: "OrdersService",
                             code: 1,
-                            userInfo: [
-                                NSLocalizedDescriptionKey: "\(item.dto.name) no está disponible."
-                            ]
+                            userInfo: [NSLocalizedDescriptionKey: "\(item.dto.name) no está disponible."]
                         )
                     }
 
@@ -14962,9 +14989,7 @@ final class OrdersService: OrdersServiceable {
                         throw NSError(
                             domain: "OrdersService",
                             code: 2,
-                            userInfo: [
-                                NSLocalizedDescriptionKey: "Ya no hay suficiente stock de \(item.dto.name)."
-                            ]
+                            userInfo: [NSLocalizedDescriptionKey: "Ya no hay suficiente stock de \(item.dto.name)."]
                         )
                     }
 
@@ -14985,16 +15010,16 @@ final class OrdersService: OrdersServiceable {
                     .document(order.id)
 
                 transaction.setData(orderData, forDocument: orderRef)
+                return nil
             } catch {
                 errorPointer?.pointee = error as NSError
                 return nil
             }
-
-            return nil
         }
 
         if let nationalId = order.nationalId?.trimmingCharacters(in: .whitespacesAndNewlines),
-           !nationalId.isEmpty {
+           !nationalId.isEmpty,
+           !order.appliedRewards.isEmpty {
             try await loyaltyRewardsService.reserveRewards(
                 nationalId: nationalId,
                 referenceType: .order,
@@ -15005,10 +15030,10 @@ final class OrdersService: OrdersServiceable {
     }
 
     func observeOrders(for nationalId: String) -> AsyncThrowingStream<[Order], Error> {
-        let nationalId = nationalId.trimmingCharacters(in: .whitespacesAndNewlines)
+        let cleanNationalId = nationalId.trimmingCharacters(in: .whitespacesAndNewlines)
 
         return AsyncThrowingStream { continuation in
-            guard !nationalId.isEmpty else {
+            guard !cleanNationalId.isEmpty else {
                 continuation.yield([])
                 continuation.finish()
                 return
@@ -15016,7 +15041,7 @@ final class OrdersService: OrdersServiceable {
 
             let listener = db
                 .collection(FirestoreConstants.restaurant_orders)
-                .whereField("nationalId", isEqualTo: nationalId)
+                .whereField("nationalId", isEqualTo: cleanNationalId)
                 .order(by: "createdAt", descending: true)
                 .addSnapshotListener { snapshot, error in
                     if let error {
@@ -15029,16 +15054,14 @@ final class OrdersService: OrdersServiceable {
                         return
                     }
 
-                    let orders: [Order] = documents.compactMap { document in
-                        do {
-                            let dto = try document.data(as: OrderDto.self)
-                            return dto.toDomain()
-                        } catch {
-                            return nil
+                    do {
+                        let orders = try documents.compactMap { document in
+                            try document.data(as: OrderDto.self).toDomain()
                         }
+                        continuation.yield(orders)
+                    } catch {
+                        continuation.finish(throwing: error)
                     }
-
-                    continuation.yield(orders)
                 }
 
             continuation.onTermination = { _ in
@@ -16229,9 +16252,20 @@ final class CartManager: ObservableObject {
 import SwiftUI
 
 struct CartView: View {
+    @ObservedObject var viewModel: CheckoutViewModel
+    let nationalId: String
+
     @EnvironmentObject private var cartManager: CartManager
     @State private var showClearCartAlert = false
-    
+
+    private var rewardDiscountByMenuItemId: [String: Double] {
+        viewModel.allocatedDiscountByMenuItemId()
+    }
+
+    private var effectiveTotal: Double {
+        viewModel.effectiveTotal(for: cartManager.subtotal)
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             if cartManager.isEmpty {
@@ -16244,27 +16278,49 @@ struct CartView: View {
                 List {
                     Section("Productos") {
                         ForEach(cartManager.items) { cartItem in
-                            CartItemRowView(cartItem: cartItem)
+                            RewardAwareCartItemRow(
+                                cartItem: cartItem,
+                                allocatedDiscount: allocatedDiscount(for: cartItem)
+                            )
                         }
                         .onDelete(perform: deleteItems)
                     }
-                    
+
                     Section("Resumen") {
-                        HStack {
-                            Text("Subtotal")
-                                .font(.headline)
-                            Spacer()
-                            Text(cartManager.subtotal.priceText)
-                                .font(.headline)
-                                .fontWeight(.bold)
+                        summaryRow("Subtotal", cartManager.subtotal.priceText, emphasized: true)
+
+                        if viewModel.state.rewardPreview.discountAmount > 0 {
+                            summaryRow(
+                                "Murco Loyalty",
+                                "-\(viewModel.state.rewardPreview.discountAmount.priceText)",
+                                accent: true
+                            )
                         }
-                        
-                        HStack {
-                            Text("Productos")
-                                .foregroundStyle(.secondary)
-                            Spacer()
-                            Text("\(cartManager.totalItems)")
-                                .foregroundStyle(.secondary)
+
+                        summaryRow("Productos", "\(cartManager.totalItems)", secondary: true)
+
+                        Divider()
+
+                        summaryRow("Total", effectiveTotal.priceText, emphasized: true)
+                    }
+
+                    if !viewModel.state.rewardPreview.appliedRewards.isEmpty {
+                        Section("Premios aplicados") {
+                            ForEach(viewModel.state.rewardPreview.appliedRewards) { reward in
+                                VStack(alignment: .leading, spacing: 6) {
+                                    Text(reward.title)
+                                        .font(.subheadline.bold())
+
+                                    Text(reward.note)
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+
+                                    Text("-\(reward.amount.priceText)")
+                                        .font(.caption.bold())
+                                        .foregroundStyle(.green)
+                                }
+                                .padding(.vertical, 4)
+                            }
                         }
                     }
                 }
@@ -16273,6 +16329,12 @@ struct CartView: View {
         }
         .navigationTitle("Carrito")
         .appScreenStyle(.restaurant)
+        .onAppear {
+            viewModel.onAppear(nationalId: nationalId)
+        }
+        .onChange(of: nationalId) { _, value in
+            viewModel.onAppear(nationalId: value)
+        }
         .toolbar {
             if !cartManager.isEmpty {
                 ToolbarItem(placement: .topBarTrailing) {
@@ -16298,14 +16360,20 @@ struct CartView: View {
                             Text("Total")
                                 .font(.subheadline)
                                 .foregroundStyle(.secondary)
-                            
-                            Text(cartManager.totalAmount.priceText)
+
+                            if viewModel.state.rewardPreview.discountAmount > 0 {
+                                Text("Incluye Murco Loyalty")
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(.green)
+                            }
+
+                            Text(effectiveTotal.priceText)
                                 .font(.title3)
                                 .fontWeight(.bold)
                         }
-                        
+
                         Spacer()
-                        
+
                         NavigationLink(value: Route.checkout) {
                             Text("Finalizar compra")
                                 .font(.headline)
@@ -16325,12 +16393,179 @@ struct CartView: View {
             }
         }
     }
-    
+
     private func deleteItems(at offsets: IndexSet) {
         for index in offsets {
             let itemId = cartManager.items[index].menuItem.id
             cartManager.remove(itemId: itemId)
         }
+    }
+
+    private func allocatedDiscount(for cartItem: CartItem) -> Double {
+        let totalDiscount = rewardDiscountByMenuItemId[cartItem.menuItem.id, default: 0]
+        guard totalDiscount > 0 else { return 0 }
+
+        let siblingRows = cartManager.items.filter { $0.menuItem.id == cartItem.menuItem.id }
+        let totalSiblingSubtotal = siblingRows.reduce(0) { $0 + $1.totalPrice }
+        guard totalSiblingSubtotal > 0 else { return 0 }
+
+        if siblingRows.count == 1 {
+            return totalDiscount
+        }
+
+        let share = cartItem.totalPrice / totalSiblingSubtotal
+        return ((totalDiscount * share) * 100).rounded() / 100
+    }
+
+    private func summaryRow(
+        _ title: String,
+        _ value: String,
+        emphasized: Bool = false,
+        secondary: Bool = false,
+        accent: Bool = false
+    ) -> some View {
+        HStack {
+            Text(title)
+                .font(emphasized ? .headline : .body)
+                .foregroundStyle(accent ? .green : (secondary ? .secondary : .primary))
+
+            Spacer()
+
+            Text(value)
+                .font(emphasized ? .headline : .body)
+                .fontWeight(emphasized ? .bold : .semibold)
+                .foregroundStyle(accent ? .green : (secondary ? .secondary : .primary))
+        }
+    }
+}
+
+private struct RewardAwareCartItemRow: View {
+    let cartItem: CartItem
+    let allocatedDiscount: Double
+
+    @EnvironmentObject private var cartManager: CartManager
+
+    private var discountedTotal: Double {
+        max(0, cartItem.totalPrice - allocatedDiscount)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top, spacing: 12) {
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(Color.gray.opacity(0.15))
+                    .frame(width: 64, height: 64)
+                    .overlay(
+                        Image(systemName: "fork.knife")
+                            .font(.system(size: 22))
+                            .foregroundStyle(.gray)
+                    )
+
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(cartItem.menuItem.name)
+                        .font(.headline)
+
+                    Text(cartItem.menuItem.description)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+
+                    if !cartItem.menuItem.canBeOrdered {
+                        Text("Agotado")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.red)
+                    } else if cartItem.quantity >= cartItem.menuItem.remainingQuantity {
+                        Text("Límite alcanzado")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.orange)
+                    }
+
+                    if let notes = cartItem.notes,
+                       !notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        Text(notes)
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    HStack(spacing: 8) {
+                        if cartItem.menuItem.hasOffer {
+                            Text(cartItem.menuItem.price.priceText)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .strikethrough()
+
+                            Text(cartItem.menuItem.finalPrice.priceText)
+                                .font(.subheadline)
+                                .fontWeight(.semibold)
+                        } else {
+                            Text(cartItem.menuItem.finalPrice.priceText)
+                                .font(.subheadline)
+                                .fontWeight(.semibold)
+                        }
+
+                        if allocatedDiscount > 0 {
+                            Text("• Premio -\(allocatedDiscount.priceText)")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.green)
+                        }
+                    }
+                }
+
+                Spacer()
+            }
+
+            HStack {
+                HStack(spacing: 14) {
+                    Button {
+                        cartManager.decreaseQuantity(for: cartItem.menuItem.id)
+                    } label: {
+                        Image(systemName: "minus")
+                            .font(.headline)
+                            .frame(width: 34, height: 34)
+                            .background(Color.gray.opacity(0.12))
+                            .clipShape(Circle())
+                    }
+                    .buttonStyle(.borderless)
+
+                    Text("\(cartItem.quantity)")
+                        .font(.headline)
+                        .frame(minWidth: 24)
+
+                    Button {
+                        cartManager.increaseQuantity(for: cartItem.menuItem.id)
+                    } label: {
+                        Image(systemName: "plus")
+                            .font(.headline)
+                            .frame(width: 34, height: 34)
+                            .background(Color.gray.opacity(0.12))
+                            .clipShape(Circle())
+                    }
+                    .buttonStyle(.borderless)
+                    .disabled(!cartItem.menuItem.canBeOrdered || cartItem.quantity >= cartItem.menuItem.remainingQuantity)
+                }
+
+                Spacer()
+
+                VStack(alignment: .trailing, spacing: 4) {
+                    Text(allocatedDiscount > 0 ? "Total con premio" : "Total")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
+                    if allocatedDiscount > 0 {
+                        Text(cartItem.totalPrice.priceText)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .strikethrough()
+                    }
+
+                    Text(discountedTotal.priceText)
+                        .font(.headline)
+                        .fontWeight(.bold)
+                }
+            }
+        }
+        .padding(.vertical, 6)
+        .contentShape(Rectangle())
     }
 }
 
@@ -17094,6 +17329,10 @@ struct MenuListView: View {
         "Bebidas Alcohólicas"
     ]
 
+    private var authenticatedNationalId: String {
+        sessionViewModel.authenticatedProfile?.nationalId ?? ""
+    }
+
     private func categoryRank(for title: String) -> Int {
         categoryDisplayOrder.firstIndex(of: title) ?? Int.max
     }
@@ -17118,14 +17357,24 @@ struct MenuListView: View {
     }
 
     private var featuredItems: [MenuItem] {
-        sections
+        orderedSections
             .flatMap(\.items)
             .filter(\.isFeatured)
+    }
+
+    private var appliedDiscountAmount: Double {
+        checkoutViewModel.state.rewardPreview.discountAmount
+    }
+
+    private var effectiveCartTotal: Double {
+        checkoutViewModel.effectiveTotal(for: cartManager.subtotal)
     }
 
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 24) {
+                rewardsSection
+
                 if !featuredItems.isEmpty {
                     featuredCarousel
                 }
@@ -17147,20 +17396,14 @@ struct MenuListView: View {
                 selectedCategoryId = categories.first?.id
             }
 
-            if let nationalId = sessionViewModel.authenticatedProfile?.nationalId {
-                menuViewModel.setNationalId(nationalId)
-            }
+            syncIdentityAndRefreshRewards()
         }
         .onAppear {
             menuViewModel.onAppear()
-
-            if let nationalId = sessionViewModel.authenticatedProfile?.nationalId {
-                menuViewModel.setNationalId(nationalId)
-            }
+            syncIdentityAndRefreshRewards()
         }
-        .onChange(of: sessionViewModel.authenticatedProfile?.nationalId) { _, nationalId in
-            guard let nationalId else { return }
-            menuViewModel.setNationalId(nationalId)
+        .onChange(of: sessionViewModel.authenticatedProfile?.nationalId) { _, _ in
+            syncIdentityAndRefreshRewards()
         }
         .toolbar {
             ToolbarItemGroup(placement: .topBarTrailing) {
@@ -17213,10 +17456,16 @@ struct MenuListView: View {
                     categoryTitle: categoryTitle,
                     rewardPresentation: menuViewModel.rewardPresentation(for: item)
                 )
+
             case .cart:
-                CartView()
+                CartView(
+                    viewModel: checkoutViewModel,
+                    nationalId: authenticatedNationalId
+                )
+
             case .checkout:
                 CheckoutView(viewModel: checkoutViewModel, path: $path)
+
             case .reservationBuilder:
                 AdventureComboBuilderView(
                     adventureComboBuilderViewModel: adventureComboBuilderViewModel,
@@ -17225,9 +17474,127 @@ struct MenuListView: View {
                 .onAppear {
                     adventureComboBuilderViewModel.resetForFoodOnly()
                 }
+
             case let .orderSuccess(order):
                 OrderSuccessView(order: order, path: $path)
             }
+        }
+        .safeAreaInset(edge: .bottom) {
+            if !cartManager.isEmpty {
+                bottomCartBar
+            }
+        }
+    }
+
+    private func syncIdentityAndRefreshRewards() {
+        let nationalId = authenticatedNationalId
+        menuViewModel.setNationalId(nationalId)
+        checkoutViewModel.onAppear(nationalId: nationalId)
+    }
+
+    @ViewBuilder
+    private var rewardsSection: some View {
+        let templates = menuViewModel.restaurantRewardTemplates
+
+        if !templates.isEmpty {
+            VStack(alignment: .leading, spacing: 14) {
+                BrandSectionHeader(
+                    theme: .restaurant,
+                    title: "Tus cupones y premios",
+                    subtitle: "Aquí puedes ver qué premio tienes, cuándo vence y a qué plato o promo aplica."
+                )
+
+                if menuViewModel.state.isLoadingRewards {
+                    ProgressView("Actualizando premios...")
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.vertical, 6)
+                }
+
+                ForEach(templates) { template in
+                    rewardCouponCard(template)
+                }
+            }
+        }
+    }
+
+    private func rewardCouponCard(_ template: LoyaltyRewardTemplate) -> some View {
+        let eligibleItems = menuViewModel.eligibleMenuItems(for: template)
+
+        return VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top, spacing: 10) {
+                BrandBadge(
+                    theme: .restaurant,
+                    title: badgeText(for: template),
+                    selected: true
+                )
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(template.title)
+                        .font(.headline)
+                        .foregroundStyle(palette.textPrimary)
+
+                    Text(template.subtitle.isEmpty ? template.displaySummary : template.subtitle)
+                        .font(.subheadline)
+                        .foregroundStyle(palette.textSecondary)
+                }
+
+                Spacer()
+            }
+
+            if let expirationText = menuViewModel.expirationText(for: template) {
+                Label(expirationText, systemImage: "calendar")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(palette.warning)
+            }
+
+            if !eligibleItems.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Elige un plato elegible")
+                        .font(.caption.bold())
+                        .foregroundStyle(palette.textPrimary)
+
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 8) {
+                            ForEach(eligibleItems) { item in
+                                NavigationLink(value: Route.menuDetail(item, categoryTitle(for: item.categoryId))) {
+                                    Text(item.name)
+                                        .font(.caption.weight(.semibold))
+                                        .foregroundStyle(palette.primary)
+                                        .padding(.horizontal, 12)
+                                        .padding(.vertical, 8)
+                                        .background(
+                                            Capsule()
+                                                .fill(palette.chipGradient)
+                                        )
+                                        .overlay(
+                                            Capsule()
+                                                .stroke(palette.stroke, lineWidth: 1)
+                                        )
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                    }
+                }
+            } else if template.rule.type == .mostExpensiveMenuItemPercentage {
+                Text("Agrega el plato elegible más caro que quieras y el descuento se calculará automáticamente sobre ese plato.")
+                    .font(.caption)
+                    .foregroundStyle(palette.textSecondary)
+            }
+        }
+        .appCardStyle(.restaurant, emphasized: false)
+    }
+
+    private func badgeText(for template: LoyaltyRewardTemplate) -> String {
+        switch template.rule.type {
+        case .freeMenuItem:
+            return "Gratis"
+        case .specificMenuItemPercentage, .mostExpensiveMenuItemPercentage:
+            return "\(Int((template.rule.percentage ?? 0).rounded()))% OFF"
+        case .buyXGetYFree:
+            return "Promo"
+        case .activityPercentage:
+            return "Aventura"
         }
     }
 
@@ -17242,18 +17609,12 @@ struct MenuListView: View {
             TabView {
                 ForEach(featuredItems) { item in
                     NavigationLink(value: Route.menuDetail(item, categoryTitle(for: item.categoryId))) {
-                        VStack(alignment: .leading, spacing: 10) {
-                            FeaturedMenuCard(item: item)
-
-                            if let reward = menuViewModel.rewardPresentation(for: item) {
-                                rewardHintCard(reward)
-                            }
-                        }
+                        FeaturedMenuCard(item: item)
                     }
                     .buttonStyle(.plain)
                 }
             }
-            .frame(height: 255)
+            .frame(height: 220)
             .tabViewStyle(.page(indexDisplayMode: .automatic))
         }
     }
@@ -17301,8 +17662,10 @@ struct MenuListView: View {
                         VStack(alignment: .leading, spacing: 10) {
                             MenuItemRowView(item: item)
 
-                            if let reward = menuViewModel.rewardPresentation(for: item) {
-                                rewardHintCard(reward)
+                            if let appliedReward = checkoutViewModel.appliedRewardPresentation(forMenuItemId: item.id) {
+                                appliedRewardCard(appliedReward)
+                            } else if let availableReward = menuViewModel.rewardPresentation(for: item) {
+                                availableRewardCard(availableReward)
                             }
                         }
                     }
@@ -17316,7 +17679,7 @@ struct MenuListView: View {
         categories.first(where: { $0.id == categoryId })?.title ?? ""
     }
 
-    private func rewardHintCard(_ reward: RewardPresentation) -> some View {
+    private func availableRewardCard(_ reward: RewardPresentation) -> some View {
         HStack(alignment: .top, spacing: 10) {
             BrandBadge(theme: .restaurant, title: reward.badge, selected: true)
 
@@ -17334,13 +17697,95 @@ struct MenuListView: View {
         }
         .padding(12)
         .background(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .fill(palette.elevatedCard)
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .stroke(palette.stroke, lineWidth: 1)
         )
+    }
+
+    private func appliedRewardCard(_ reward: RewardPresentation) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            BrandBadge(theme: .restaurant, title: "Aplicado", selected: true)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(reward.title)
+                    .font(.caption.bold())
+                    .foregroundStyle(palette.textPrimary)
+
+                Text(reward.message)
+                    .font(.caption)
+                    .foregroundStyle(palette.success)
+            }
+
+            Spacer()
+
+            if let amountText = reward.amountText {
+                Text("-\(amountText)")
+                    .font(.caption.bold())
+                    .foregroundStyle(palette.success)
+            }
+        }
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(palette.success.opacity(colorScheme == .dark ? 0.14 : 0.08))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(palette.success.opacity(0.25), lineWidth: 1)
+        )
+    }
+
+    private var bottomCartBar: some View {
+        VStack(spacing: 10) {
+            HStack(alignment: .center) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Tu pedido")
+                        .font(.caption)
+                        .foregroundStyle(palette.textSecondary)
+
+                    if appliedDiscountAmount > 0 {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Subtotal \(cartManager.subtotal.priceText)")
+                                .font(.caption)
+                                .foregroundStyle(palette.textSecondary)
+
+                            Text("Murco Loyalty -\(appliedDiscountAmount.priceText)")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(palette.success)
+
+                            Text(effectiveCartTotal.priceText)
+                                .font(.title3.bold())
+                                .foregroundStyle(palette.textPrimary)
+                        }
+                    } else {
+                        Text(cartManager.subtotal.priceText)
+                            .font(.title3.bold())
+                            .foregroundStyle(palette.textPrimary)
+                    }
+                }
+
+                Spacer()
+
+                NavigationLink(value: Route.cart) {
+                    Text("Ver carrito")
+                        .font(.headline)
+                        .frame(minWidth: 140)
+                        .padding(.vertical, 14)
+                        .padding(.horizontal, 20)
+                        .background(palette.primary)
+                        .foregroundStyle(Color.white)
+                        .clipShape(RoundedRectangle(cornerRadius: 16))
+                }
+            }
+            .padding(.horizontal)
+            .padding(.top, 10)
+            .padding(.bottom, 12)
+            .background(.ultraThinMaterial)
+        }
     }
 }
 
@@ -17500,15 +17945,19 @@ struct CheckoutView: View {
     @EnvironmentObject private var sessionViewModel: AppSessionViewModel
     @Binding var path: NavigationPath
     @Environment(\.colorScheme) private var colorScheme
-    
+
     private var palette: ThemePalette {
         AppTheme.palette(for: .restaurant, scheme: colorScheme)
     }
-    
+
     private var authenticatedProfile: ClientProfile? {
         sessionViewModel.authenticatedProfile
     }
-    
+
+    private var effectiveTotal: Double {
+        viewModel.effectiveTotal(for: cartManager.subtotal)
+    }
+
     var body: some View {
         ScrollView {
             VStack(spacing: 20) {
@@ -17545,7 +17994,7 @@ struct CheckoutView: View {
             path.append(Route.orderSuccess(order))
         }
     }
-    
+
     private var clientDetailsSection: some View {
         VStack(alignment: .leading, spacing: 16) {
             BrandSectionHeader(
@@ -17553,7 +18002,7 @@ struct CheckoutView: View {
                 title: "Datos del cliente",
                 subtitle: "La información de tu perfil se utiliza automáticamente para este pedido."
             )
-            
+
             VStack(spacing: 14) {
                 themedField(
                     title: "Cédula",
@@ -17563,7 +18012,7 @@ struct CheckoutView: View {
                     )
                 )
                 .disabled(true)
-                
+
                 themedField(
                     title: "Nombre",
                     text: Binding(
@@ -17572,7 +18021,7 @@ struct CheckoutView: View {
                     )
                 )
                 .disabled(true)
-                
+
                 themedField(
                     title: "Número de mesa",
                     text: Binding(
@@ -17581,208 +18030,189 @@ struct CheckoutView: View {
                     )
                 )
                 .keyboardType(.numberPad)
-                
-                HStack(alignment: .top, spacing: 12) {
-                    BrandIconBubble(theme: .restaurant, systemImage: "person.crop.circle.badge.checkmark", size: 38)
-                    
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("¿Necesitas actualizar tu información?")
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(palette.textPrimary)
-                        
-                        Text("Por favor, cambia tu nombre o cédula desde la página Editar perfil.")
-                            .font(.subheadline)
-                            .foregroundStyle(palette.textSecondary)
-                    }
-                    
-                    Spacer()
-                }
-                .padding(14)
-                .background(
-                    RoundedRectangle(cornerRadius: AppTheme.Radius.large, style: .continuous)
-                        .fill(palette.elevatedCard)
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: AppTheme.Radius.large, style: .continuous)
-                        .stroke(palette.stroke, lineWidth: 1)
-                )
-                
-                HStack(spacing: 12) {
-                    BrandIconBubble(theme: .restaurant, systemImage: "clock.fill", size: 38)
-                    
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Hora del pedido")
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(palette.textPrimary)
-                        
-                        Text(cartManager.orderCreatedAt.formatted(date: .omitted, time: .shortened))
-                            .font(.subheadline)
-                            .foregroundStyle(palette.textSecondary)
-                    }
-                    
-                    Spacer()
-                }
-                .padding(14)
-                .background(
-                    RoundedRectangle(cornerRadius: AppTheme.Radius.large, style: .continuous)
-                        .fill(palette.elevatedCard)
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: AppTheme.Radius.large, style: .continuous)
-                        .stroke(palette.stroke, lineWidth: 1)
-                )
+
+                Text("¿Necesitas cambiar tu nombre o cédula? Hazlo desde Editar perfil.")
+                    .font(.caption)
+                    .foregroundStyle(palette.textSecondary)
             }
         }
-        .appCardStyle(.restaurant, emphasized: false)
+        .appCardStyle(.restaurant)
     }
-    
+
     private var summarySection: some View {
         VStack(alignment: .leading, spacing: 16) {
             BrandSectionHeader(
                 theme: .restaurant,
                 title: "Resumen",
-                subtitle: "Revisión rápida del pedido antes de confirmar."
+                subtitle: "Revisa tu pedido antes de confirmarlo."
             )
-            
-            VStack(spacing: 14) {
-                summaryRow(
-                    title: "Productos",
-                    value: "\(cartManager.totalItems)",
-                    systemImage: "fork.knife"
+
+            VStack(spacing: 12) {
+                ForEach(cartManager.items) { cartItem in
+                    HStack(alignment: .top, spacing: 12) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("\(cartItem.quantity)x \(cartItem.menuItem.name)")
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(palette.textPrimary)
+
+                            if let reward = viewModel.appliedRewardPresentation(forMenuItemId: cartItem.menuItem.id) {
+                                Text(reward.message)
+                                    .font(.caption)
+                                    .foregroundStyle(palette.success)
+                            }
+                        }
+
+                        Spacer()
+
+                        VStack(alignment: .trailing, spacing: 4) {
+                            let lineDiscount = viewModel.allocatedDiscountByMenuItemId()[cartItem.menuItem.id, default: 0]
+                            let discountedLine = max(0, cartItem.totalPrice - lineDiscount)
+
+                            if lineDiscount > 0 {
+                                Text(cartItem.totalPrice.priceText)
+                                    .font(.caption)
+                                    .foregroundStyle(palette.textSecondary)
+                                    .strikethrough()
+
+                                Text(discountedLine.priceText)
+                                    .font(.subheadline.bold())
+                                    .foregroundStyle(palette.success)
+                            } else {
+                                Text(cartItem.totalPrice.priceText)
+                                    .font(.subheadline.bold())
+                                    .foregroundStyle(palette.textPrimary)
+                            }
+                        }
+                    }
+
+                    if cartItem.id != cartManager.items.last?.id {
+                        Divider().overlay(palette.stroke)
+                    }
+                }
+            }
+
+            Divider().overlay(palette.stroke)
+
+            detailLine(title: "Subtotal", value: cartManager.subtotal.priceText)
+
+            if viewModel.state.rewardPreview.discountAmount > 0 {
+                detailLine(
+                    title: "Murco Loyalty",
+                    value: "-\(viewModel.state.rewardPreview.discountAmount.priceText)",
+                    accent: true
                 )
-                
-                summaryRow(
-                    title: "Total",
-                    value: cartManager.totalAmount.priceText,
-                    systemImage: "dollarsign.circle.fill",
-                    isHighlighted: true
-                )
+            }
+
+            Divider().overlay(palette.stroke)
+
+            detailLine(
+                title: "Total",
+                value: effectiveTotal.priceText,
+                emphasized: true
+            )
+        }
+        .appCardStyle(.restaurant, emphasized: false)
+    }
+
+    private var rewardsSection: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            BrandSectionHeader(
+                theme: .restaurant,
+                title: "Premios aplicados",
+                subtitle: viewModel.state.rewardPreview.appliedRewards.isEmpty
+                    ? "No hay premios activos para este pedido."
+                    : "Estos descuentos ya se reflejan en el total."
+            )
+
+            if viewModel.state.isLoadingRewards {
+                ProgressView("Calculando premios...")
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            } else if viewModel.state.rewardPreview.appliedRewards.isEmpty {
+                Text("No se aplicó ningún cupón o premio automático a este pedido.")
+                    .font(.subheadline)
+                    .foregroundStyle(palette.textSecondary)
+            } else {
+                VStack(spacing: 12) {
+                    ForEach(viewModel.state.rewardPreview.appliedRewards) { reward in
+                        HStack(alignment: .top, spacing: 10) {
+                            BrandBadge(theme: .restaurant, title: "Aplicado", selected: true)
+
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(reward.title)
+                                    .font(.subheadline.bold())
+                                    .foregroundStyle(palette.textPrimary)
+
+                                Text(reward.note)
+                                    .font(.caption)
+                                    .foregroundStyle(palette.textSecondary)
+                            }
+
+                            Spacer()
+
+                            Text("-\(reward.amount.priceText)")
+                                .font(.subheadline.bold())
+                                .foregroundStyle(palette.success)
+                        }
+                    }
+                }
             }
         }
         .appCardStyle(.restaurant)
     }
-    
+
     private var confirmSection: some View {
         VStack(spacing: 12) {
             Button {
                 viewModel.onEvent(.confirmTapped)
             } label: {
-                Group {
-                    if viewModel.state.isSubmitting {
-                        ProgressView()
-                            .tint(.white)
-                            .frame(maxWidth: .infinity)
-                    } else {
-                        Text("Confirmar pedido")
-                            .frame(maxWidth: .infinity)
-                    }
+                if viewModel.state.isSubmitting {
+                    ProgressView()
+                        .frame(maxWidth: .infinity)
+                } else {
+                    Text("Confirmar pedido")
+                        .frame(maxWidth: .infinity)
                 }
             }
             .buttonStyle(BrandPrimaryButtonStyle(theme: .restaurant))
-            .disabled(viewModel.state.isSubmitting)
-            
-            Text("Revisa los datos cuidadosamente antes de crear el pedido.")
-                .font(.footnote)
-                .foregroundStyle(palette.textSecondary)
-                .multilineTextAlignment(.center)
+            .disabled(viewModel.state.isSubmitting || cartManager.isEmpty || cartManager.tableNumber.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
         }
-        .appCardStyle(.restaurant)
     }
-    
-    private func themedField(
-        title: String,
-        text: Binding<String>
-    ) -> some View {
+
+    private func syncProfileFieldsFromSession() {
+        guard let profile = authenticatedProfile else { return }
+
+        cartManager.updateClientId(profile.nationalId)
+        cartManager.updateClientName(profile.fullName)
+    }
+
+    private func themedField(title: String, text: Binding<String>) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(title)
                 .font(.subheadline.weight(.semibold))
-                .foregroundStyle(palette.textPrimary)
-            
-            TextField(title, text: text)
+                .foregroundStyle(palette.textSecondary)
+
+            TextField("", text: text)
                 .appTextFieldStyle(.restaurant)
         }
     }
-    
-    private func summaryRow(
+
+    private func detailLine(
         title: String,
         value: String,
-        systemImage: String,
-        isHighlighted: Bool = false
+        emphasized: Bool = false,
+        accent: Bool = false
     ) -> some View {
         HStack(spacing: 12) {
-            BrandIconBubble(theme: .restaurant, systemImage: systemImage, size: 40)
-            
             Text(title)
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(palette.textPrimary)
-            
+                .font(emphasized ? .headline : .subheadline)
+                .foregroundStyle(accent ? palette.success : palette.textSecondary)
+
             Spacer()
-            
+
             Text(value)
-                .font(isHighlighted ? .headline.bold() : .headline)
-                .foregroundStyle(isHighlighted ? palette.primary : palette.textPrimary)
+                .font(emphasized ? .headline : .subheadline.weight(.semibold))
+                .foregroundStyle(accent ? palette.success : (emphasized ? palette.primary : palette.textPrimary))
         }
-        .padding(14)
-        .background(
-            RoundedRectangle(cornerRadius: AppTheme.Radius.large, style: .continuous)
-                .fill(palette.elevatedCard)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: AppTheme.Radius.large, style: .continuous)
-                .stroke(palette.stroke, lineWidth: 1)
-        )
-    }
-    
-    private func syncProfileFieldsFromSession() {
-        guard let profile = authenticatedProfile else { return }
-        
-        if cartManager.clientId != profile.nationalId {
-            cartManager.updateClientId(profile.nationalId)
-        }
-        
-        if cartManager.clientName != profile.fullName {
-            cartManager.updateClientName(profile.fullName)
-        }
-    }
-    
-    private var rewardsSection: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            BrandSectionHeader(
-                theme: .restaurant,
-                title: "Tus premios",
-                subtitle: "Se aplican automáticamente si el pedido cumple la regla."
-            )
-
-            if viewModel.state.isLoadingRewards {
-                ProgressView("Calculando premios...")
-            } else if viewModel.state.rewardPreview.appliedRewards.isEmpty {
-                Text("No hay premios automáticos aplicables para este pedido.")
-                    .foregroundStyle(.secondary)
-            } else {
-                ForEach(viewModel.state.rewardPreview.appliedRewards) { reward in
-                    HStack {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(reward.title).font(.headline)
-                            Text(reward.note)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-
-                        Spacer()
-
-                        Text("-\(reward.amount.priceText)")
-                            .font(.subheadline.bold())
-                            .foregroundStyle(.green)
-                    }
-                    .padding(12)
-                    .background(
-                        RoundedRectangle(cornerRadius: 18, style: .continuous)
-                            .fill(palette.elevatedCard)
-                    )
-                }
-            }
-        }
-        .appCardStyle(.restaurant)
     }
 }
 
@@ -18147,7 +18577,7 @@ struct OrderDetailView: View {
 ```swift
 //
 //  OrderRowView.swift
-//  Altaurante Altos del Murco
+//  Altos del Murco
 //
 //  Created by José Ruiz on 12/3/26.
 //
@@ -18216,44 +18646,56 @@ struct OrderRowView: View {
 
                     Spacer()
 
-                    Text(order.totalAmount.priceText)
-                        .font(.subheadline)
-                        .fontWeight(.semibold)
-                        .foregroundStyle(palette.primary)
+                    VStack(alignment: .trailing, spacing: 2) {
+                        if order.loyaltyDiscountAmount > 0 {
+                            Text(order.subtotal.priceText)
+                                .font(.caption)
+                                .foregroundStyle(palette.textSecondary)
+                                .strikethrough()
+
+                            Text(order.totalAmount.priceText)
+                                .font(.subheadline)
+                                .fontWeight(.semibold)
+                                .foregroundStyle(palette.success)
+                        } else {
+                            Text(order.totalAmount.priceText)
+                                .font(.subheadline)
+                                .fontWeight(.semibold)
+                                .foregroundStyle(palette.primary)
+                        }
+                    }
                 }
 
                 ProgressView(value: progressValue)
                     .tint(progressColor)
             }
 
-            if order.loyaltyDiscountAmount > 0 {
-                HStack(spacing: 8) {
-                    BrandBadge(theme: .restaurant, title: "Murco Loyalty", selected: true)
+            if order.loyaltyDiscountAmount > 0 || !order.appliedRewards.isEmpty {
+                Divider().overlay(palette.stroke)
 
-                    Text("-\(order.loyaltyDiscountAmount.priceText)")
-                        .font(.caption.bold())
-                        .foregroundStyle(palette.success)
+                HStack(alignment: .top, spacing: 8) {
+                    BrandBadge(theme: .restaurant, title: "Murco", selected: true)
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        if order.loyaltyDiscountAmount > 0 {
+                            Text("Descuento aplicado: -\(order.loyaltyDiscountAmount.priceText)")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(palette.success)
+                        }
+
+                        if let reward = order.appliedRewards.first {
+                            Text(reward.note)
+                                .font(.caption)
+                                .foregroundStyle(palette.textSecondary)
+                                .lineLimit(2)
+                        }
+                    }
 
                     Spacer()
                 }
-
-                if let reward = order.appliedRewards.first {
-                    Text(reward.note)
-                        .font(.caption)
-                        .foregroundStyle(palette.textSecondary)
-                }
-            }
-
-            if order.requiresReconfirmation {
-                Label("Editado después de la confirmación", systemImage: "exclamationmark.arrow.trianglehead.2.clockwise")
-                    .font(.caption)
-                    .foregroundStyle(palette.warning)
-            } else if order.wasEditedAfterConfirmation {
-                Label("Pedido actualizado", systemImage: "pencil.circle")
-                    .font(.caption)
-                    .foregroundStyle(palette.textSecondary)
             }
         }
+        .appCardStyle(.restaurant, emphasized: false)
     }
 
     private var progressValue: Double {
@@ -18479,22 +18921,23 @@ import SwiftUI
 
 struct OrderSuccessView: View {
     let order: Order
-    
+
     @Binding var path: NavigationPath
     @Environment(\.colorScheme) private var colorScheme
-    
+
     private let theme: AppSectionTheme = .restaurant
-    
+
     private var palette: ThemePalette {
         AppTheme.palette(for: theme, scheme: colorScheme)
     }
-    
+
     var body: some View {
         ScrollView {
             VStack(spacing: 24) {
                 successHeader
                 orderDetailsCard
-                
+                rewardsCard
+
                 Button {
                     path = NavigationPath()
                 } label: {
@@ -18511,7 +18954,7 @@ struct OrderSuccessView: View {
         .navigationBarBackButtonHidden(true)
         .appScreenStyle(theme)
     }
-    
+
     private var successHeader: some View {
         VStack(spacing: 18) {
             ZStack {
@@ -18528,17 +18971,16 @@ struct OrderSuccessView: View {
                         x: 0,
                         y: 10
                     )
-                
+
                 Image(systemName: "checkmark.circle.fill")
                     .font(.system(size: 54, weight: .semibold))
                     .foregroundStyle(palette.success)
             }
-            
+
             VStack(spacing: 8) {
                 Text("Pedido enviado")
                     .font(.system(.largeTitle, design: .rounded, weight: .bold))
                     .foregroundStyle(palette.textPrimary)
-                
                 Text("Tu pedido fue creado correctamente.")
                     .font(.body)
                     .foregroundStyle(palette.textSecondary)
@@ -18556,7 +18998,7 @@ struct OrderSuccessView: View {
                 title: "Resumen del pedido",
                 subtitle: "Tu pedido del restaurante ha sido registrado correctamente."
             )
-            
+
             VStack(spacing: 14) {
                 InfoRow(title: "ID del pedido", value: String(order.id.prefix(7)), theme: theme)
                 InfoRow(title: "Cliente", value: order.clientName, theme: theme)
@@ -18567,10 +19009,56 @@ struct OrderSuccessView: View {
                     value: order.createdAt.formatted(date: .omitted, time: .shortened),
                     theme: theme
                 )
+                InfoRow(title: "Subtotal", value: order.subtotal.priceText, theme: theme)
+                if order.loyaltyDiscountAmount > 0 {
+                    InfoRow(
+                        title: "Murco Loyalty",
+                        value: "-\(order.loyaltyDiscountAmount.priceText)",
+                        theme: theme
+                    )
+                }
                 InfoRow(title: "Total", value: order.totalAmount.priceText, theme: theme, emphasized: true)
             }
         }
         .appCardStyle(theme, emphasized: false)
+    }
+
+    @ViewBuilder
+    private var rewardsCard: some View {
+        if !order.appliedRewards.isEmpty {
+            VStack(alignment: .leading, spacing: 16) {
+                BrandSectionHeader(
+                    theme: theme,
+                    title: "Premios aplicados",
+                    subtitle: "Estos premios quedaron guardados con tu pedido."
+                )
+
+                VStack(spacing: 12) {
+                    ForEach(order.appliedRewards) { reward in
+                        HStack(alignment: .top, spacing: 10) {
+                            BrandBadge(theme: theme, title: "Aplicado", selected: true)
+
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(reward.title)
+                                    .font(.subheadline.bold())
+                                    .foregroundStyle(palette.textPrimary)
+
+                                Text(reward.note)
+                                    .font(.caption)
+                                    .foregroundStyle(palette.textSecondary)
+                            }
+
+                            Spacer()
+
+                            Text("-\(reward.amount.priceText)")
+                                .font(.subheadline.bold())
+                                .foregroundStyle(palette.success)
+                        }
+                    }
+                }
+            }
+            .appCardStyle(theme)
+        }
     }
 }
 
@@ -19132,6 +19620,9 @@ final class CheckoutViewModel: ObservableObject {
     private let cartManager: CartManager
     private let loyaltyRewardsService: LoyaltyRewardsServiceable
 
+    private var cancellables = Set<AnyCancellable>()
+    private var currentNationalId: String = ""
+
     init(
         submitOrderUseCase: SubmitOrderUseCase,
         cartManager: CartManager,
@@ -19140,14 +19631,32 @@ final class CheckoutViewModel: ObservableObject {
         self.submitOrderUseCase = submitOrderUseCase
         self.cartManager = cartManager
         self.loyaltyRewardsService = loyaltyRewardsService
+
+        cartManager.$draft
+            .dropFirst()
+            .sink { [weak self] _ in
+                guard let self else { return }
+                Task { @MainActor in
+                    await self.refreshRewardPreviewIfPossible()
+                }
+            }
+            .store(in: &cancellables)
     }
 
     func onAppear(nationalId: String) {
-        Task { await refreshRewardPreview(nationalId: nationalId) }
+        let cleanNationalId = nationalId.trimmingCharacters(in: .whitespacesAndNewlines)
+        currentNationalId = cleanNationalId
+        Task { await refreshRewardPreview(nationalId: cleanNationalId) }
+    }
+
+    func refreshRewardPreviewIfPossible() async {
+        await refreshRewardPreview(nationalId: currentNationalId)
     }
 
     func refreshRewardPreview(nationalId: String) async {
         let cleanNationalId = nationalId.trimmingCharacters(in: .whitespacesAndNewlines)
+        currentNationalId = cleanNationalId
+
         guard !cleanNationalId.isEmpty else {
             state.rewardPreview = .empty(nationalId: "")
             return
@@ -19185,6 +19694,28 @@ final class CheckoutViewModel: ObservableObject {
         }
     }
 
+    func effectiveTotal(for subtotal: Double) -> Double {
+        max(0, subtotal - state.rewardPreview.discountAmount)
+    }
+
+    func appliedRewardPresentation(forMenuItemId menuItemId: String) -> RewardPresentation? {
+        guard let reward = state.rewardPreview.appliedRewards.first(where: {
+            $0.affectedMenuItemIds.contains(menuItemId)
+        }) else {
+            return nil
+        }
+
+        return RewardPresentation.from(appliedReward: reward)
+    }
+
+    func allocatedDiscountByMenuItemId() -> [String: Double] {
+        state.rewardPreview.appliedRewards.reduce(into: [:]) { partial, reward in
+            for menuItemId in reward.affectedMenuItemIds {
+                partial[menuItemId, default: 0] += reward.amount
+            }
+        }
+    }
+
     private func submitOrder() {
         guard let baseOrder = cartManager.createOrder() else {
             state.errorMessage = "Please complete client name, table number, and cart items."
@@ -19204,6 +19735,7 @@ final class CheckoutViewModel: ObservableObject {
                 try await submitOrderUseCase.execute(order: finalOrder)
                 cartManager.clear()
                 state.createdOrder = finalOrder
+                state.rewardPreview = .empty(nationalId: currentNationalId)
                 state.isSubmitting = false
             } catch {
                 state.isSubmitting = false
@@ -19250,6 +19782,7 @@ final class MenuViewModel: ObservableObject {
     private let service: MenuServiceable
     private let loyaltyRewardsService: LoyaltyRewardsServiceable
     private var listenerToken: MenuListenerTokenable?
+    private var walletListenerToken: LoyaltyRewardsListenerToken?
 
     init(
         service: MenuServiceable,
@@ -19260,31 +19793,34 @@ final class MenuViewModel: ObservableObject {
     }
 
     func onAppear() {
-        if listenerToken == nil {
-            state.isLoading = true
-            state.errorMessage = nil
+        guard listenerToken == nil else { return }
 
-            listenerToken = service.observeMenu { [weak self] result in
-                Task { @MainActor in
-                    guard let self else { return }
+        state.isLoading = true
+        state.errorMessage = nil
 
-                    switch result {
-                    case .success(let sections):
-                        self.state.sections = sections
-                        self.state.isLoading = false
+        listenerToken = service.observeMenu { [weak self] result in
+            Task { @MainActor in
+                guard let self else { return }
 
-                    case .failure(let error):
-                        self.state.sections = []
-                        self.state.errorMessage = error.localizedDescription
-                        self.state.isLoading = false
-                    }
+                switch result {
+                case .success(let sections):
+                    self.state.sections = sections
+                    self.state.isLoading = false
+
+                case .failure(let error):
+                    self.state.sections = []
+                    self.state.errorMessage = error.localizedDescription
+                    self.state.isLoading = false
                 }
             }
         }
+    }
 
-        Task {
-            await refreshRewardWallet()
-        }
+    func onDisappear() {
+        listenerToken?.remove()
+        listenerToken = nil
+        walletListenerToken?.remove()
+        walletListenerToken = nil
     }
 
     func setNationalId(_ nationalId: String) {
@@ -19292,10 +19828,48 @@ final class MenuViewModel: ObservableObject {
         guard state.currentNationalId != cleanNationalId else { return }
 
         state.currentNationalId = cleanNationalId
+        startWalletObservation()
+    }
 
-        Task {
-            await refreshRewardWallet()
+    private func startWalletObservation() {
+        walletListenerToken?.remove()
+        walletListenerToken = nil
+
+        let cleanNationalId = state.currentNationalId.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleanNationalId.isEmpty else {
+            state.rewardWalletSnapshot = .empty(nationalId: "")
+            state.isLoadingRewards = false
+            return
         }
+
+        state.isLoadingRewards = true
+
+        walletListenerToken = loyaltyRewardsService.observeWalletSnapshot(
+            for: cleanNationalId
+        ) { [weak self] result in
+            Task { @MainActor in
+                guard let self else { return }
+                self.state.isLoadingRewards = false
+
+                switch result {
+                case .success(let snapshot):
+                    self.state.rewardWalletSnapshot = snapshot
+
+                case .failure(let error):
+                    self.state.rewardWalletSnapshot = .empty(nationalId: cleanNationalId)
+                    self.state.errorMessage = error.localizedDescription
+                }
+            }
+        }
+    }
+
+    var restaurantRewardTemplates: [LoyaltyRewardTemplate] {
+        state.rewardWalletSnapshot.availableTemplates
+            .filter { $0.scope.matchesRestaurant() && !$0.isExpired }
+            .sorted {
+                if $0.priority != $1.priority { return $0.priority < $1.priority }
+                return $0.title < $1.title
+            }
     }
 
     func rewardPresentation(for item: MenuItem) -> RewardPresentation? {
@@ -19305,29 +19879,32 @@ final class MenuViewModel: ObservableObject {
         )
     }
 
-    func onDisappear() {
-        listenerToken?.remove()
-        listenerToken = nil
+    func eligibleMenuItems(for template: LoyaltyRewardTemplate) -> [MenuItem] {
+        let allItems = state.sections.flatMap(\.items)
+
+        switch template.rule.type {
+        case .freeMenuItem, .specificMenuItemPercentage, .buyXGetYFree:
+            guard let targetId = template.targetMenuItemId else { return [] }
+            return allItems.filter { $0.id == targetId }
+
+        case .mostExpensiveMenuItemPercentage:
+            return Array(
+                allItems
+                    .filter(\.canBeOrdered)
+                    .sorted { lhs, rhs in
+                        if lhs.finalPrice != rhs.finalPrice { return lhs.finalPrice > rhs.finalPrice }
+                        return lhs.name < rhs.name
+                    }
+                    .prefix(8)
+            )
+
+        case .activityPercentage:
+            return []
+        }
     }
 
-    private func refreshRewardWallet() async {
-        let cleanNationalId = state.currentNationalId.trimmingCharacters(in: .whitespacesAndNewlines)
-
-        guard !cleanNationalId.isEmpty else {
-            state.rewardWalletSnapshot = .empty(nationalId: "")
-            state.isLoadingRewards = false
-            return
-        }
-
-        state.isLoadingRewards = true
-        defer { state.isLoadingRewards = false }
-
-        do {
-            state.rewardWalletSnapshot = try await loyaltyRewardsService.loadWalletSnapshot(for: cleanNationalId)
-        } catch {
-            state.rewardWalletSnapshot = .empty(nationalId: cleanNationalId)
-            state.errorMessage = error.localizedDescription
-        }
+    func expirationText(for template: LoyaltyRewardTemplate) -> String? {
+        template.expirationText
     }
 }
 

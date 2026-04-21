@@ -26,6 +26,10 @@ struct CheckoutView: View {
         viewModel.effectiveTotal(for: cartManager.subtotal)
     }
 
+    private var rowDiscounts: [UUID: Double] {
+        viewModel.allocatedDiscountByCartItemId(for: cartManager.items)
+    }
+
     var body: some View {
         ScrollView {
             VStack(spacing: 20) {
@@ -42,7 +46,14 @@ struct CheckoutView: View {
         .appScreenStyle(.restaurant)
         .alert(
             "Error",
-            isPresented: .constant(viewModel.state.errorMessage != nil),
+            isPresented: Binding(
+                get: { viewModel.state.errorMessage != nil },
+                set: { isPresented in
+                    if !isPresented {
+                        viewModel.clearError()
+                    }
+                }
+            ),
             actions: {
                 Button("Aceptar") {
                     viewModel.clearError()
@@ -56,6 +67,14 @@ struct CheckoutView: View {
             syncProfileFieldsFromSession()
             let nationalId = authenticatedProfile?.nationalId ?? cartManager.clientId ?? ""
             viewModel.onAppear(nationalId: nationalId)
+        }
+        .onChange(of: authenticatedProfile?.nationalId) { _, _ in
+            syncProfileFieldsFromSession()
+            let nationalId = authenticatedProfile?.nationalId ?? cartManager.clientId ?? ""
+            viewModel.onAppear(nationalId: nationalId)
+        }
+        .onChange(of: authenticatedProfile?.fullName) { _, _ in
+            syncProfileFieldsFromSession()
         }
         .onChange(of: viewModel.state.createdOrder) { _, order in
             guard let order else { return }
@@ -117,6 +136,9 @@ struct CheckoutView: View {
 
             VStack(spacing: 12) {
                 ForEach(cartManager.items) { cartItem in
+                    let lineDiscount = rowDiscounts[cartItem.id, default: 0]
+                    let discountedLine = max(0, cartItem.totalPrice - lineDiscount)
+
                     HStack(alignment: .top, spacing: 12) {
                         VStack(alignment: .leading, spacing: 4) {
                             Text("\(cartItem.quantity)x \(cartItem.menuItem.name)")
@@ -133,9 +155,6 @@ struct CheckoutView: View {
                         Spacer()
 
                         VStack(alignment: .trailing, spacing: 4) {
-                            let lineDiscount = viewModel.allocatedDiscountByMenuItemId()[cartItem.menuItem.id, default: 0]
-                            let discountedLine = max(0, cartItem.totalPrice - lineDiscount)
-
                             if lineDiscount > 0 {
                                 Text(cartItem.totalPrice.priceText)
                                     .font(.caption)
@@ -163,7 +182,9 @@ struct CheckoutView: View {
 
             detailLine(title: "Subtotal", value: cartManager.subtotal.priceText)
 
-            if viewModel.state.rewardPreview.discountAmount > 0 {
+            if viewModel.state.isLoadingRewards {
+                detailLine(title: "Murco Loyalty", value: "Calculando...", secondary: true)
+            } else if viewModel.state.rewardPreview.discountAmount > 0 {
                 detailLine(
                     title: "Murco Loyalty",
                     value: "-\(viewModel.state.rewardPreview.discountAmount.priceText)",
@@ -179,7 +200,7 @@ struct CheckoutView: View {
                 emphasized: true
             )
         }
-        .appCardStyle(.restaurant, emphasized: false)
+        .appCardStyle(.restaurant)
     }
 
     private var rewardsSection: some View {
@@ -229,7 +250,21 @@ struct CheckoutView: View {
     }
 
     private var confirmSection: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: 14) {
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Total a pagar")
+                        .font(.subheadline)
+                        .foregroundStyle(palette.textSecondary)
+
+                    Text(effectiveTotal.priceText)
+                        .font(.title2.bold())
+                        .foregroundStyle(palette.textPrimary)
+                }
+
+                Spacer()
+            }
+
             Button {
                 viewModel.onEvent(.confirmTapped)
             } label: {
@@ -242,25 +277,31 @@ struct CheckoutView: View {
                 }
             }
             .buttonStyle(BrandPrimaryButtonStyle(theme: .restaurant))
-            .disabled(viewModel.state.isSubmitting || cartManager.isEmpty || cartManager.tableNumber.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            .disabled(cartManager.isEmpty || viewModel.state.isSubmitting)
         }
+        .appCardStyle(.restaurant, emphasized: false)
     }
 
     private func syncProfileFieldsFromSession() {
         guard let profile = authenticatedProfile else { return }
 
-        cartManager.updateClientId(profile.nationalId)
-        cartManager.updateClientName(profile.fullName)
+        if cartManager.clientId != profile.nationalId {
+            cartManager.clientId = profile.nationalId
+        }
+
+        if cartManager.clientName != profile.fullName {
+            cartManager.clientName = profile.fullName
+        }
     }
 
     private func themedField(title: String, text: Binding<String>) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(title)
-                .font(.subheadline.weight(.semibold))
+                .font(.caption.weight(.semibold))
                 .foregroundStyle(palette.textSecondary)
 
-            TextField("", text: text)
-                .appTextFieldStyle(.restaurant)
+            TextField(title, text: text)
+                .textFieldStyle(.roundedBorder)
         }
     }
 
@@ -268,18 +309,27 @@ struct CheckoutView: View {
         title: String,
         value: String,
         emphasized: Bool = false,
+        secondary: Bool = false,
         accent: Bool = false
     ) -> some View {
-        HStack(spacing: 12) {
+        HStack {
             Text(title)
                 .font(emphasized ? .headline : .subheadline)
-                .foregroundStyle(accent ? palette.success : palette.textSecondary)
+                .foregroundStyle(
+                    accent
+                    ? palette.success
+                    : (secondary ? palette.textSecondary : palette.textPrimary)
+                )
 
             Spacer()
 
             Text(value)
-                .font(emphasized ? .headline : .subheadline.weight(.semibold))
-                .foregroundStyle(accent ? palette.success : (emphasized ? palette.primary : palette.textPrimary))
+                .font(emphasized ? .headline.bold() : .subheadline.weight(.semibold))
+                .foregroundStyle(
+                    accent
+                    ? palette.success
+                    : (secondary ? palette.textSecondary : palette.textPrimary)
+                )
         }
     }
 }

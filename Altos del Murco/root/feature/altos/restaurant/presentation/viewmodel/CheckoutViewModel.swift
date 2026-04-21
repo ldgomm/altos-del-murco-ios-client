@@ -64,7 +64,10 @@ final class CheckoutViewModel: ObservableObject {
     func onAppear(nationalId: String) {
         let cleanNationalId = nationalId.trimmingCharacters(in: .whitespacesAndNewlines)
         currentNationalId = cleanNationalId
-        Task { await refreshRewardPreview(nationalId: cleanNationalId) }
+
+        Task { @MainActor in
+            await refreshRewardPreview(nationalId: cleanNationalId)
+        }
     }
 
     func refreshRewardPreviewIfPossible() async {
@@ -74,32 +77,15 @@ final class CheckoutViewModel: ObservableObject {
     func refreshRewardPreview(nationalId: String) async {
         let cleanNationalId = nationalId.trimmingCharacters(in: .whitespacesAndNewlines)
         currentNationalId = cleanNationalId
-
-        guard !cleanNationalId.isEmpty else {
-            state.rewardPreview = .empty(nationalId: "")
-            return
-        }
-
-        guard let draftOrder = cartManager.createOrder() else {
-            state.rewardPreview = .empty(nationalId: cleanNationalId)
-            return
-        }
-
-        state.isLoadingRewards = true
-        defer { state.isLoadingRewards = false }
+        state.errorMessage = nil
 
         do {
-            let result = try await loyaltyRewardsService.previewRestaurantRewards(
-                for: cleanNationalId,
-                items: draftOrder.items
-            )
-
-            state.rewardPreview = CheckoutRewardPreview(
-                appliedRewards: result.appliedRewards,
-                discountAmount: result.totalDiscount,
-                walletSnapshot: result.walletSnapshot
-            )
+            state.isLoadingRewards = true
+            let preview = try await buildRewardPreview(for: cleanNationalId)
+            state.rewardPreview = preview
+            state.isLoadingRewards = false
         } catch {
+            state.isLoadingRewards = false
             state.errorMessage = error.localizedDescription
             state.rewardPreview = .empty(nationalId: cleanNationalId)
         }
@@ -134,26 +120,82 @@ final class CheckoutViewModel: ObservableObject {
         }
     }
 
-    private func submitOrder() {
-        guard let baseOrder = cartManager.createOrder() else {
-            state.errorMessage = "Please complete client name, table number, and cart items."
-            return
+    func allocatedDiscountByCartItemId(for cartItems: [CartItem]) -> [UUID: Double] {
+        let menuDiscounts = allocatedDiscountByMenuItemId()
+        guard !menuDiscounts.isEmpty, !cartItems.isEmpty else { return [:] }
+
+        let grouped = Dictionary(grouping: Array(cartItems.enumerated()), by: { $0.element.menuItem.id })
+        var result: [UUID: Double] = [:]
+
+        for (menuItemId, entries) in grouped {
+            let totalDiscount = roundMoney(menuDiscounts[menuItemId, default: 0])
+            guard totalDiscount > 0 else { continue }
+
+            let subtotal = entries.reduce(0) { $0 + $1.element.totalPrice }
+            guard subtotal > 0 else { continue }
+
+            var remainingDiscount = totalDiscount
+
+            for offset in entries.indices {
+                let cartItem = entries[offset].element
+                let allocation: Double
+
+                if offset == entries.count - 1 {
+                    allocation = min(cartItem.totalPrice, max(0, roundMoney(remainingDiscount)))
+                } else {
+                    let share = cartItem.totalPrice / subtotal
+                    allocation = min(
+                        cartItem.totalPrice,
+                        max(0, roundMoney(totalDiscount * share))
+                    )
+                    remainingDiscount = roundMoney(remainingDiscount - allocation)
+                }
+
+                result[cartItem.id] = allocation
+            }
         }
 
-        let finalOrder = baseOrder.withLoyalty(
-            appliedRewards: state.rewardPreview.appliedRewards,
-            discount: state.rewardPreview.discountAmount
-        )
+        return result
+    }
 
-        state.isSubmitting = true
+    func allocatedDiscount(for cartItem: CartItem, in cartItems: [CartItem]) -> Double {
+        allocatedDiscountByCartItemId(for: cartItems)[cartItem.id, default: 0]
+    }
+
+    func clearError() {
         state.errorMessage = nil
+    }
 
-        Task {
+    private func submitOrder() {
+        Task { @MainActor in
+            guard let baseOrder = cartManager.createOrder() else {
+                state.errorMessage = "Please complete client name, table number, and cart items."
+                return
+            }
+
+            state.isSubmitting = true
+            state.errorMessage = nil
+
             do {
+                let previewNationalId = (
+                    baseOrder.nationalId?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+                    ? baseOrder.nationalId!
+                    : currentNationalId
+                )
+
+                let latestPreview = try await buildRewardPreview(for: previewNationalId)
+                state.rewardPreview = latestPreview
+
+                let finalOrder = baseOrder.withLoyalty(
+                    appliedRewards: latestPreview.appliedRewards,
+                    discount: latestPreview.discountAmount
+                )
+
                 try await submitOrderUseCase.execute(order: finalOrder)
+
                 cartManager.clear()
                 state.createdOrder = finalOrder
-                state.rewardPreview = .empty(nationalId: currentNationalId)
+                state.rewardPreview = .empty(nationalId: previewNationalId)
                 state.isSubmitting = false
             } catch {
                 state.isSubmitting = false
@@ -162,7 +204,40 @@ final class CheckoutViewModel: ObservableObject {
         }
     }
 
-    func clearError() {
-        state.errorMessage = nil
+    private func buildRewardPreview(for nationalId: String) async throws -> CheckoutRewardPreview {
+        let cleanNationalId = nationalId.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard !cleanNationalId.isEmpty else {
+            return .empty(nationalId: "")
+        }
+
+        let previewItems = cartManager.items.map {
+            OrderItem(
+                menuItemId: $0.menuItem.id,
+                name: $0.menuItem.name,
+                unitPrice: $0.unitPrice,
+                quantity: $0.quantity,
+                notes: $0.notes
+            )
+        }
+
+        guard !previewItems.isEmpty else {
+            return .empty(nationalId: cleanNationalId)
+        }
+
+        let result = try await loyaltyRewardsService.previewRestaurantRewards(
+            for: cleanNationalId,
+            items: previewItems
+        )
+
+        return CheckoutRewardPreview(
+            appliedRewards: result.appliedRewards,
+            discountAmount: result.totalDiscount,
+            walletSnapshot: result.walletSnapshot
+        )
+    }
+
+    private func roundMoney(_ value: Double) -> Double {
+        (value * 100).rounded() / 100
     }
 }
