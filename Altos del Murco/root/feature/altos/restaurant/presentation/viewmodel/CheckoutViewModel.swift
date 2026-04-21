@@ -38,6 +38,9 @@ final class CheckoutViewModel: ObservableObject {
     private let cartManager: CartManager
     private let loyaltyRewardsService: LoyaltyRewardsServiceable
 
+    private var cancellables = Set<AnyCancellable>()
+    private var currentNationalId: String = ""
+
     init(
         submitOrderUseCase: SubmitOrderUseCase,
         cartManager: CartManager,
@@ -46,14 +49,32 @@ final class CheckoutViewModel: ObservableObject {
         self.submitOrderUseCase = submitOrderUseCase
         self.cartManager = cartManager
         self.loyaltyRewardsService = loyaltyRewardsService
+
+        cartManager.$draft
+            .dropFirst()
+            .sink { [weak self] _ in
+                guard let self else { return }
+                Task { @MainActor in
+                    await self.refreshRewardPreviewIfPossible()
+                }
+            }
+            .store(in: &cancellables)
     }
 
     func onAppear(nationalId: String) {
-        Task { await refreshRewardPreview(nationalId: nationalId) }
+        let cleanNationalId = nationalId.trimmingCharacters(in: .whitespacesAndNewlines)
+        currentNationalId = cleanNationalId
+        Task { await refreshRewardPreview(nationalId: cleanNationalId) }
+    }
+
+    func refreshRewardPreviewIfPossible() async {
+        await refreshRewardPreview(nationalId: currentNationalId)
     }
 
     func refreshRewardPreview(nationalId: String) async {
         let cleanNationalId = nationalId.trimmingCharacters(in: .whitespacesAndNewlines)
+        currentNationalId = cleanNationalId
+
         guard !cleanNationalId.isEmpty else {
             state.rewardPreview = .empty(nationalId: "")
             return
@@ -91,6 +112,28 @@ final class CheckoutViewModel: ObservableObject {
         }
     }
 
+    func effectiveTotal(for subtotal: Double) -> Double {
+        max(0, subtotal - state.rewardPreview.discountAmount)
+    }
+
+    func appliedRewardPresentation(forMenuItemId menuItemId: String) -> RewardPresentation? {
+        guard let reward = state.rewardPreview.appliedRewards.first(where: {
+            $0.affectedMenuItemIds.contains(menuItemId)
+        }) else {
+            return nil
+        }
+
+        return RewardPresentation.from(appliedReward: reward)
+    }
+
+    func allocatedDiscountByMenuItemId() -> [String: Double] {
+        state.rewardPreview.appliedRewards.reduce(into: [:]) { partial, reward in
+            for menuItemId in reward.affectedMenuItemIds {
+                partial[menuItemId, default: 0] += reward.amount
+            }
+        }
+    }
+
     private func submitOrder() {
         guard let baseOrder = cartManager.createOrder() else {
             state.errorMessage = "Please complete client name, table number, and cart items."
@@ -110,6 +153,7 @@ final class CheckoutViewModel: ObservableObject {
                 try await submitOrderUseCase.execute(order: finalOrder)
                 cartManager.clear()
                 state.createdOrder = finalOrder
+                state.rewardPreview = .empty(nationalId: currentNationalId)
                 state.isSubmitting = false
             } catch {
                 state.isSubmitting = false

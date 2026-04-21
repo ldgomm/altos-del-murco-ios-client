@@ -40,7 +40,7 @@ final class OrdersService: OrdersServiceable {
             )
         }
 
-        let _ = try await db.runTransaction { transaction, errorPointer in
+        _ = try await db.runTransaction { transaction, errorPointer in
             do {
                 var loadedItems: [(ref: DocumentReference, dto: MenuItemDto, totalQuantity: Int)] = []
 
@@ -60,9 +60,7 @@ final class OrdersService: OrdersServiceable {
                         throw NSError(
                             domain: "OrdersService",
                             code: 1,
-                            userInfo: [
-                                NSLocalizedDescriptionKey: "\(item.dto.name) no está disponible."
-                            ]
+                            userInfo: [NSLocalizedDescriptionKey: "\(item.dto.name) no está disponible."]
                         )
                     }
 
@@ -70,9 +68,7 @@ final class OrdersService: OrdersServiceable {
                         throw NSError(
                             domain: "OrdersService",
                             code: 2,
-                            userInfo: [
-                                NSLocalizedDescriptionKey: "Ya no hay suficiente stock de \(item.dto.name)."
-                            ]
+                            userInfo: [NSLocalizedDescriptionKey: "Ya no hay suficiente stock de \(item.dto.name)."]
                         )
                     }
 
@@ -93,16 +89,16 @@ final class OrdersService: OrdersServiceable {
                     .document(order.id)
 
                 transaction.setData(orderData, forDocument: orderRef)
+                return nil
             } catch {
                 errorPointer?.pointee = error as NSError
                 return nil
             }
-
-            return nil
         }
 
         if let nationalId = order.nationalId?.trimmingCharacters(in: .whitespacesAndNewlines),
-           !nationalId.isEmpty {
+           !nationalId.isEmpty,
+           !order.appliedRewards.isEmpty {
             try await loyaltyRewardsService.reserveRewards(
                 nationalId: nationalId,
                 referenceType: .order,
@@ -113,10 +109,10 @@ final class OrdersService: OrdersServiceable {
     }
 
     func observeOrders(for nationalId: String) -> AsyncThrowingStream<[Order], Error> {
-        let nationalId = nationalId.trimmingCharacters(in: .whitespacesAndNewlines)
+        let cleanNationalId = nationalId.trimmingCharacters(in: .whitespacesAndNewlines)
 
         return AsyncThrowingStream { continuation in
-            guard !nationalId.isEmpty else {
+            guard !cleanNationalId.isEmpty else {
                 continuation.yield([])
                 continuation.finish()
                 return
@@ -124,7 +120,7 @@ final class OrdersService: OrdersServiceable {
 
             let listener = db
                 .collection(FirestoreConstants.restaurant_orders)
-                .whereField("nationalId", isEqualTo: nationalId)
+                .whereField("nationalId", isEqualTo: cleanNationalId)
                 .order(by: "createdAt", descending: true)
                 .addSnapshotListener { snapshot, error in
                     if let error {
@@ -137,16 +133,14 @@ final class OrdersService: OrdersServiceable {
                         return
                     }
 
-                    let orders: [Order] = documents.compactMap { document in
-                        do {
-                            let dto = try document.data(as: OrderDto.self)
-                            return dto.toDomain()
-                        } catch {
-                            return nil
+                    do {
+                        let orders = try documents.compactMap { document in
+                            try document.data(as: OrderDto.self).toDomain()
                         }
+                        continuation.yield(orders)
+                    } catch {
+                        continuation.finish(throwing: error)
                     }
-
-                    continuation.yield(orders)
                 }
 
             continuation.onTermination = { _ in

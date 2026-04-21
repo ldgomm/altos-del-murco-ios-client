@@ -24,6 +24,7 @@ final class MenuViewModel: ObservableObject {
     private let service: MenuServiceable
     private let loyaltyRewardsService: LoyaltyRewardsServiceable
     private var listenerToken: MenuListenerTokenable?
+    private var walletListenerToken: LoyaltyRewardsListenerToken?
 
     init(
         service: MenuServiceable,
@@ -34,31 +35,34 @@ final class MenuViewModel: ObservableObject {
     }
 
     func onAppear() {
-        if listenerToken == nil {
-            state.isLoading = true
-            state.errorMessage = nil
+        guard listenerToken == nil else { return }
 
-            listenerToken = service.observeMenu { [weak self] result in
-                Task { @MainActor in
-                    guard let self else { return }
+        state.isLoading = true
+        state.errorMessage = nil
 
-                    switch result {
-                    case .success(let sections):
-                        self.state.sections = sections
-                        self.state.isLoading = false
+        listenerToken = service.observeMenu { [weak self] result in
+            Task { @MainActor in
+                guard let self else { return }
 
-                    case .failure(let error):
-                        self.state.sections = []
-                        self.state.errorMessage = error.localizedDescription
-                        self.state.isLoading = false
-                    }
+                switch result {
+                case .success(let sections):
+                    self.state.sections = sections
+                    self.state.isLoading = false
+
+                case .failure(let error):
+                    self.state.sections = []
+                    self.state.errorMessage = error.localizedDescription
+                    self.state.isLoading = false
                 }
             }
         }
+    }
 
-        Task {
-            await refreshRewardWallet()
-        }
+    func onDisappear() {
+        listenerToken?.remove()
+        listenerToken = nil
+        walletListenerToken?.remove()
+        walletListenerToken = nil
     }
 
     func setNationalId(_ nationalId: String) {
@@ -66,10 +70,48 @@ final class MenuViewModel: ObservableObject {
         guard state.currentNationalId != cleanNationalId else { return }
 
         state.currentNationalId = cleanNationalId
+        startWalletObservation()
+    }
 
-        Task {
-            await refreshRewardWallet()
+    private func startWalletObservation() {
+        walletListenerToken?.remove()
+        walletListenerToken = nil
+
+        let cleanNationalId = state.currentNationalId.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleanNationalId.isEmpty else {
+            state.rewardWalletSnapshot = .empty(nationalId: "")
+            state.isLoadingRewards = false
+            return
         }
+
+        state.isLoadingRewards = true
+
+        walletListenerToken = loyaltyRewardsService.observeWalletSnapshot(
+            for: cleanNationalId
+        ) { [weak self] result in
+            Task { @MainActor in
+                guard let self else { return }
+                self.state.isLoadingRewards = false
+
+                switch result {
+                case .success(let snapshot):
+                    self.state.rewardWalletSnapshot = snapshot
+
+                case .failure(let error):
+                    self.state.rewardWalletSnapshot = .empty(nationalId: cleanNationalId)
+                    self.state.errorMessage = error.localizedDescription
+                }
+            }
+        }
+    }
+
+    var restaurantRewardTemplates: [LoyaltyRewardTemplate] {
+        state.rewardWalletSnapshot.availableTemplates
+            .filter { $0.scope.matchesRestaurant() && !$0.isExpired }
+            .sorted {
+                if $0.priority != $1.priority { return $0.priority < $1.priority }
+                return $0.title < $1.title
+            }
     }
 
     func rewardPresentation(for item: MenuItem) -> RewardPresentation? {
@@ -79,28 +121,31 @@ final class MenuViewModel: ObservableObject {
         )
     }
 
-    func onDisappear() {
-        listenerToken?.remove()
-        listenerToken = nil
+    func eligibleMenuItems(for template: LoyaltyRewardTemplate) -> [MenuItem] {
+        let allItems = state.sections.flatMap(\.items)
+
+        switch template.rule.type {
+        case .freeMenuItem, .specificMenuItemPercentage, .buyXGetYFree:
+            guard let targetId = template.targetMenuItemId else { return [] }
+            return allItems.filter { $0.id == targetId }
+
+        case .mostExpensiveMenuItemPercentage:
+            return Array(
+                allItems
+                    .filter(\.canBeOrdered)
+                    .sorted { lhs, rhs in
+                        if lhs.finalPrice != rhs.finalPrice { return lhs.finalPrice > rhs.finalPrice }
+                        return lhs.name < rhs.name
+                    }
+                    .prefix(8)
+            )
+
+        case .activityPercentage:
+            return []
+        }
     }
 
-    private func refreshRewardWallet() async {
-        let cleanNationalId = state.currentNationalId.trimmingCharacters(in: .whitespacesAndNewlines)
-
-        guard !cleanNationalId.isEmpty else {
-            state.rewardWalletSnapshot = .empty(nationalId: "")
-            state.isLoadingRewards = false
-            return
-        }
-
-        state.isLoadingRewards = true
-        defer { state.isLoadingRewards = false }
-
-        do {
-            state.rewardWalletSnapshot = try await loyaltyRewardsService.loadWalletSnapshot(for: cleanNationalId)
-        } catch {
-            state.rewardWalletSnapshot = .empty(nationalId: cleanNationalId)
-            state.errorMessage = error.localizedDescription
-        }
+    func expirationText(for template: LoyaltyRewardTemplate) -> String? {
+        template.expirationText
     }
 }

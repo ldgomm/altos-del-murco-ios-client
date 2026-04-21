@@ -1,6 +1,6 @@
 //
 //  OrderRowView.swift
-//  Altaurante Altos del Murco
+//  Altos del Murco
 //
 //  Created by José Ruiz on 12/3/26.
 //
@@ -69,44 +69,56 @@ struct OrderRowView: View {
 
                     Spacer()
 
-                    Text(order.totalAmount.priceText)
-                        .font(.subheadline)
-                        .fontWeight(.semibold)
-                        .foregroundStyle(palette.primary)
+                    VStack(alignment: .trailing, spacing: 2) {
+                        if order.loyaltyDiscountAmount > 0 {
+                            Text(order.subtotal.priceText)
+                                .font(.caption)
+                                .foregroundStyle(palette.textSecondary)
+                                .strikethrough()
+
+                            Text(order.totalAmount.priceText)
+                                .font(.subheadline)
+                                .fontWeight(.semibold)
+                                .foregroundStyle(palette.success)
+                        } else {
+                            Text(order.totalAmount.priceText)
+                                .font(.subheadline)
+                                .fontWeight(.semibold)
+                                .foregroundStyle(palette.primary)
+                        }
+                    }
                 }
 
                 ProgressView(value: progressValue)
                     .tint(progressColor)
             }
 
-            if order.loyaltyDiscountAmount > 0 {
-                HStack(spacing: 8) {
-                    BrandBadge(theme: .restaurant, title: "Murco Loyalty", selected: true)
+            if order.loyaltyDiscountAmount > 0 || !order.appliedRewards.isEmpty {
+                Divider().overlay(palette.stroke)
 
-                    Text("-\(order.loyaltyDiscountAmount.priceText)")
-                        .font(.caption.bold())
-                        .foregroundStyle(palette.success)
+                HStack(alignment: .top, spacing: 8) {
+                    BrandBadge(theme: .restaurant, title: "Murco", selected: true)
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        if order.loyaltyDiscountAmount > 0 {
+                            Text("Descuento aplicado: -\(order.loyaltyDiscountAmount.priceText)")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(palette.success)
+                        }
+
+                        if let reward = order.appliedRewards.first {
+                            Text(reward.note)
+                                .font(.caption)
+                                .foregroundStyle(palette.textSecondary)
+                                .lineLimit(2)
+                        }
+                    }
 
                     Spacer()
                 }
-
-                if let reward = order.appliedRewards.first {
-                    Text(reward.note)
-                        .font(.caption)
-                        .foregroundStyle(palette.textSecondary)
-                }
-            }
-
-            if order.requiresReconfirmation {
-                Label("Editado después de la confirmación", systemImage: "exclamationmark.arrow.trianglehead.2.clockwise")
-                    .font(.caption)
-                    .foregroundStyle(palette.warning)
-            } else if order.wasEditedAfterConfirmation {
-                Label("Pedido actualizado", systemImage: "pencil.circle")
-                    .font(.caption)
-                    .foregroundStyle(palette.textSecondary)
             }
         }
+        .appCardStyle(.restaurant, emphasized: false)
     }
 
     private var progressValue: Double {

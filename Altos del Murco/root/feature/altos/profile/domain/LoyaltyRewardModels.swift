@@ -173,6 +173,31 @@ struct LoyaltyRewardTemplate: Identifiable, Codable, Hashable {
     func isEligible(for level: LoyaltyLevel) -> Bool {
         level.minimumSpent >= minimumLevel.minimumSpent
     }
+
+    var expirationDate: Date? {
+        guard let expiresInDays, expiresInDays > 0 else { return nil }
+        return Calendar.current.date(byAdding: .day, value: expiresInDays, to: updatedAt)
+    }
+
+    var isExpired: Bool {
+        guard let expirationDate else { return false }
+        return Date() > expirationDate
+    }
+
+    var expirationText: String? {
+        guard let expirationDate else { return nil }
+        return "Vence \(expirationDate.formatted(date: .abbreviated, time: .omitted))"
+    }
+
+    var targetMenuItemId: String? {
+        let value = rule.menuItemId?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return value.isEmpty ? nil : value
+    }
+
+    var targetActivityId: String? {
+        let value = rule.activityId?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return value.isEmpty ? nil : value
+    }
 }
 
 enum LoyaltyRewardReferenceType: String, Codable, Hashable {

@@ -58,7 +58,6 @@ struct AltosDelMurcoApp: App {
 
             let cartPersistence = CartPersistenceService(context: container.mainContext)
             let sharedCartManager = CartManager(persistence: cartPersistence)
-
             _cartManager = StateObject(wrappedValue: sharedCartManager)
 
             let loyaltyRewardsService: LoyaltyRewardsServiceable = LoyaltyRewardsService()
@@ -69,18 +68,16 @@ struct AltosDelMurcoApp: App {
             let observeOrdersUseCase = ObserveOrdersUseCase(service: ordersService)
             let submitOrderUseCase = SubmitOrderUseCase(service: ordersService)
 
-            let ordersVM = OrdersViewModel(
-                observeOrdersUseCase: observeOrdersUseCase
+            _ordersViewModel = StateObject(
+                wrappedValue: OrdersViewModel(observeOrdersUseCase: observeOrdersUseCase)
             )
-
-            let checkoutVM = CheckoutViewModel(
-                submitOrderUseCase: submitOrderUseCase,
-                cartManager: sharedCartManager,
-                loyaltyRewardsService: loyaltyRewardsService
+            _checkoutViewModel = StateObject(
+                wrappedValue: CheckoutViewModel(
+                    submitOrderUseCase: submitOrderUseCase,
+                    cartManager: sharedCartManager,
+                    loyaltyRewardsService: loyaltyRewardsService
+                )
             )
-
-            _ordersViewModel = StateObject(wrappedValue: ordersVM)
-            _checkoutViewModel = StateObject(wrappedValue: checkoutVM)
 
             let adventureCatalogService = AdventureCatalogService()
             let adventureBookingsService = AdventureBookingsService(
@@ -88,7 +85,7 @@ struct AltosDelMurcoApp: App {
                 loyaltyRewardsService: loyaltyRewardsService
             )
 
-            self.adventureModuleFactory = AdventureModuleFactory(
+            adventureModuleFactory = AdventureModuleFactory(
                 bookingsService: adventureBookingsService,
                 catalogService: adventureCatalogService,
                 loyaltyRewardsService: loyaltyRewardsService
@@ -111,24 +108,24 @@ struct AltosDelMurcoApp: App {
             )
             let signOutUseCase = SignOutUseCase(repository: authRepository)
 
-            let sessionVM = AppSessionViewModel(
-                signInWithAppleUseCase: signInWithAppleUseCase,
-                resolveSessionUseCase: resolveSessionUseCase,
-                completeClientProfileUseCase: completeClientProfileUseCase,
-                deleteCurrentAccountUseCase: deleteCurrentAccountUseCase,
-                signOutUseCase: signOutUseCase,
-                loyaltyRewardsService: loyaltyRewardsService
+            _sessionViewModel = StateObject(
+                wrappedValue: AppSessionViewModel(
+                    signInWithAppleUseCase: signInWithAppleUseCase,
+                    resolveSessionUseCase: resolveSessionUseCase,
+                    completeClientProfileUseCase: completeClientProfileUseCase,
+                    deleteCurrentAccountUseCase: deleteCurrentAccountUseCase,
+                    signOutUseCase: signOutUseCase,
+                    loyaltyRewardsService: loyaltyRewardsService
+                )
             )
-
-            _sessionViewModel = StateObject(wrappedValue: sessionVM)
 
             let menuService = MenuService()
-            let menuViewModel = MenuViewModel(
-                service: menuService,
-                loyaltyRewardsService: loyaltyRewardsService
+            _menuViewModel = StateObject(
+                wrappedValue: MenuViewModel(
+                    service: menuService,
+                    loyaltyRewardsService: loyaltyRewardsService
+                )
             )
-            _menuViewModel = StateObject(wrappedValue: menuViewModel)
-
         } catch {
             fatalError("Failed to create SwiftData container: \(error)")
         }

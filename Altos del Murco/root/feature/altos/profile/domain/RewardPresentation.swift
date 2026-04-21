@@ -29,12 +29,12 @@ struct RewardPresentation: Identifiable, Hashable {
     }
 
     static func from(appliedReward reward: AppliedReward) -> RewardPresentation {
-        let lowercasedNote = reward.note.lowercased()
+        let lowered = reward.note.lowercased()
         let badge: String
 
-        if lowercasedNote.contains("gratis") {
+        if lowered.contains("gratis") {
             badge = "Gratis"
-        } else if lowercasedNote.contains("%") {
+        } else if lowered.contains("%") {
             badge = "Descuento"
         } else {
             badge = "Premio"
@@ -55,22 +55,20 @@ enum RewardPresentationFactory {
         for item: MenuItem,
         wallet: RewardWalletSnapshot
     ) -> RewardPresentation? {
-        for template in wallet.availableTemplates where template.scope.matchesRestaurant() {
+        for template in wallet.availableTemplates where template.scope.matchesRestaurant() && !template.isExpired {
             switch template.rule.type {
             case .freeMenuItem:
-                let targetId = template.rule.menuItemId?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-                guard targetId == item.id else { continue }
+                guard template.targetMenuItemId == item.id else { continue }
 
                 return RewardPresentation(
                     id: template.id,
                     badge: "Gratis",
                     title: template.title,
-                    message: "\(item.name) puede salirte gratis por tu nivel \(wallet.currentLevel.title)."
+                    message: "\(item.name) puede salir gratis por tu nivel \(wallet.currentLevel.title)."
                 )
 
             case .specificMenuItemPercentage:
-                let targetId = template.rule.menuItemId?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-                guard targetId == item.id else { continue }
+                guard template.targetMenuItemId == item.id else { continue }
 
                 let percentage = Int((template.rule.percentage ?? 0).rounded())
                 guard percentage > 0 else { continue }
@@ -83,8 +81,7 @@ enum RewardPresentationFactory {
                 )
 
             case .buyXGetYFree:
-                let targetId = template.rule.menuItemId?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-                guard targetId == item.id else { continue }
+                guard template.targetMenuItemId == item.id else { continue }
 
                 let buyQuantity = max(1, template.rule.buyQuantity ?? 1)
                 let freeQuantity = max(1, template.rule.freeQuantity ?? 1)
@@ -104,7 +101,7 @@ enum RewardPresentationFactory {
                     id: template.id,
                     badge: "\(percentage)% OFF",
                     title: template.title,
-                    message: "Puede aplicar \(percentage)% si este plato es el elegible más caro del pedido."
+                    message: "Puede aplicar \(percentage)% si este plato termina siendo el elegible más caro de tu pedido."
                 )
 
             case .activityPercentage:
@@ -119,11 +116,10 @@ enum RewardPresentationFactory {
         for activity: AdventureActivityCatalogItem,
         wallet: RewardWalletSnapshot
     ) -> RewardPresentation? {
-        for template in wallet.availableTemplates where template.scope.matchesAdventure() {
+        for template in wallet.availableTemplates where template.scope.matchesAdventure() && !template.isExpired {
             switch template.rule.type {
             case .activityPercentage:
-                let targetId = template.rule.activityId?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-                guard targetId == activity.id else { continue }
+                guard template.targetActivityId == activity.id else { continue }
 
                 let percentage = Int((template.rule.percentage ?? 0).rounded())
                 guard percentage > 0 else { continue }

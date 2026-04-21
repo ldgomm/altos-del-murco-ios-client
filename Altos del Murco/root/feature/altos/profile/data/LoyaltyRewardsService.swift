@@ -86,6 +86,7 @@ final class LoyaltyRewardsService: LoyaltyRewardsServiceable {
 
         let eligibleTemplates = templates.filter { template in
             template.isActive &&
+            !template.isExpired &&
             template.triggerMode == .automatic &&
             template.isEligible(for: currentLevel) &&
             usageCount(
@@ -219,6 +220,8 @@ final class LoyaltyRewardsService: LoyaltyRewardsServiceable {
         guard !appliedRewards.isEmpty else { return }
 
         let cleanNationalId = nationalId.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleanNationalId.isEmpty else { return }
+
         let walletRef = db.collection(FirestoreConstants.client_loyalty_wallets).document(cleanNationalId)
 
         _ = try await db.runTransaction { transaction, errorPointer in
@@ -247,6 +250,14 @@ final class LoyaltyRewardsService: LoyaltyRewardsServiceable {
                     let templateDto = try templateSnapshot.data(as: LoyaltyRewardTemplateDto.self)
                     let template = templateDto.toDomain()
 
+                    guard template.isActive, !template.isExpired else {
+                        throw NSError(
+                            domain: "LoyaltyRewardsService",
+                            code: 11,
+                            userInfo: [NSLocalizedDescriptionKey: "The reward \(template.title) is no longer available."]
+                        )
+                    }
+
                     let alreadyUsed = Self.usageCount(
                         templateId: reward.templateId,
                         inside: events
@@ -255,7 +266,7 @@ final class LoyaltyRewardsService: LoyaltyRewardsServiceable {
                     guard alreadyUsed < max(1, template.maxUsesPerClient) else {
                         throw NSError(
                             domain: "LoyaltyRewardsService",
-                            code: 11,
+                            code: 12,
                             userInfo: [NSLocalizedDescriptionKey: "The reward \(template.title) is no longer available."]
                         )
                     }
