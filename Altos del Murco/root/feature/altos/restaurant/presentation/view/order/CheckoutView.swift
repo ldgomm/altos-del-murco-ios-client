@@ -27,6 +27,7 @@ struct CheckoutView: View {
             VStack(spacing: 20) {
                 clientDetailsSection
                 summarySection
+                rewardsSection
                 confirmSection
             }
             .padding(.horizontal, 16)
@@ -49,6 +50,8 @@ struct CheckoutView: View {
         )
         .onAppear {
             syncProfileFieldsFromSession()
+            let nationalId = authenticatedProfile?.nationalId ?? cartManager.clientId ?? ""
+            viewModel.onAppear(nationalId: nationalId)
         }
         .onChange(of: viewModel.state.createdOrder) { _, order in
             guard let order else { return }
@@ -253,5 +256,45 @@ struct CheckoutView: View {
         if cartManager.clientName != profile.fullName {
             cartManager.updateClientName(profile.fullName)
         }
+    }
+    
+    private var rewardsSection: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            BrandSectionHeader(
+                theme: .restaurant,
+                title: "Tus premios",
+                subtitle: "Se aplican automáticamente si el pedido cumple la regla."
+            )
+
+            if viewModel.state.isLoadingRewards {
+                ProgressView("Calculando premios...")
+            } else if viewModel.state.rewardPreview.appliedRewards.isEmpty {
+                Text("No hay premios automáticos aplicables para este pedido.")
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(viewModel.state.rewardPreview.appliedRewards) { reward in
+                    HStack {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(reward.title).font(.headline)
+                            Text(reward.note)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+
+                        Spacer()
+
+                        Text("-\(reward.amount.priceText)")
+                            .font(.subheadline.bold())
+                            .foregroundStyle(.green)
+                    }
+                    .padding(12)
+                    .background(
+                        RoundedRectangle(cornerRadius: 18, style: .continuous)
+                            .fill(palette.elevatedCard)
+                    )
+                }
+            }
+        }
+        .appCardStyle(.restaurant)
     }
 }

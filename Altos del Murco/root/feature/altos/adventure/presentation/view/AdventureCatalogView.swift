@@ -12,6 +12,8 @@ struct AdventureCatalogView: View {
     @ObservedObject var adventureComboBuilderViewModel: AdventureComboBuilderViewModel
     @ObservedObject var menuViewModel: MenuViewModel
 
+    @EnvironmentObject private var sessionViewModel: AppSessionViewModel
+
     @StateObject private var catalogViewModel = AdventureCatalogViewModel(
         service: AdventureCatalogService()
     )
@@ -54,6 +56,12 @@ struct AdventureCatalogView: View {
             .appScreenStyle(.adventure)
         }
         .onAppear {
+            if let profile = sessionViewModel.authenticatedProfile {
+                adventureComboBuilderViewModel.setClientName(profile.fullName)
+                adventureComboBuilderViewModel.setWhatsapp(profile.phoneNumber)
+                adventureComboBuilderViewModel.setNationalId(profile.nationalId)
+            }
+
             catalogViewModel.onAppear()
             menuViewModel.onAppear()
         }
@@ -146,7 +154,11 @@ struct AdventureCatalogView: View {
                         FeaturedPackageCard(
                             package: package,
                             catalog: catalogViewModel.state.catalog,
-                            menuSections: menuViewModel.state.sections
+                            menuSections: menuViewModel.state.sections,
+                            rewardPresentation: adventureComboBuilderViewModel.packageRewardPresentation(
+                                for: package,
+                                menuSections: menuViewModel.state.sections
+                            )
                         )
                     }
                     .buttonStyle(.plain)
@@ -176,7 +188,10 @@ struct AdventureCatalogView: View {
                         )
                     }
                 } label: {
-                    SingleActivityCatalogCard(activity: activity)
+                    SingleActivityCatalogCard(
+                        activity: activity,
+                        rewardPresentation: adventureComboBuilderViewModel.catalogRewardPresentation(for: activity)
+                    )
                 }
                 .buttonStyle(.plain)
             }
@@ -221,6 +236,7 @@ private struct FeaturedPackageCard: View {
     let package: AdventureFeaturedPackage
     let catalog: AdventureCatalogSnapshot
     let menuSections: [MenuSection]
+    let rewardPresentation: RewardPresentation?
 
     @Environment(\.colorScheme) private var colorScheme
 
@@ -311,6 +327,10 @@ private struct FeaturedPackageCard: View {
                     .foregroundStyle(palette.primary)
             }
 
+            if let rewardPresentation {
+                rewardInfoCard(rewardPresentation)
+            }
+
             HStack {
                 Label("Desde \(total.priceText)", systemImage: "dollarsign.circle.fill")
                     .font(.subheadline.weight(.semibold))
@@ -325,10 +345,38 @@ private struct FeaturedPackageCard: View {
         }
         .appCardStyle(.adventure, emphasized: false)
     }
+
+    private func rewardInfoCard(_ reward: RewardPresentation) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            BrandBadge(theme: .adventure, title: reward.badge, selected: true)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(reward.title)
+                    .font(.caption.bold())
+                    .foregroundStyle(palette.textPrimary)
+
+                Text(reward.message)
+                    .font(.caption)
+                    .foregroundStyle(palette.textSecondary)
+            }
+
+            Spacer()
+        }
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(palette.elevatedCard)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(palette.stroke, lineWidth: 1)
+        )
+    }
 }
 
 private struct SingleActivityCatalogCard: View {
     let activity: AdventureActivityCatalogItem
+    let rewardPresentation: RewardPresentation?
 
     @Environment(\.colorScheme) private var colorScheme
 
@@ -364,6 +412,17 @@ private struct SingleActivityCatalogCard: View {
                             .font(.caption)
                             .foregroundStyle(palette.textTertiary)
                             .strikethrough()
+                    }
+                }
+
+                if let rewardPresentation {
+                    HStack(spacing: 8) {
+                        BrandBadge(theme: .adventure, title: rewardPresentation.badge, selected: true)
+
+                        Text(rewardPresentation.message)
+                            .font(.caption)
+                            .foregroundStyle(palette.textSecondary)
+                            .lineLimit(2)
                     }
                 }
             }

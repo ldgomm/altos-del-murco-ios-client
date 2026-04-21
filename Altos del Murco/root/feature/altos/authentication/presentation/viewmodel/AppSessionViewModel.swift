@@ -11,12 +11,14 @@ import AuthenticationServices
 @MainActor
 final class AppSessionViewModel: ObservableObject {
     @Published private(set) var state: AppSessionState = .loading
+    @Published private(set) var rewardWalletSnapshot: RewardWalletSnapshot = .empty(nationalId: "")
 
     private let signInWithAppleUseCase: SignInWithAppleUseCase
     private let resolveSessionUseCase: ResolveSessionUseCase
     private let completeClientProfileUseCase: CompleteClientProfileUseCase
     private let deleteCurrentAccountUseCase: DeleteCurrentAccountUseCase
     private let signOutUseCase: SignOutUseCase
+    private let loyaltyRewardsService: LoyaltyRewardsServiceable
 
     private var currentNonce: String?
 
@@ -25,13 +27,15 @@ final class AppSessionViewModel: ObservableObject {
         resolveSessionUseCase: ResolveSessionUseCase,
         completeClientProfileUseCase: CompleteClientProfileUseCase,
         deleteCurrentAccountUseCase: DeleteCurrentAccountUseCase,
-        signOutUseCase: SignOutUseCase
+        signOutUseCase: SignOutUseCase,
+        loyaltyRewardsService: LoyaltyRewardsServiceable
     ) {
         self.signInWithAppleUseCase = signInWithAppleUseCase
         self.resolveSessionUseCase = resolveSessionUseCase
         self.completeClientProfileUseCase = completeClientProfileUseCase
         self.deleteCurrentAccountUseCase = deleteCurrentAccountUseCase
         self.signOutUseCase = signOutUseCase
+        self.loyaltyRewardsService = loyaltyRewardsService
 
         Task { await bootstrap() }
     }
@@ -123,7 +127,7 @@ final class AppSessionViewModel: ObservableObject {
         let saveUseCase = completeClientProfileUseCase
         let deleteUseCase = deleteCurrentAccountUseCase
         let imageStorageService = ProfileImageStorageService()
-        let statsService = ProfileStatsService()
+        let statsService = ProfileStatsService(loyaltyRewardsService: loyaltyRewardsService)
 
         return { [weak self] in
             ProfileViewModel(

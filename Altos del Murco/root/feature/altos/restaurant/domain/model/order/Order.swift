@@ -16,10 +16,66 @@ struct Order: Identifiable, Hashable, Codable {
     let updatedAt: Date
     let items: [OrderItem]
     let subtotal: Double
+    let loyaltyDiscountAmount: Double
+    let appliedRewards: [AppliedReward]
     let totalAmount: Double
     var status: OrderStatus
     let revision: Int
     let lastConfirmedRevision: Int?
+
+    init(
+        id: String,
+        nationalId: String?,
+        clientName: String,
+        tableNumber: String,
+        createdAt: Date,
+        updatedAt: Date,
+        items: [OrderItem],
+        subtotal: Double,
+        loyaltyDiscountAmount: Double = 0,
+        appliedRewards: [AppliedReward] = [],
+        totalAmount: Double,
+        status: OrderStatus,
+        revision: Int,
+        lastConfirmedRevision: Int?
+    ) {
+        self.id = id
+        self.nationalId = nationalId
+        self.clientName = clientName
+        self.tableNumber = tableNumber
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
+        self.items = items
+        self.subtotal = subtotal
+        self.loyaltyDiscountAmount = max(0, loyaltyDiscountAmount)
+        self.appliedRewards = appliedRewards
+        self.totalAmount = max(0, totalAmount)
+        self.status = status
+        self.revision = revision
+        self.lastConfirmedRevision = lastConfirmedRevision
+    }
+
+    func withLoyalty(
+        appliedRewards: [AppliedReward],
+        discount: Double
+    ) -> Order {
+        Order(
+            id: id,
+            nationalId: nationalId,
+            clientName: clientName,
+            tableNumber: tableNumber,
+            createdAt: createdAt,
+            updatedAt: updatedAt,
+            items: items,
+            subtotal: subtotal,
+            loyaltyDiscountAmount: max(0, discount),
+            appliedRewards: appliedRewards,
+            totalAmount: max(0, subtotal - max(0, discount)),
+            status: status,
+            revision: revision,
+            lastConfirmedRevision: lastConfirmedRevision
+        )
+    }
 
     var totalItems: Int {
         items.reduce(0) { $0 + $1.quantity }
@@ -47,108 +103,11 @@ struct Order: Identifiable, Hashable, Codable {
     }
 
     func recalculatedStatus() -> OrderStatus {
-        if status == .canceled {
-            return .canceled
-        }
-
-        if requiresReconfirmation {
-            return .pending
-        }
-
-        if allItemsCompleted {
-            return .completed
-        }
-
-        if hasStartedPreparing {
-            return .preparing
-        }
-
-        if status == .confirmed {
-            return .confirmed
-        }
-
+        if status == .canceled { return .canceled }
+        if requiresReconfirmation { return .pending }
+        if allItemsCompleted { return .completed }
+        if hasStartedPreparing { return .preparing }
+        if status == .confirmed { return .confirmed }
         return .pending
-    }
-
-    func confirming(now: Date = Date()) -> Order {
-        var updated = Order(
-            id: id,
-            nationalId: nationalId,
-            clientName: clientName,
-            tableNumber: tableNumber,
-            createdAt: createdAt,
-            updatedAt: now,
-            items: items,
-            subtotal: subtotal,
-            totalAmount: totalAmount,
-            status: .confirmed,
-            revision: revision,
-            lastConfirmedRevision: revision
-        )
-        updated.status = updated.recalculatedStatus()
-        return updated
-    }
-
-    func canceling(now: Date = Date()) -> Order {
-        Order(
-            id: id,
-            nationalId: nationalId,
-            clientName: clientName,
-            tableNumber: tableNumber,
-            createdAt: createdAt,
-            updatedAt: now,
-            items: items,
-            subtotal: subtotal,
-            totalAmount: totalAmount,
-            status: .canceled,
-            revision: revision,
-            lastConfirmedRevision: lastConfirmedRevision
-        )
-    }
-
-    func updatingItems(
-        _ newItems: [OrderItem],
-        subtotal: Double,
-        totalAmount: Double,
-        now: Date = Date()
-    ) -> Order {
-        var updated = Order(
-            id: id,
-            nationalId: nationalId,
-            clientName: clientName,
-            tableNumber: tableNumber,
-            createdAt: createdAt,
-            updatedAt: now,
-            items: newItems,
-            subtotal: subtotal,
-            totalAmount: totalAmount,
-            status: .pending,
-            revision: revision + 1,
-            lastConfirmedRevision: lastConfirmedRevision
-        )
-        updated.status = updated.recalculatedStatus()
-        return updated
-    }
-
-    func updatingPreparation(
-        items newItems: [OrderItem],
-        now: Date = Date()
-    ) -> Order {
-        var updated = Order(
-            id: id,
-            nationalId: nationalId,
-            clientName: clientName,
-            tableNumber: tableNumber,
-            createdAt: createdAt,
-            updatedAt: now,
-            items: newItems,
-            subtotal: subtotal,
-            totalAmount: totalAmount,
-            status: status,
-            revision: revision,
-            lastConfirmedRevision: lastConfirmedRevision
-        )
-        updated.status = updated.recalculatedStatus()
-        return updated
     }
 }

@@ -9,19 +9,20 @@ import SwiftUI
 
 struct MenuListView: View {
     let sections: [MenuSection]
-    
+
     @ObservedObject var checkoutViewModel: CheckoutViewModel
     @ObservedObject var ordersViewModel: OrdersViewModel
     @ObservedObject var adventureComboBuilderViewModel: AdventureComboBuilderViewModel
     @ObservedObject var menuViewModel: MenuViewModel
-    
+
     @Binding var path: NavigationPath
-    
+
     @EnvironmentObject private var cartManager: CartManager
+    @EnvironmentObject private var sessionViewModel: AppSessionViewModel
     @Environment(\.colorScheme) private var colorScheme
-    
+
     @State private var selectedCategoryId: String?
-    
+
     private var palette: ThemePalette {
         AppTheme.palette(for: .restaurant, scheme: colorScheme)
     }
@@ -45,10 +46,7 @@ struct MenuListView: View {
             let lhsRank = categoryRank(for: lhs.category.title)
             let rhsRank = categoryRank(for: rhs.category.title)
 
-            if lhsRank != rhsRank {
-                return lhsRank < rhsRank
-            }
-
+            if lhsRank != rhsRank { return lhsRank < rhsRank }
             return lhs.category.title < rhs.category.title
         }
     }
@@ -61,7 +59,7 @@ struct MenuListView: View {
         guard let selectedCategoryId else { return orderedSections }
         return orderedSections.filter { $0.category.id == selectedCategoryId }
     }
-    
+
     private var featuredItems: [MenuItem] {
         sections
             .flatMap(\.items)
@@ -91,6 +89,21 @@ struct MenuListView: View {
             if selectedCategoryId == nil {
                 selectedCategoryId = categories.first?.id
             }
+
+            if let nationalId = sessionViewModel.authenticatedProfile?.nationalId {
+                menuViewModel.setNationalId(nationalId)
+            }
+        }
+        .onAppear {
+            menuViewModel.onAppear()
+
+            if let nationalId = sessionViewModel.authenticatedProfile?.nationalId {
+                menuViewModel.setNationalId(nationalId)
+            }
+        }
+        .onChange(of: sessionViewModel.authenticatedProfile?.nationalId) { _, nationalId in
+            guard let nationalId else { return }
+            menuViewModel.setNationalId(nationalId)
         }
         .toolbar {
             ToolbarItemGroup(placement: .topBarTrailing) {
@@ -138,22 +151,29 @@ struct MenuListView: View {
         .navigationDestination(for: Route.self) { route in
             switch route {
             case let .menuDetail(item, categoryTitle):
-                MenuItemDetailView(item: item, categoryTitle: categoryTitle)
+                MenuItemDetailView(
+                    item: item,
+                    categoryTitle: categoryTitle,
+                    rewardPresentation: menuViewModel.rewardPresentation(for: item)
+                )
             case .cart:
                 CartView()
             case .checkout:
                 CheckoutView(viewModel: checkoutViewModel, path: $path)
             case .reservationBuilder:
-                AdventureComboBuilderView(adventureComboBuilderViewModel: adventureComboBuilderViewModel, menuViewModel: menuViewModel)
-                    .onAppear {
-                        adventureComboBuilderViewModel.resetForFoodOnly()
-                    }
+                AdventureComboBuilderView(
+                    adventureComboBuilderViewModel: adventureComboBuilderViewModel,
+                    menuViewModel: menuViewModel
+                )
+                .onAppear {
+                    adventureComboBuilderViewModel.resetForFoodOnly()
+                }
             case let .orderSuccess(order):
                 OrderSuccessView(order: order, path: $path)
             }
         }
     }
-    
+
     private var featuredCarousel: some View {
         VStack(alignment: .leading, spacing: 14) {
             BrandSectionHeader(
@@ -165,16 +185,22 @@ struct MenuListView: View {
             TabView {
                 ForEach(featuredItems) { item in
                     NavigationLink(value: Route.menuDetail(item, categoryTitle(for: item.categoryId))) {
-                        FeaturedMenuCard(item: item)
+                        VStack(alignment: .leading, spacing: 10) {
+                            FeaturedMenuCard(item: item)
+
+                            if let reward = menuViewModel.rewardPresentation(for: item) {
+                                rewardHintCard(reward)
+                            }
+                        }
                     }
                     .buttonStyle(.plain)
                 }
             }
-            .frame(height: 220)
+            .frame(height: 255)
             .tabViewStyle(.page(indexDisplayMode: .automatic))
         }
     }
-    
+
     private var categorySelector: some View {
         VStack(alignment: .leading, spacing: 12) {
             BrandSectionHeader(
@@ -203,7 +229,7 @@ struct MenuListView: View {
             }
         }
     }
-    
+
     @ViewBuilder
     private func sectionContent(_ section: MenuSection) -> some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -215,31 +241,48 @@ struct MenuListView: View {
             LazyVStack(spacing: 12) {
                 ForEach(section.items) { item in
                     NavigationLink(value: Route.menuDetail(item, section.category.title)) {
-                        MenuItemRowView(item: item)
+                        VStack(alignment: .leading, spacing: 10) {
+                            MenuItemRowView(item: item)
+
+                            if let reward = menuViewModel.rewardPresentation(for: item) {
+                                rewardHintCard(reward)
+                            }
+                        }
                     }
                     .buttonStyle(.plain)
                 }
             }
         }
     }
-    
+
     private func categoryTitle(for categoryId: String) -> String {
         categories.first(where: { $0.id == categoryId })?.title ?? ""
     }
-    
-    private func stockBadge(for item: MenuItem) -> some View {
-        Text(item.stockLabel)
-            .font(.caption2.weight(.semibold))
-            .foregroundStyle(item.canBeOrdered ? palette.textSecondary : palette.destructive)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 5)
-            .background(
-                Capsule()
-                    .fill(
-                        item.canBeOrdered
-                        ? palette.elevatedCard
-                        : palette.destructive.opacity(0.12)
-                    )
-            )
+
+    private func rewardHintCard(_ reward: RewardPresentation) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            BrandBadge(theme: .restaurant, title: reward.badge, selected: true)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(reward.title)
+                    .font(.caption.bold())
+                    .foregroundStyle(palette.textPrimary)
+
+                Text(reward.message)
+                    .font(.caption)
+                    .foregroundStyle(palette.textSecondary)
+            }
+
+            Spacer()
+        }
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(palette.elevatedCard)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(palette.stroke, lineWidth: 1)
+        )
     }
 }

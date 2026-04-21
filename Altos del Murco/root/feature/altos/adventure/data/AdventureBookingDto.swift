@@ -151,6 +151,38 @@ struct AdventureBookingBlockDto: Codable {
     }
 }
 
+struct AdventureAppliedRewardDto: Codable {
+    let id: String
+    let templateId: String
+    let title: String
+    let amount: Double
+    let note: String
+    let affectedMenuItemIds: [String]
+    let affectedActivityIds: [String]
+
+    init(domain: AppliedReward) {
+        self.id = domain.id
+        self.templateId = domain.templateId
+        self.title = domain.title
+        self.amount = domain.amount
+        self.note = domain.note
+        self.affectedMenuItemIds = domain.affectedMenuItemIds
+        self.affectedActivityIds = domain.affectedActivityIds
+    }
+
+    func toDomain() -> AppliedReward {
+        AppliedReward(
+            id: id,
+            templateId: templateId,
+            title: title,
+            amount: amount,
+            note: note,
+            affectedMenuItemIds: affectedMenuItemIds,
+            affectedActivityIds: affectedActivityIds
+        )
+    }
+}
+
 @MainActor
 struct AdventureBookingDto: Codable {
     let clientId: String?
@@ -171,12 +203,14 @@ struct AdventureBookingDto: Codable {
     let foodSubtotal: Double?
     let subtotal: Double
     let discountAmount: Double
+    let loyaltyDiscountAmount: Double?
+    let appliedRewards: [AdventureAppliedRewardDto]?
     let nightPremium: Double
     let totalAmount: Double
     let status: String
     let createdAt: Timestamp
     let notes: String?
-    
+
     func toDomain(documentId: String) -> AdventureBooking {
         AdventureBooking(
             id: documentId,
@@ -198,6 +232,8 @@ struct AdventureBookingDto: Codable {
             foodSubtotal: foodSubtotal ?? 0,
             subtotal: subtotal,
             discountAmount: discountAmount,
+            loyaltyDiscountAmount: loyaltyDiscountAmount ?? 0,
+            appliedRewards: appliedRewards?.compactMap { $0.toDomain() } ?? [],
             nightPremium: nightPremium,
             totalAmount: totalAmount,
             status: AdventureBookingStatus(rawValue: status) ?? .confirmed,
@@ -205,7 +241,7 @@ struct AdventureBookingDto: Codable {
             notes: notes
         )
     }
-    
+
     static func from(
         bookingId: String,
         request: AdventureBookingRequest,
@@ -232,6 +268,8 @@ struct AdventureBookingDto: Codable {
             foodSubtotal: plan.foodSubtotal,
             subtotal: plan.subtotal,
             discountAmount: plan.discountAmount,
+            loyaltyDiscountAmount: request.loyaltyDiscountAmount,
+            appliedRewards: request.appliedRewards.map(AdventureAppliedRewardDto.init(domain:)),
             nightPremium: plan.nightPremium,
             totalAmount: plan.totalAmount,
             status: status.rawValue,

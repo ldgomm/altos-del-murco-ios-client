@@ -64,14 +64,22 @@ struct AltosDelMurcoApp: App {
 
             _cartManager = StateObject(wrappedValue: sharedCartManager)
 
-            let ordersService: OrdersServiceable = OrdersService()
+            let loyaltyRewardsService: LoyaltyRewardsServiceable = LoyaltyRewardsService()
+
+            let ordersService: OrdersServiceable = OrdersService(
+                loyaltyRewardsService: loyaltyRewardsService
+            )
             let observeOrdersUseCase = ObserveOrdersUseCase(service: ordersService)
             let submitOrderUseCase = SubmitOrderUseCase(service: ordersService)
 
-            let ordersVM = OrdersViewModel(observeOrdersUseCase: observeOrdersUseCase)
+            let ordersVM = OrdersViewModel(
+                observeOrdersUseCase: observeOrdersUseCase
+            )
+
             let checkoutVM = CheckoutViewModel(
                 submitOrderUseCase: submitOrderUseCase,
-                cartManager: sharedCartManager
+                cartManager: sharedCartManager,
+                loyaltyRewardsService: loyaltyRewardsService
             )
 
             _ordersViewModel = StateObject(wrappedValue: ordersVM)
@@ -79,13 +87,16 @@ struct AltosDelMurcoApp: App {
 
             let adventureCatalogService = AdventureCatalogService()
             let adventureBookingsService = AdventureBookingsService(
-                catalogService: adventureCatalogService
+                catalogService: adventureCatalogService,
+                loyaltyRewardsService: loyaltyRewardsService
             )
+
             self.adventureModuleFactory = AdventureModuleFactory(
                 bookingsService: adventureBookingsService,
-                catalogService: adventureCatalogService
+                catalogService: adventureCatalogService,
+                loyaltyRewardsService: loyaltyRewardsService
             )
-            
+
             let authRepository: AuthenticationRepositoriable = AuthenticationRepository()
             let clientProfileRepository: ClientProfileRepositoriable = ClientProfileRepository()
 
@@ -108,13 +119,17 @@ struct AltosDelMurcoApp: App {
                 resolveSessionUseCase: resolveSessionUseCase,
                 completeClientProfileUseCase: completeClientProfileUseCase,
                 deleteCurrentAccountUseCase: deleteCurrentAccountUseCase,
-                signOutUseCase: signOutUseCase
+                signOutUseCase: signOutUseCase,
+                loyaltyRewardsService: loyaltyRewardsService
             )
 
             _sessionViewModel = StateObject(wrappedValue: sessionVM)
-            
+
             let menuService = MenuService()
-            let menuViewModel = MenuViewModel(service: menuService)
+            let menuViewModel = MenuViewModel(
+                service: menuService,
+                loyaltyRewardsService: loyaltyRewardsService
+            )
             _menuViewModel = StateObject(wrappedValue: menuViewModel)
 
         } catch {
@@ -329,6 +344,38 @@ struct AdventureBookingBlockDto: Codable {
     }
 }
 
+struct AdventureAppliedRewardDto: Codable {
+    let id: String
+    let templateId: String
+    let title: String
+    let amount: Double
+    let note: String
+    let affectedMenuItemIds: [String]
+    let affectedActivityIds: [String]
+
+    init(domain: AppliedReward) {
+        self.id = domain.id
+        self.templateId = domain.templateId
+        self.title = domain.title
+        self.amount = domain.amount
+        self.note = domain.note
+        self.affectedMenuItemIds = domain.affectedMenuItemIds
+        self.affectedActivityIds = domain.affectedActivityIds
+    }
+
+    func toDomain() -> AppliedReward {
+        AppliedReward(
+            id: id,
+            templateId: templateId,
+            title: title,
+            amount: amount,
+            note: note,
+            affectedMenuItemIds: affectedMenuItemIds,
+            affectedActivityIds: affectedActivityIds
+        )
+    }
+}
+
 @MainActor
 struct AdventureBookingDto: Codable {
     let clientId: String?
@@ -349,12 +396,14 @@ struct AdventureBookingDto: Codable {
     let foodSubtotal: Double?
     let subtotal: Double
     let discountAmount: Double
+    let loyaltyDiscountAmount: Double?
+    let appliedRewards: [AdventureAppliedRewardDto]?
     let nightPremium: Double
     let totalAmount: Double
     let status: String
     let createdAt: Timestamp
     let notes: String?
-    
+
     func toDomain(documentId: String) -> AdventureBooking {
         AdventureBooking(
             id: documentId,
@@ -376,6 +425,8 @@ struct AdventureBookingDto: Codable {
             foodSubtotal: foodSubtotal ?? 0,
             subtotal: subtotal,
             discountAmount: discountAmount,
+            loyaltyDiscountAmount: loyaltyDiscountAmount ?? 0,
+            appliedRewards: appliedRewards?.compactMap { $0.toDomain() } ?? [],
             nightPremium: nightPremium,
             totalAmount: totalAmount,
             status: AdventureBookingStatus(rawValue: status) ?? .confirmed,
@@ -383,7 +434,7 @@ struct AdventureBookingDto: Codable {
             notes: notes
         )
     }
-    
+
     static func from(
         bookingId: String,
         request: AdventureBookingRequest,
@@ -410,6 +461,8 @@ struct AdventureBookingDto: Codable {
             foodSubtotal: plan.foodSubtotal,
             subtotal: plan.subtotal,
             discountAmount: plan.discountAmount,
+            loyaltyDiscountAmount: request.loyaltyDiscountAmount,
+            appliedRewards: request.appliedRewards.map(AdventureAppliedRewardDto.init(domain:)),
             nightPremium: plan.nightPremium,
             totalAmount: plan.totalAmount,
             status: status.rawValue,
@@ -440,13 +493,16 @@ final class AdventureBookingsService: AdventureBookingsServiceable {
     private let db: Firestore
     private let bookingsCollection = "adventure_bookings"
     private let catalogService: AdventureCatalogServiceable
+    private let loyaltyRewardsService: LoyaltyRewardsServiceable
 
     init(
         db: Firestore = Firestore.firestore(),
-        catalogService: AdventureCatalogServiceable
+        catalogService: AdventureCatalogServiceable,
+        loyaltyRewardsService: LoyaltyRewardsServiceable
     ) {
         self.db = db
         self.catalogService = catalogService
+        self.loyaltyRewardsService = loyaltyRewardsService
     }
 
     func observeBookings(
@@ -506,7 +562,7 @@ final class AdventureBookingsService: AdventureBookingsServiceable {
     func createBooking(_ request: AdventureBookingRequest) async throws -> AdventureBooking {
         let catalog = try await catalogService.fetchCatalog()
 
-        guard let plan = AdventurePlanner.buildPlan(
+        guard let basePlan = AdventurePlanner.buildPlan(
             day: request.date,
             startAt: request.selectedStartAt,
             items: request.items,
@@ -517,12 +573,53 @@ final class AdventureBookingsService: AdventureBookingsServiceable {
             throw makeError("Invalid reservation configuration.")
         }
 
+        let rewardPreview = try await loyaltyRewardsService.previewAdventureRewards(
+            for: request.nationalId,
+            activityItems: request.items,
+            foodItems: request.foodReservation?.items ?? [],
+            catalog: catalog
+        )
+
+        let finalPlan = AdventureBuildPlan(
+            startAt: basePlan.startAt,
+            endAt: basePlan.endAt,
+            blocks: basePlan.blocks,
+            adventureSubtotal: basePlan.adventureSubtotal,
+            foodSubtotal: basePlan.foodSubtotal,
+            subtotal: basePlan.subtotal,
+            discountAmount: basePlan.discountAmount,
+            loyaltyDiscountAmount: rewardPreview.totalDiscount,
+            appliedRewards: rewardPreview.appliedRewards,
+            nightPremium: basePlan.nightPremium,
+            totalAmount: max(0, basePlan.totalAmount - rewardPreview.totalDiscount),
+            hasNightPremium: basePlan.hasNightPremium
+        )
+
+        let normalizedRequest = AdventureBookingRequest(
+            clientId: request.clientId,
+            clientName: request.clientName,
+            whatsappNumber: request.whatsappNumber,
+            nationalId: request.nationalId,
+            date: request.date,
+            selectedStartAt: request.selectedStartAt,
+            guestCount: request.guestCount,
+            eventType: request.eventType,
+            customEventTitle: request.customEventTitle,
+            eventNotes: request.eventNotes,
+            items: request.items,
+            foodReservation: request.foodReservation,
+            packageDiscountAmount: request.packageDiscountAmount,
+            loyaltyDiscountAmount: rewardPreview.totalDiscount,
+            appliedRewards: rewardPreview.appliedRewards,
+            notes: request.notes
+        )
+
         let createdAt = Date()
         let bookingRef = db.collection(bookingsCollection).document()
         let dto = AdventureBookingDto.from(
             bookingId: bookingRef.documentID,
-            request: request,
-            plan: plan,
+            request: normalizedRequest,
+            plan: finalPlan,
             createdAt: createdAt
         )
 
@@ -536,6 +633,13 @@ final class AdventureBookingsService: AdventureBookingsServiceable {
                 }
             }
         }
+
+        try await loyaltyRewardsService.reserveRewards(
+            nationalId: normalizedRequest.nationalId,
+            referenceType: .booking,
+            referenceId: bookingRef.documentID,
+            appliedRewards: normalizedRequest.appliedRewards
+        )
 
         return dto.toDomain(documentId: bookingRef.documentID)
     }
@@ -564,6 +668,11 @@ final class AdventureBookingsService: AdventureBookingsServiceable {
                 }
             }
         }
+
+        try await loyaltyRewardsService.releaseRewards(
+            nationalId: dto.nationalId,
+            referenceId: id
+        )
     }
 
     private func makeError(_ message: String) -> NSError {
@@ -678,6 +787,21 @@ struct AdventureFeaturedPackageItemDto: Codable {
     }
 }
 
+struct AdventureFeaturedPackageFoodItemDto: Codable {
+    let menuItemId: String
+    let quantity: Int
+
+    func toDomain() -> AdventureFeaturedPackageFoodItem? {
+        let cleanId = menuItemId.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleanId.isEmpty else { return nil }
+
+        return AdventureFeaturedPackageFoodItem(
+            menuItemId: cleanId,
+            quantity: max(1, quantity)
+        )
+    }
+}
+
 struct AdventureFeaturedPackageDto: Codable {
     let id: String
     let title: String
@@ -687,7 +811,57 @@ struct AdventureFeaturedPackageDto: Codable {
     let sortOrder: Int
     let packageDiscountAmount: Double
     let items: [AdventureFeaturedPackageItemDto]
+    let foodItems: [AdventureFeaturedPackageFoodItemDto]
     let updatedAt: Timestamp
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case title
+        case subtitle
+        case badge
+        case isActive
+        case sortOrder
+        case packageDiscountAmount
+        case items
+        case foodItems
+        case updatedAt
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+
+        id = try container.decode(String.self, forKey: .id)
+        title = try container.decode(String.self, forKey: .title)
+        subtitle = try container.decode(String.self, forKey: .subtitle)
+        badge = try container.decodeIfPresent(String.self, forKey: .badge)
+        isActive = try container.decode(Bool.self, forKey: .isActive)
+        sortOrder = try container.decode(Int.self, forKey: .sortOrder)
+        packageDiscountAmount = try container.decode(Double.self, forKey: .packageDiscountAmount)
+        items = try container.decode([AdventureFeaturedPackageItemDto].self, forKey: .items)
+        foodItems = try container.decodeIfPresent([AdventureFeaturedPackageFoodItemDto].self, forKey: .foodItems) ?? []
+        updatedAt = try container.decode(Timestamp.self, forKey: .updatedAt)
+    }
+
+    func toDomain() -> AdventureFeaturedPackage? {
+        let mappedItems = items.compactMap { $0.toDomain() }
+        guard mappedItems.count == items.count else { return nil }
+
+        let mappedFoodItems = foodItems.compactMap { $0.toDomain() }
+        guard mappedFoodItems.count == foodItems.count else { return nil }
+
+        return AdventureFeaturedPackage(
+            id: id,
+            title: title,
+            subtitle: subtitle,
+            badge: badge,
+            isActive: isActive,
+            sortOrder: sortOrder,
+            packageDiscountAmount: packageDiscountAmount,
+            items: mappedItems,
+            foodItems: mappedFoodItems,
+            updatedAt: updatedAt.dateValue()
+        )
+    }
 }
 
 ```
@@ -842,26 +1016,14 @@ final class AdventureCatalogService: AdventureCatalogServiceable {
             let dto = try document.data(as: AdventureFeaturedPackageDto.self)
 
             guard dto.isActive else { return nil }
+            guard let package = dto.toDomain() else { return nil }
 
-            let items = dto.items.compactMap { $0.toDomain() }
-            guard items.count == dto.items.count else { return nil }
-
-            let allItemsActive = items.allSatisfy { item in
+            let allItemsActive = package.items.allSatisfy { item in
                 activitiesByType[item.activity]?.isActive == true
             }
             guard allItemsActive else { return nil }
 
-            return AdventureFeaturedPackage(
-                id: dto.id,
-                title: dto.title,
-                subtitle: dto.subtitle,
-                badge: dto.badge,
-                isActive: dto.isActive,
-                sortOrder: dto.sortOrder,
-                packageDiscountAmount: dto.packageDiscountAmount,
-                items: items,
-                updatedAt: dto.updatedAt.dateValue()
-            )
+            return package
         }
 
         return AdventureCatalogSnapshot(
@@ -1035,6 +1197,18 @@ struct AdventureActivityCatalogItem: Identifiable, Codable, Hashable {
     }
 }
 
+struct AdventureFeaturedPackageFoodItem: Identifiable, Codable, Hashable {
+    let menuItemId: String
+    let quantity: Int
+
+    var id: String { menuItemId }
+
+    init(menuItemId: String, quantity: Int) {
+        self.menuItemId = menuItemId.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.quantity = max(1, quantity)
+    }
+}
+
 struct AdventureFeaturedPackage: Identifiable, Codable, Hashable {
     let id: String
     let title: String
@@ -1044,6 +1218,7 @@ struct AdventureFeaturedPackage: Identifiable, Codable, Hashable {
     let sortOrder: Int
     let packageDiscountAmount: Double
     let items: [AdventureReservationItemDraft]
+    let foodItems: [AdventureFeaturedPackageFoodItem]
     let updatedAt: Date
 }
 
@@ -1455,6 +1630,8 @@ struct AdventureBuildPlan: Hashable {
     let foodSubtotal: Double
     let subtotal: Double
     let discountAmount: Double
+    let loyaltyDiscountAmount: Double
+    let appliedRewards: [AppliedReward]
     let nightPremium: Double
     let totalAmount: Double
     let hasNightPremium: Bool
@@ -1487,7 +1664,45 @@ struct AdventureBookingRequest: Hashable {
     let items: [AdventureReservationItemDraft]
     let foodReservation: ReservationFoodDraft?
     let packageDiscountAmount: Double
+    let loyaltyDiscountAmount: Double
+    let appliedRewards: [AppliedReward]
     let notes: String?
+
+    init(
+        clientId: String?,
+        clientName: String,
+        whatsappNumber: String,
+        nationalId: String,
+        date: Date,
+        selectedStartAt: Date,
+        guestCount: Int,
+        eventType: ReservationEventType,
+        customEventTitle: String?,
+        eventNotes: String?,
+        items: [AdventureReservationItemDraft],
+        foodReservation: ReservationFoodDraft?,
+        packageDiscountAmount: Double = 0,
+        loyaltyDiscountAmount: Double = 0,
+        appliedRewards: [AppliedReward] = [],
+        notes: String?
+    ) {
+        self.clientId = clientId
+        self.clientName = clientName
+        self.whatsappNumber = whatsappNumber
+        self.nationalId = nationalId
+        self.date = date
+        self.selectedStartAt = selectedStartAt
+        self.guestCount = guestCount
+        self.eventType = eventType
+        self.customEventTitle = customEventTitle
+        self.eventNotes = eventNotes
+        self.items = items
+        self.foodReservation = foodReservation
+        self.packageDiscountAmount = max(0, packageDiscountAmount)
+        self.loyaltyDiscountAmount = max(0, loyaltyDiscountAmount)
+        self.appliedRewards = appliedRewards
+        self.notes = notes
+    }
 
     var hasActivities: Bool { !items.isEmpty }
     var hasFoodReservation: Bool { !(foodReservation?.isEmpty ?? true) }
@@ -1513,15 +1728,17 @@ struct AdventureBooking: Identifiable, Hashable {
     let foodSubtotal: Double
     let subtotal: Double
     let discountAmount: Double
+    let loyaltyDiscountAmount: Double
+    let appliedRewards: [AppliedReward]
     let nightPremium: Double
     let totalAmount: Double
     let status: AdventureBookingStatus
     let createdAt: Date
     let notes: String?
-    
+
     var hasActivities: Bool { !items.isEmpty }
     var hasFoodReservation: Bool { !(foodReservation?.isEmpty ?? true) }
-    
+
     var eventDisplayTitle: String {
         if eventType == .custom {
             let clean = customEventTitle?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
@@ -1529,7 +1746,7 @@ struct AdventureBooking: Identifiable, Hashable {
         }
         return eventType.title
     }
-    
+
     var visitTypeTitle: String {
         switch (hasActivities, hasFoodReservation) {
         case (true, true): return "Aventura + comida"
@@ -1760,6 +1977,8 @@ enum AdventurePlanner {
                 foodSubtotal: foodSubtotal,
                 subtotal: foodSubtotal,
                 discountAmount: 0,
+                loyaltyDiscountAmount: 0,
+                appliedRewards: [],
                 nightPremium: 0,
                 totalAmount: foodSubtotal,
                 hasNightPremium: false
@@ -1983,6 +2202,8 @@ enum AdventurePlanner {
             foodSubtotal: foodSubtotal,
             subtotal: totalSubtotal,
             discountAmount: totalDiscountAmount,
+            loyaltyDiscountAmount: 0,
+            appliedRewards: [],
             nightPremium: 0,
             totalAmount: totalAmount,
             hasNightPremium: hasNightPremium
@@ -2079,13 +2300,16 @@ import Foundation
 final class AdventureModuleFactory {
     private let bookingsService: AdventureBookingsServiceable
     private let catalogService: AdventureCatalogServiceable
+    private let loyaltyRewardsService: LoyaltyRewardsServiceable
 
     init(
         bookingsService: AdventureBookingsServiceable,
-        catalogService: AdventureCatalogServiceable
+        catalogService: AdventureCatalogServiceable,
+        loyaltyRewardsService: LoyaltyRewardsServiceable
     ) {
         self.bookingsService = bookingsService
         self.catalogService = catalogService
+        self.loyaltyRewardsService = loyaltyRewardsService
     }
 
     func makeBuilderViewModel(
@@ -2098,14 +2322,15 @@ final class AdventureModuleFactory {
             getAvailabilityUseCase: GetAdventureAvailabilityUseCase(service: bookingsService),
             createBookingUseCase: CreateAdventureBookingUseCase(service: bookingsService),
             fetchAdventureCatalogUseCase: FetchAdventureCatalogUseCase(service: catalogService),
-            observeAdventureCatalogUseCase: ObserveAdventureCatalogUseCase(service: catalogService)
+            observeAdventureCatalogUseCase: ObserveAdventureCatalogUseCase(service: catalogService),
+            loyaltyRewardsService: loyaltyRewardsService
         )
     }
 
     func makeCatalogViewModel() -> AdventureCatalogViewModel {
         AdventureCatalogViewModel(service: catalogService)
     }
-    
+
     func makeBookingsViewModel() -> AdventureBookingsViewModel {
         AdventureBookingsViewModel(
             observeBookingsUseCase: ObserveAdventureBookingsUseCase(service: bookingsService),
@@ -2183,261 +2408,6 @@ struct CancelAdventureBookingUseCase {
 
 ---
 
-# Altos del Murco/root/feature/altos/adventure/domain/LoyaltyLevel.swift
-
-```swift
-//
-//  LoyaltyLevel.swift
-//  Altos del Murco
-//
-//  Created by José Ruiz on 19/4/26.
-//
-
-import Foundation
-
-enum LoyaltyLevel: String, Codable, CaseIterable, Hashable {
-    case bronze
-    case silver
-    case gold
-    case platinum
-    case diamond
-
-    var title: String {
-        switch self {
-        case .bronze: return "Bronce"
-        case .silver: return "Plata"
-        case .gold: return "Oro"
-        case .platinum: return "Platino"
-        case .diamond: return "Diamante"
-        }
-    }
-
-    var badgeSubtitle: String {
-        switch self {
-        case .bronze:
-            return "Tus primeras visitas ya empiezan a premiarte"
-        case .silver:
-            return "Más beneficios cada vez que vuelves"
-        case .gold:
-            return "Descuentos más fuertes y regalos más frecuentes"
-        case .platinum:
-            return "Nivel preferente con premios premium"
-        case .diamond:
-            return "Nuestro máximo nivel para clientes top"
-        }
-    }
-
-    var systemImage: String {
-        switch self {
-        case .bronze:
-            return "sparkles"
-        case .silver:
-            return "seal.fill"
-        case .gold:
-            return "star.circle.fill"
-        case .platinum:
-            return "crown.fill"
-        case .diamond:
-            return "diamond.fill"
-        }
-    }
-
-    var minimumSpent: Double {
-        switch self {
-        case .bronze: return 0
-        case .silver: return 100
-        case .gold: return 300
-        case .platinum: return 800
-        case .diamond: return 1500
-        }
-    }
-
-    var spendRangeText: String {
-        switch self {
-        case .bronze:
-            return "De $0 a $99"
-        case .silver:
-            return "De $100 a $299"
-        case .gold:
-            return "De $400 a $799"
-        case .platinum:
-            return "De $800 a $1499"
-        case .diamond:
-            return "Desde $1500"
-        }
-    }
-
-    var benefits: [LoyaltyBenefit] {
-        switch self {
-        case .bronze:
-            return [
-                LoyaltyBenefit(
-                    id: "bronze_jugo_discount",
-                    title: "5% de descuento",
-                    detail: "Válido en jugo natural personal",
-                    kind: .percentageDiscount(5),
-                    productName: "Jugo natural personal",
-                    requiredVisits: nil
-                ),
-                LoyaltyBenefit(
-                    id: "bronze_coffee_free",
-                    title: "Café gratis",
-                    detail: "1 café americano gratis al completar 3 visitas",
-                    kind: .freeProduct,
-                    productName: "Café americano",
-                    requiredVisits: 3
-                )
-            ]
-
-        case .silver:
-            return [
-                LoyaltyBenefit(
-                    id: "silver_main_discount",
-                    title: "10% de descuento",
-                    detail: "En platos fuertes seleccionados",
-                    kind: .percentageDiscount(10),
-                    productName: "Platos fuertes seleccionados",
-                    requiredVisits: nil
-                ),
-                LoyaltyBenefit(
-                    id: "silver_jugo_free",
-                    title: "Jugo gratis",
-                    detail: "1 jugo natural personal gratis al completar 5 visitas",
-                    kind: .freeProduct,
-                    productName: "Jugo natural personal",
-                    requiredVisits: 5
-                )
-            ]
-
-        case .gold:
-            return [
-                LoyaltyBenefit(
-                    id: "gold_parrillada_discount",
-                    title: "12% de descuento",
-                    detail: "En platos fuertes y parrilladas seleccionadas",
-                    kind: .percentageDiscount(12),
-                    productName: "Platos fuertes y parrilladas seleccionadas",
-                    requiredVisits: nil
-                ),
-                LoyaltyBenefit(
-                    id: "gold_dessert_free",
-                    title: "Postre gratis",
-                    detail: "1 postre individual gratis cada 6 visitas completadas",
-                    kind: .freeProduct,
-                    productName: "Postre individual",
-                    requiredVisits: 6
-                )
-            ]
-
-        case .platinum:
-            return [
-                LoyaltyBenefit(
-                    id: "platinum_rest_discount",
-                    title: "15% de descuento",
-                    detail: "En platos, jugos y postres seleccionados",
-                    kind: .percentageDiscount(15),
-                    productName: "Platos, jugos y postres seleccionados",
-                    requiredVisits: nil
-                ),
-                LoyaltyBenefit(
-                    id: "platinum_drink_free",
-                    title: "Bebida gratis",
-                    detail: "1 bebida o jugo gratis en visitas elegibles",
-                    kind: .freeProduct,
-                    productName: "Bebida o jugo",
-                    requiredVisits: nil
-                )
-            ]
-
-        case .diamond:
-            return [
-                LoyaltyBenefit(
-                    id: "diamond_rest_discount",
-                    title: "20% de descuento",
-                    detail: "En consumo seleccionado de restaurante",
-                    kind: .percentageDiscount(20),
-                    productName: "Consumo seleccionado",
-                    requiredVisits: nil
-                ),
-                LoyaltyBenefit(
-                    id: "diamond_free_item",
-                    title: "Producto gratis VIP",
-                    detail: "1 plato individual o postre premium gratis en campañas VIP",
-                    kind: .freeProduct,
-                    productName: "Plato individual o postre premium",
-                    requiredVisits: nil
-                )
-            ]
-        }
-    }
-
-    var nextLevel: LoyaltyLevel? {
-        switch self {
-        case .bronze: return .silver
-        case .silver: return .gold
-        case .gold: return .platinum
-        case .platinum: return .diamond
-        case .diamond: return nil
-        }
-    }
-
-    func remainingSpend(from totalSpent: Double) -> Double {
-        guard let nextLevel else { return 0 }
-        return max(nextLevel.minimumSpent - totalSpent, 0)
-    }
-
-    static func from(totalSpent: Double) -> LoyaltyLevel {
-        switch totalSpent {
-        case 0..<99:
-            return .bronze
-        case 100..<299:
-            return .silver
-        case 300..<799:
-            return .gold
-        case 800..<1500:
-            return .platinum
-        default:
-            return .diamond
-        }
-    }
-
-    static func progress(for totalSpent: Double) -> Double {
-        let current = from(totalSpent: totalSpent)
-
-        guard let next = current.nextLevel else {
-            return 1
-        }
-
-        let start = current.minimumSpent
-        let end = next.minimumSpent
-        guard end > start else { return 1 }
-
-        let raw = (totalSpent - start) / (end - start)
-        return min(max(raw, 0), 1)
-    }
-    
-    
-}
-
-struct LoyaltyBenefit: Codable, Hashable, Identifiable {
-    let id: String
-    let title: String
-    let detail: String
-    let kind: LoyaltyRewardKind
-    let productName: String?
-    let requiredVisits: Int?
-}
-
-enum LoyaltyRewardKind: Codable, Hashable {
-    case percentageDiscount(Double)
-    case freeProduct
-    case campaignReward
-}
-
-```
-
----
-
 # Altos del Murco/root/feature/altos/adventure/presentation/view/AdventureCatalogView.swift
 
 ```swift
@@ -2454,7 +2424,9 @@ import SwiftUI
 struct AdventureCatalogView: View {
     @ObservedObject var adventureComboBuilderViewModel: AdventureComboBuilderViewModel
     @ObservedObject var menuViewModel: MenuViewModel
-    
+
+    @EnvironmentObject private var sessionViewModel: AppSessionViewModel
+
     @StateObject private var catalogViewModel = AdventureCatalogViewModel(
         service: AdventureCatalogService()
     )
@@ -2495,10 +2467,16 @@ struct AdventureCatalogView: View {
             .navigationTitle("Aventura en Los Altos")
             .navigationBarTitleDisplayMode(.large)
             .appScreenStyle(.adventure)
-
         }
         .onAppear {
+            if let profile = sessionViewModel.authenticatedProfile {
+                adventureComboBuilderViewModel.setClientName(profile.fullName)
+                adventureComboBuilderViewModel.setWhatsapp(profile.phoneNumber)
+                adventureComboBuilderViewModel.setNationalId(profile.nationalId)
+            }
+
             catalogViewModel.onAppear()
+            menuViewModel.onAppear()
         }
         .onDisappear {
             catalogViewModel.onDisappear()
@@ -2532,7 +2510,7 @@ struct AdventureCatalogView: View {
                         .font(.system(size: 30, weight: .bold, design: .rounded))
                         .foregroundStyle(Color.white)
 
-                    Text("Ahora el catálogo y los paquetes destacados se cargan desde Firestore.")
+                    Text("Ahora el catálogo, los paquetes y la comida incluida se cargan desde Firestore.")
                         .font(.subheadline)
                         .foregroundStyle(Color.white.opacity(0.92))
                 }
@@ -2580,15 +2558,20 @@ struct AdventureCatalogView: View {
                             menuViewModel: menuViewModel
                         )
                         .onAppear {
-                            adventureComboBuilderViewModel.replaceItems(
-                                with: package.items,
-                                packageDiscountAmount: package.packageDiscountAmount
+                            adventureComboBuilderViewModel.replacePackage(
+                                package,
+                                menuSections: menuViewModel.state.sections
                             )
                         }
                     } label: {
                         FeaturedPackageCard(
                             package: package,
-                            catalog: catalogViewModel.state.catalog
+                            catalog: catalogViewModel.state.catalog,
+                            menuSections: menuViewModel.state.sections,
+                            rewardPresentation: adventureComboBuilderViewModel.packageRewardPresentation(
+                                for: package,
+                                menuSections: menuViewModel.state.sections
+                            )
                         )
                     }
                     .buttonStyle(.plain)
@@ -2618,7 +2601,10 @@ struct AdventureCatalogView: View {
                         )
                     }
                 } label: {
-                    SingleActivityCatalogCard(activity: activity)
+                    SingleActivityCatalogCard(
+                        activity: activity,
+                        rewardPresentation: adventureComboBuilderViewModel.catalogRewardPresentation(for: activity)
+                    )
                 }
                 .buttonStyle(.plain)
             }
@@ -2662,6 +2648,8 @@ struct AdventureCatalogView: View {
 private struct FeaturedPackageCard: View {
     let package: AdventureFeaturedPackage
     let catalog: AdventureCatalogSnapshot
+    let menuSections: [MenuSection]
+    let rewardPresentation: RewardPresentation?
 
     @Environment(\.colorScheme) private var colorScheme
 
@@ -2669,12 +2657,39 @@ private struct FeaturedPackageCard: View {
         AppTheme.palette(for: .adventure, scheme: colorScheme)
     }
 
-    private var subtotal: Double {
+    private var menuItemsById: [String: MenuItem] {
+        Dictionary(
+            uniqueKeysWithValues: menuSections
+                .flatMap(\.items)
+                .map { ($0.id, $0) }
+        )
+    }
+
+    private var activitySubtotal: Double {
         AdventurePricingEngine.estimatedSubtotal(items: package.items, catalog: catalog)
+    }
+
+    private var foodSubtotal: Double {
+        package.foodItems.reduce(0) { partial, item in
+            let unitPrice = menuItemsById[item.menuItemId]?.finalPrice ?? 0
+            return partial + (Double(item.quantity) * unitPrice)
+        }
+    }
+
+    private var subtotal: Double {
+        activitySubtotal + foodSubtotal
     }
 
     private var total: Double {
         max(0, subtotal - package.packageDiscountAmount)
+    }
+
+    private var foodSummary: String {
+        package.foodItems.map { item in
+            let name = menuItemsById[item.menuItemId]?.name ?? item.menuItemId
+            return "\(item.quantity)x \(name)"
+        }
+        .joined(separator: " • ")
     }
 
     var body: some View {
@@ -2700,10 +2715,33 @@ private struct FeaturedPackageCard: View {
                 }
             }
 
+            if !foodSummary.isEmpty {
+                Text(foodSummary)
+                    .font(.caption)
+                    .foregroundStyle(palette.textSecondary)
+                    .lineLimit(3)
+            }
+
+            HStack(spacing: 8) {
+                Text("Aventura \(activitySubtotal.priceText)")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(palette.textSecondary)
+
+                if foodSubtotal > 0 {
+                    Text("Comida \(foodSubtotal.priceText)")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(palette.textSecondary)
+                }
+            }
+
             if package.packageDiscountAmount > 0 {
                 Text("Descuento del paquete: \(package.packageDiscountAmount.priceText)")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(palette.primary)
+            }
+
+            if let rewardPresentation {
+                rewardInfoCard(rewardPresentation)
             }
 
             HStack {
@@ -2720,10 +2758,38 @@ private struct FeaturedPackageCard: View {
         }
         .appCardStyle(.adventure, emphasized: false)
     }
+
+    private func rewardInfoCard(_ reward: RewardPresentation) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            BrandBadge(theme: .adventure, title: reward.badge, selected: true)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(reward.title)
+                    .font(.caption.bold())
+                    .foregroundStyle(palette.textPrimary)
+
+                Text(reward.message)
+                    .font(.caption)
+                    .foregroundStyle(palette.textSecondary)
+            }
+
+            Spacer()
+        }
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(palette.elevatedCard)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(palette.stroke, lineWidth: 1)
+        )
+    }
 }
 
 private struct SingleActivityCatalogCard: View {
     let activity: AdventureActivityCatalogItem
+    let rewardPresentation: RewardPresentation?
 
     @Environment(\.colorScheme) private var colorScheme
 
@@ -2759,6 +2825,17 @@ private struct SingleActivityCatalogCard: View {
                             .font(.caption)
                             .foregroundStyle(palette.textTertiary)
                             .strikethrough()
+                    }
+                }
+
+                if let rewardPresentation {
+                    HStack(spacing: 8) {
+                        BrandBadge(theme: .adventure, title: rewardPresentation.badge, selected: true)
+
+                        Text(rewardPresentation.message)
+                            .font(.caption)
+                            .foregroundStyle(palette.textSecondary)
+                            .lineLimit(2)
                     }
                 }
             }
@@ -2949,7 +3026,10 @@ struct AdventureComboBuilderView: View {
                 Button {
                     editingItem = item
                 } label: {
-                    ComboItemCard(item: item)
+                    ComboItemCard(
+                        item: item,
+                        rewardPresentation: adventureComboBuilderViewModel.appliedRewardPresentation(for: item)
+                    )
                 }
                 .buttonStyle(.plain)
                 .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
@@ -3078,6 +3158,7 @@ struct AdventureComboBuilderView: View {
                 ForEach(adventureComboBuilderViewModel.state.foodItems) { item in
                     ReservationFoodRow(
                         item: item,
+                        rewardPresentation: adventureComboBuilderViewModel.appliedRewardPresentation(for: item),
                         onEdit: { editingFoodItem = item },
                         onIncrease: { adventureComboBuilderViewModel.increaseFoodQuantity(item.id) },
                         onDecrease: { adventureComboBuilderViewModel.decreaseFoodQuantity(item.id) },
@@ -3204,6 +3285,7 @@ struct AdventureComboBuilderView: View {
     
     private struct ReservationFoodRow: View {
         let item: ReservationFoodItemDraft
+        let rewardPresentation: RewardPresentation?
         let onEdit: () -> Void
         let onIncrease: () -> Void
         let onDecrease: () -> Void
@@ -3229,6 +3311,17 @@ struct AdventureComboBuilderView: View {
                         Text(notes)
                             .font(.caption)
                             .foregroundStyle(.secondary)
+                    }
+
+                    if let rewardPresentation {
+                        HStack(spacing: 8) {
+                            BrandBadge(theme: .adventure, title: rewardPresentation.badge, selected: true)
+
+                            Text(rewardPresentation.message)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(2)
+                        }
                     }
                 }
 
@@ -3933,21 +4026,75 @@ struct AdventureComboBuilderView: View {
                     title: "Resumen",
                     subtitle: "Revisa el total antes de confirmar."
                 )
-                
-                //Later
+
                 if let slot = adventureComboBuilderViewModel.state.selectedSlot {
-                    summaryRow("Aventura", "$\(slot.adventureSubtotal.priceText)")
-                    summaryRow("Comida", "$\(slot.foodSubtotal.priceText)")
-                    summaryRow("Subtotal", "$\(slot.subtotal.priceText)")
-                    summaryRow("Descuento aventura", "-$\(slot.discountAmount.priceText)")
+                    summaryRow("Aventura", slot.adventureSubtotal.priceText)
+                    summaryRow("Comida", slot.foodSubtotal.priceText)
+                    summaryRow("Subtotal", slot.subtotal.priceText)
+                    summaryRow("Descuento aventura", "-\(slot.discountAmount.priceText)")
+
+                    if adventureComboBuilderViewModel.state.rewardPreview.totalDiscount > 0 {
+                        summaryRow(
+                            "Murco Loyalty",
+                            "-\(adventureComboBuilderViewModel.state.rewardPreview.totalDiscount.priceText)"
+                        )
+                    }
+
                     Divider()
-                    summaryRow("Total", "$\(slot.totalAmount.priceText)", bold: true)
+
+                    summaryRow(
+                        "Total",
+                        max(0, slot.totalAmount - adventureComboBuilderViewModel.state.rewardPreview.totalDiscount).priceText,
+                        bold: true
+                    )
                 } else {
                     summaryRow("Aventura estimada", adventureComboBuilderViewModel.estimatedAdventureSubtotal.priceText)
                     summaryRow("Comida estimada", adventureComboBuilderViewModel.estimatedFoodSubtotal.priceText)
                     summaryRow("Descuento estimado", "-\(adventureComboBuilderViewModel.estimatedDiscountAmount.priceText)")
+
+                    if adventureComboBuilderViewModel.state.rewardPreview.totalDiscount > 0 {
+                        summaryRow(
+                            "Murco Loyalty",
+                            "-\(adventureComboBuilderViewModel.state.rewardPreview.totalDiscount.priceText)"
+                        )
+                    }
+
                     Divider()
                     summaryRow("Total estimado", adventureComboBuilderViewModel.estimatedTotal.priceText, bold: true)
+                }
+
+                if !adventureComboBuilderViewModel.activeRewardPresentations.isEmpty {
+                    Divider()
+
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("Premios aplicados")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(palette.textPrimary)
+
+                        ForEach(adventureComboBuilderViewModel.activeRewardPresentations) { reward in
+                            HStack(alignment: .top, spacing: 10) {
+                                BrandBadge(theme: .adventure, title: reward.badge, selected: true)
+
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(reward.title)
+                                        .font(.caption.bold())
+                                        .foregroundStyle(palette.textPrimary)
+
+                                    Text(reward.message)
+                                        .font(.caption)
+                                        .foregroundStyle(palette.textSecondary)
+                                }
+
+                                Spacer()
+
+                                if let amountText = reward.amountText {
+                                    Text("-\(amountText)")
+                                        .font(.caption.bold())
+                                        .foregroundStyle(palette.success)
+                                }
+                            }
+                        }
+                    }
                 }
             }
             .appCardStyle(.adventure)
@@ -3956,12 +4103,12 @@ struct AdventureComboBuilderView: View {
             .listRowSeparator(.hidden)
         }
     }
-    
+
     private var confirmSection: some View {
         Section {
             VStack(spacing: 12) {
                 if showAddedMessage {
-                    Text("Order has been added")
+                    Text("Reserva agregada")
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(.white)
                         .padding(.horizontal, 16)
@@ -3996,8 +4143,6 @@ struct AdventureComboBuilderView: View {
                             dismiss()
                         }
                     }
-
-                    dismiss()
                 } label: {
                     if adventureComboBuilderViewModel.state.isSubmitting {
                         ProgressView()
@@ -4031,8 +4176,7 @@ struct AdventureComboBuilderView: View {
 
 private struct ComboItemCard: View {
     let item: AdventureReservationItemDraft
-
-    @EnvironmentObject private var sessionViewModel: AppSessionViewModel
+    let rewardPresentation: RewardPresentation?
 
     var body: some View {
         HStack(spacing: 14) {
@@ -4046,6 +4190,17 @@ private struct ComboItemCard: View {
                 Text(item.summaryText)
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
+
+                if let rewardPresentation {
+                    HStack(spacing: 8) {
+                        BrandBadge(theme: .adventure, title: rewardPresentation.badge, selected: true)
+
+                        Text(rewardPresentation.message)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(2)
+                    }
+                }
             }
 
             Spacer()
@@ -4433,29 +4588,6 @@ struct AdventureReservationsView: View {
         } else {
             Section {
                 ForEach(viewModel.state.bookings) { booking in
-//                    NavigationLink {
-//                        ReserveViewDetail(
-//                            booking: booking,
-//                            onCancel: booking.status != .canceled
-//                                ? { viewModel.cancelBooking(booking.id) }
-//                                : nil
-//                        )
-//                    } label: {
-//                        AdventureReservationRow(booking: booking)
-//                    }
-//                    .buttonStyle(.plain)
-//                    .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
-//                    .listRowBackground(Color.clear)
-//                    .listRowSeparator(.hidden)
-//                    .swipeActions(edge: .trailing) {
-//                        if booking.status != .canceled {
-//                            Button(role: .destructive) {
-//                                viewModel.cancelBooking(booking.id)
-//                            } label: {
-//                                Label("Cancelar", systemImage: "xmark")
-//                            }
-//                        }
-//                    }
                     Button {
                         selectedBooking = booking
                     } label: {
@@ -4578,8 +4710,28 @@ private struct AdventureReservationRow: View {
                 amountRow("Aventura", booking.adventureSubtotal)
                 amountRow("Comida", booking.foodSubtotal)
                 amountRow("Descuento", -booking.discountAmount)
-            //    amountRow("Recargo nocturno", booking.nightPremium)
-                amountRow("Total", booking.totalAmount, isPrimary: true)
+
+                if booking.loyaltyDiscountAmount > 0 {
+                    amountRow("Murco Loyalty", -booking.loyaltyDiscountAmount)
+                }
+
+                amountRow(
+                    "Total",
+                    max(0, booking.totalAmount - booking.loyaltyDiscountAmount),
+                    isPrimary: true
+                )
+
+                if let reward = booking.appliedRewards.first {
+                    HStack(alignment: .top, spacing: 8) {
+                        BrandBadge(theme: .adventure, title: "Premio", selected: true)
+
+                        Text(reward.note)
+                            .font(.caption)
+                            .foregroundStyle(palette.textSecondary)
+
+                        Spacer()
+                    }
+                }
 
                 HStack {
                     Spacer()
@@ -5165,7 +5317,48 @@ struct ReserveViewDetail: View {
             amountRow("Comida", booking.foodSubtotal)
             amountRow("Subtotal", booking.subtotal)
             amountRow("Descuento", -booking.discountAmount)
-            amountRow("Total", booking.totalAmount, isPrimary: true)
+
+            if booking.loyaltyDiscountAmount > 0 {
+                amountRow("Murco Loyalty", -booking.loyaltyDiscountAmount)
+            }
+
+            amountRow(
+                "Total",
+                max(0, booking.totalAmount - booking.loyaltyDiscountAmount),
+                isPrimary: true
+            )
+
+            if !booking.appliedRewards.isEmpty {
+                Divider()
+
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Premios aplicados")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(palette.textPrimary)
+
+                    ForEach(booking.appliedRewards) { reward in
+                        HStack(alignment: .top, spacing: 10) {
+                            BrandBadge(theme: .adventure, title: "Premio", selected: true)
+
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(reward.title)
+                                    .font(.caption.bold())
+                                    .foregroundStyle(palette.textPrimary)
+
+                                Text(reward.note)
+                                    .font(.caption)
+                                    .foregroundStyle(palette.textSecondary)
+                            }
+
+                            Spacer()
+
+                            Text("-\(reward.amount.priceText)")
+                                .font(.caption.bold())
+                                .foregroundStyle(palette.success)
+                        }
+                    }
+                }
+            }
         }
         .appCardStyle(.adventure)
     }
@@ -5927,6 +6120,11 @@ struct AdventureComboBuilderState {
     var isSubmitting = false
     var errorMessage: String?
     var successMessage: String?
+    var isLoadingRewards = false
+    var rewardPreview: RewardComputationResult =
+        RewardComputationResult.empty(
+            wallet: RewardWalletSnapshot.empty(nationalId: "")
+        )
 }
 
 @MainActor
@@ -5936,10 +6134,14 @@ final class AdventureComboBuilderViewModel: ObservableObject {
     private let getAvailabilityUseCase: GetAdventureAvailabilityUseCase
     private let createBookingUseCase: CreateAdventureBookingUseCase
     private let fetchAdventureCatalogUseCase: FetchAdventureCatalogUseCase
-    private var hasLoadedCatalog = false
-    
     private let observeAdventureCatalogUseCase: ObserveAdventureCatalogUseCase
+    private let loyaltyRewardsService: LoyaltyRewardsServiceable
+
+    private var hasLoadedCatalog = false
     private var catalogListenerToken: AdventureListenerToken?
+    
+    var rewardPreview: RewardComputationResult = .empty(wallet: .empty(nationalId: ""))
+    var isLoadingRewards = false
 
     init(
         prefilledItems: [AdventureReservationItemDraft],
@@ -5947,17 +6149,21 @@ final class AdventureComboBuilderViewModel: ObservableObject {
         getAvailabilityUseCase: GetAdventureAvailabilityUseCase,
         createBookingUseCase: CreateAdventureBookingUseCase,
         fetchAdventureCatalogUseCase: FetchAdventureCatalogUseCase,
-        observeAdventureCatalogUseCase: ObserveAdventureCatalogUseCase
+        observeAdventureCatalogUseCase: ObserveAdventureCatalogUseCase,
+        loyaltyRewardsService: LoyaltyRewardsServiceable
     ) {
         self.state = AdventureComboBuilderState(
-            items: prefilledItems.isEmpty ? [AdventureActivityType.defaultDraft(for: .offRoad)] : prefilledItems,
+            items: prefilledItems.isEmpty
+                ? [AdventureActivityType.defaultDraft(for: .offRoad)]
+                : prefilledItems,
             packageDiscountAmount: max(0, initialPackageDiscountAmount)
         )
         self.getAvailabilityUseCase = getAvailabilityUseCase
         self.createBookingUseCase = createBookingUseCase
         self.fetchAdventureCatalogUseCase = fetchAdventureCatalogUseCase
         self.observeAdventureCatalogUseCase = observeAdventureCatalogUseCase
-
+        self.loyaltyRewardsService = loyaltyRewardsService
+        
         keepCampingAtEnd()
     }
 
@@ -5969,7 +6175,7 @@ final class AdventureComboBuilderViewModel: ObservableObject {
             await loadAvailability()
         }
     }
-    
+
     private func startCatalogObservationIfNeeded() {
         guard catalogListenerToken == nil else { return }
 
@@ -5987,6 +6193,34 @@ final class AdventureComboBuilderViewModel: ObservableObject {
                     self.state.isLoadingCatalog = false
                 }
             }
+        }
+    }
+    
+    func refreshRewardPreview() async {
+        let cleanNationalId = state.nationalId.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard !cleanNationalId.isEmpty else {
+            state.rewardPreview = RewardComputationResult.empty(
+                wallet: RewardWalletSnapshot.empty(nationalId: "")
+            )
+            return
+        }
+
+        state.isLoadingRewards = true
+        defer { state.isLoadingRewards = false }
+
+        do {
+            state.rewardPreview = try await loyaltyRewardsService.previewAdventureRewards(
+                for: cleanNationalId,
+                activityItems: state.items,
+                foodItems: state.foodItems,
+                catalog: state.catalog
+            )
+        } catch {
+            state.errorMessage = error.localizedDescription
+            state.rewardPreview = RewardComputationResult.empty(
+                wallet: RewardWalletSnapshot.empty(nationalId: cleanNationalId)
+            )
         }
     }
 
@@ -6011,6 +6245,7 @@ final class AdventureComboBuilderViewModel: ObservableObject {
         keepCampingAtEnd()
         refreshPackageDiscount()
         state.isLoadingCatalog = false
+        Task { await refreshRewardPreview() }
     }
 
     func onDisappear() {
@@ -6039,6 +6274,7 @@ final class AdventureComboBuilderViewModel: ObservableObject {
     func addItem(_ activity: AdventureActivityType) {
         guard canAddItem(activity) else {
             state.errorMessage = "\(activity.legacyTitle) ya fue agregada a esta reserva."
+            state.successMessage = nil
             return
         }
 
@@ -6085,7 +6321,15 @@ final class AdventureComboBuilderViewModel: ObservableObject {
         if let index = state.foodItems.firstIndex(where: {
             $0.menuItemId == menuItem.id && $0.notes == finalNotes
         }) {
-            state.foodItems[index].quantity += safeQuantity
+            let current = state.foodItems[index]
+            state.foodItems[index] = ReservationFoodItemDraft(
+                id: current.id,
+                menuItemId: current.menuItemId,
+                name: current.name,
+                unitPrice: current.unitPrice,
+                quantity: current.quantity + safeQuantity,
+                notes: current.notes
+            )
         } else {
             state.foodItems.append(
                 ReservationFoodItemDraft(
@@ -6096,15 +6340,21 @@ final class AdventureComboBuilderViewModel: ObservableObject {
             )
         }
 
-        state.selectedSlot = nil
-        Task { await loadAvailability() }
+        refreshAfterFoodChanged()
     }
 
     func increaseFoodQuantity(_ id: String) {
         guard let index = state.foodItems.firstIndex(where: { $0.id == id }) else { return }
-        state.foodItems[index].quantity += 1
-        state.selectedSlot = nil
-        Task { await loadAvailability() }
+        let current = state.foodItems[index]
+        state.foodItems[index] = ReservationFoodItemDraft(
+            id: current.id,
+            menuItemId: current.menuItemId,
+            name: current.name,
+            unitPrice: current.unitPrice,
+            quantity: current.quantity + 1,
+            notes: current.notes
+        )
+        refreshAfterFoodChanged()
     }
 
     func decreaseFoodQuantity(_ id: String) {
@@ -6114,36 +6364,25 @@ final class AdventureComboBuilderViewModel: ObservableObject {
         if nextValue <= 0 {
             state.foodItems.remove(at: index)
         } else {
-            state.foodItems[index].quantity = nextValue
+            let current = state.foodItems[index]
+            state.foodItems[index] = ReservationFoodItemDraft(
+                id: current.id,
+                menuItemId: current.menuItemId,
+                name: current.name,
+                unitPrice: current.unitPrice,
+                quantity: nextValue,
+                notes: current.notes
+            )
         }
 
-        state.selectedSlot = nil
-        Task { await loadAvailability() }
+        refreshAfterFoodChanged()
     }
 
     func removeFoodItem(_ id: String) {
         state.foodItems.removeAll { $0.id == id }
-        state.selectedSlot = nil
-        Task { await loadAvailability() }
+        refreshAfterFoodChanged()
     }
 
-    func setDate(_ date: Date) {
-        state.selectedDate = date
-        state.selectedSlot = nil
-        Task { await loadAvailability() }
-    }
-
-    func setGuestCount(_ value: Int) {
-        state.guestCount = max(1, value)
-    }
-
-    func setEventType(_ value: ReservationEventType) {
-        state.eventType = value
-        if value != .custom {
-            state.customEventTitle = ""
-        }
-    }
-    
     func updateFoodItem(_ item: ReservationFoodItemDraft) {
         let trimmedNotes = item.notes?.trimmingCharacters(in: .whitespacesAndNewlines)
         let finalNotes = (trimmedNotes?.isEmpty == false) ? trimmedNotes : nil
@@ -6163,8 +6402,25 @@ final class AdventureComboBuilderViewModel: ObservableObject {
             state.foodItems.append(updatedItem)
         }
 
+        refreshAfterFoodChanged()
+    }
+
+    func setDate(_ date: Date) {
+        state.selectedDate = date
         state.selectedSlot = nil
         Task { await loadAvailability() }
+        Task { await refreshRewardPreview() }
+    }
+
+    func setGuestCount(_ value: Int) {
+        state.guestCount = max(1, value)
+    }
+
+    func setEventType(_ value: ReservationEventType) {
+        state.eventType = value
+        if value != .custom {
+            state.customEventTitle = ""
+        }
     }
 
     func setCustomEventTitle(_ value: String) { state.customEventTitle = value }
@@ -6185,7 +6441,12 @@ final class AdventureComboBuilderViewModel: ObservableObject {
     func setFoodNotes(_ value: String) { state.foodNotes = value }
     func setClientName(_ value: String) { state.clientName = value }
     func setWhatsapp(_ value: String) { state.whatsappNumber = value }
-    func setNationalId(_ value: String) { state.nationalId = value }
+    
+    func setNationalId(_ value: String) {
+        state.nationalId = value
+        Task { await refreshRewardPreview() }
+    }
+    
     func setNotes(_ value: String) { state.notes = value }
 
     func selectSlot(_ slot: AdventureAvailabilitySlot) {
@@ -6200,6 +6461,57 @@ final class AdventureComboBuilderViewModel: ObservableObject {
     func presentError(_ message: String) {
         state.errorMessage = message
         state.successMessage = nil
+    }
+
+    var activeRewardPresentations: [RewardPresentation] {
+        state.rewardPreview.appliedRewards.map(RewardPresentation.from(appliedReward:))
+    }
+
+    func catalogRewardPresentation(for activity: AdventureActivityCatalogItem) -> RewardPresentation? {
+        RewardPresentationFactory.activityPresentation(
+            for: activity,
+            wallet: state.rewardPreview.walletSnapshot
+        )
+    }
+
+    func packageRewardPresentation(
+        for package: AdventureFeaturedPackage,
+        menuSections: [MenuSection]
+    ) -> RewardPresentation? {
+        let menuItemsById = Dictionary(
+            uniqueKeysWithValues: menuSections
+                .flatMap(\.items)
+                .map { ($0.id, $0) }
+        )
+
+        return RewardPresentationFactory.packagePresentation(
+            for: package,
+            catalog: state.catalog,
+            menuItemsById: menuItemsById,
+            wallet: state.rewardPreview.walletSnapshot
+        )
+    }
+
+    func appliedRewardPresentation(for item: AdventureReservationItemDraft) -> RewardPresentation? {
+        let activityId = config(for: item.activity)?.id ?? item.activity.rawValue
+
+        guard let reward = state.rewardPreview.appliedRewards.first(where: {
+            $0.affectedActivityIds.contains(activityId)
+        }) else {
+            return nil
+        }
+
+        return RewardPresentation.from(appliedReward: reward)
+    }
+
+    func appliedRewardPresentation(for foodItem: ReservationFoodItemDraft) -> RewardPresentation? {
+        guard let reward = state.rewardPreview.appliedRewards.first(where: {
+            $0.affectedMenuItemIds.contains(foodItem.menuItemId)
+        }) else {
+            return nil
+        }
+
+        return RewardPresentation.from(appliedReward: reward)
     }
 
     func submit(clientId: String?) {
@@ -6225,7 +6537,12 @@ final class AdventureComboBuilderViewModel: ObservableObject {
     }
 
     var estimatedTotal: Double {
-        max(0, estimatedAdventureSubtotal - state.packageDiscountAmount) + estimatedFoodSubtotal
+        max(
+            0,
+            max(0, estimatedAdventureSubtotal - state.packageDiscountAmount)
+            + estimatedFoodSubtotal
+            - state.rewardPreview.totalDiscount
+        )
     }
 
     func reset() {
@@ -6236,6 +6553,7 @@ final class AdventureComboBuilderViewModel: ObservableObject {
         )
         keepCampingAtEnd()
         Task { await loadAvailability() }
+        Task { await refreshRewardPreview() }
     }
 
     func resetForFoodOnly() {
@@ -6245,6 +6563,7 @@ final class AdventureComboBuilderViewModel: ObservableObject {
             catalog: state.catalog
         )
         Task { await loadAvailability() }
+        Task { await refreshRewardPreview() }
     }
 
     func replaceItems(with items: [AdventureReservationItemDraft], packageDiscountAmount: Double = 0) {
@@ -6254,6 +6573,10 @@ final class AdventureComboBuilderViewModel: ObservableObject {
         }
 
         state.items = uniqueItems.isEmpty ? [] : uniqueItems
+        state.foodItems = []
+        state.foodServingMoment = .afterActivities
+        state.foodServingTime = state.selectedDate
+        state.foodNotes = ""
         state.packageDiscountAmount = max(0, packageDiscountAmount)
         keepCampingAtEnd()
         refreshPackageDiscount()
@@ -6261,6 +6584,59 @@ final class AdventureComboBuilderViewModel: ObservableObject {
         state.errorMessage = nil
         state.successMessage = nil
         Task { await loadAvailability() }
+        Task { await refreshRewardPreview() }
+    }
+
+    func replacePackage(_ package: AdventureFeaturedPackage, menuSections: [MenuSection]) {
+        let uniqueItems = package.items.reduce(into: [AdventureReservationItemDraft]()) { result, item in
+            guard !result.contains(where: { $0.activity == item.activity }) else { return }
+            result.append(item)
+        }
+
+        state.items = uniqueItems
+        state.foodItems = materializePackageFoodItems(from: package, menuSections: menuSections)
+        state.foodServingMoment = state.items.isEmpty ? .onArrival : .afterActivities
+        state.foodServingTime = state.selectedDate
+        state.foodNotes = ""
+        state.packageDiscountAmount = max(0, package.packageDiscountAmount)
+        keepCampingAtEnd()
+        refreshPackageDiscount()
+        state.selectedSlot = nil
+        state.errorMessage = nil
+        state.successMessage = nil
+        Task { await loadAvailability() }
+        Task { await refreshRewardPreview() }
+    }
+
+    private func materializePackageFoodItems(
+        from package: AdventureFeaturedPackage,
+        menuSections: [MenuSection]
+    ) -> [ReservationFoodItemDraft] {
+        let menuItemsById = Dictionary(
+            uniqueKeysWithValues: menuSections
+                .flatMap(\.items)
+                .map { ($0.id, $0) }
+        )
+
+        return package.foodItems.map { packageItem in
+            if let menuItem = menuItemsById[packageItem.menuItemId] {
+                return ReservationFoodItemDraft(
+                    menuItemId: menuItem.id,
+                    name: menuItem.name,
+                    unitPrice: menuItem.finalPrice,
+                    quantity: packageItem.quantity,
+                    notes: nil
+                )
+            }
+
+            return ReservationFoodItemDraft(
+                menuItemId: packageItem.menuItemId,
+                name: packageItem.menuItemId,
+                unitPrice: 0,
+                quantity: packageItem.quantity,
+                notes: nil
+            )
+        }
     }
 
     private func loadCatalogIfNeeded() async {
@@ -6321,7 +6697,7 @@ final class AdventureComboBuilderViewModel: ObservableObject {
 
         state.isLoadingAvailability = false
     }
-    
+
     private struct PackageSignature: Hashable, Comparable {
         let activity: AdventureActivityType
         let durationMinutes: Int
@@ -6342,6 +6718,7 @@ final class AdventureComboBuilderViewModel: ObservableObject {
 
     private struct PackageCandidate: Hashable {
         let matchedItemIDs: Set<String>
+        let consumedFoodQuantities: [String: Int]
         let discountAmount: Double
     }
 
@@ -6356,60 +6733,115 @@ final class AdventureComboBuilderViewModel: ObservableObject {
         )
     }
 
-    private func matchingPackageCandidates() -> [PackageCandidate] {
-        guard !state.items.isEmpty else { return [] }
+    private func availableFoodQuantities() -> [String: Int] {
+        state.foodItems.reduce(into: [String: Int]()) { result, item in
+            result[item.menuItemId, default: 0] += item.quantity
+        }
+    }
 
+    private func matchingPackageCandidates() -> [PackageCandidate] {
         let availableItems = state.items.map { (id: $0.id, signature: signature(for: $0)) }
+        let availableFood = availableFoodQuantities()
 
         return state.catalog.activePackagesSorted.compactMap { package in
-            // A single activity is never a combo discount.
-            guard package.items.count >= 2 else { return nil }
             guard package.packageDiscountAmount > 0 else { return nil }
+            guard package.items.count >= 2 || !package.foodItems.isEmpty else { return nil }
 
-            var remaining = availableItems
+            var remainingItems = availableItems
             var matchedIDs: Set<String> = []
 
             for packageItem in package.items {
                 let target = signature(for: packageItem)
 
-                guard let index = remaining.firstIndex(where: { $0.signature == target }) else {
+                guard let index = remainingItems.firstIndex(where: { $0.signature == target }) else {
                     return nil
                 }
 
-                matchedIDs.insert(remaining[index].id)
-                remaining.remove(at: index)
+                matchedIDs.insert(remainingItems[index].id)
+                remainingItems.remove(at: index)
+            }
+
+            let requiredFood = package.foodItems.reduce(into: [String: Int]()) { result, item in
+                result[item.menuItemId, default: 0] += item.quantity
+            }
+
+            for (menuItemId, requiredQuantity) in requiredFood {
+                guard availableFood[menuItemId, default: 0] >= requiredQuantity else {
+                    return nil
+                }
             }
 
             return PackageCandidate(
                 matchedItemIDs: matchedIDs,
+                consumedFoodQuantities: requiredFood,
                 discountAmount: package.packageDiscountAmount
             )
         }
     }
 
+    private func canTake(
+        _ candidate: PackageCandidate,
+        usedItemIDs: Set<String>,
+        usedFoodQuantities: [String: Int],
+        availableFoodQuantities: [String: Int]
+    ) -> Bool {
+        guard usedItemIDs.isDisjoint(with: candidate.matchedItemIDs) else {
+            return false
+        }
+
+        for (menuItemId, quantityToConsume) in candidate.consumedFoodQuantities {
+            let alreadyUsed = usedFoodQuantities[menuItemId, default: 0]
+            let available = availableFoodQuantities[menuItemId, default: 0]
+            guard alreadyUsed + quantityToConsume <= available else {
+                return false
+            }
+        }
+
+        return true
+    }
+
+    private func applying(
+        _ candidate: PackageCandidate,
+        to usedFoodQuantities: [String: Int]
+    ) -> [String: Int] {
+        var next = usedFoodQuantities
+        for (menuItemId, quantityToConsume) in candidate.consumedFoodQuantities {
+            next[menuItemId, default: 0] += quantityToConsume
+        }
+        return next
+    }
+
     private func bestPackageDiscountAmount() -> Double {
         let candidates = matchingPackageCandidates()
+        let availableFood = availableFoodQuantities()
+
         guard !candidates.isEmpty else { return 0 }
 
-        func solve(from index: Int, used: Set<String>) -> Double {
+        func solve(from index: Int, usedItems: Set<String>, usedFood: [String: Int]) -> Double {
             guard index < candidates.count else { return 0 }
 
-            let skip = solve(from: index + 1, used: used)
+            let skip = solve(from: index + 1, usedItems: usedItems, usedFood: usedFood)
             let candidate = candidates[index]
 
-            if !used.isDisjoint(with: candidate.matchedItemIDs) {
+            guard canTake(
+                candidate,
+                usedItemIDs: usedItems,
+                usedFoodQuantities: usedFood,
+                availableFoodQuantities: availableFood
+            ) else {
                 return skip
             }
 
             let take = candidate.discountAmount + solve(
                 from: index + 1,
-                used: used.union(candidate.matchedItemIDs)
+                usedItems: usedItems.union(candidate.matchedItemIDs),
+                usedFood: applying(candidate, to: usedFood)
             )
 
             return max(skip, take)
         }
 
-        return solve(from: 0, used: [])
+        return solve(from: 0, usedItems: [], usedFood: [:])
     }
 
     private func refreshPackageDiscount() {
@@ -6421,8 +6853,16 @@ final class AdventureComboBuilderViewModel: ObservableObject {
         refreshPackageDiscount()
         state.selectedSlot = nil
         Task { await loadAvailability() }
+        Task { await refreshRewardPreview() }
     }
-    
+
+    private func refreshAfterFoodChanged() {
+        refreshPackageDiscount()
+        state.selectedSlot = nil
+        Task { await loadAvailability() }
+        Task { await refreshRewardPreview() }
+    }
+
     private func submitReservation(clientId: String?) async {
         guard !state.isSubmitting else { return }
 
@@ -6452,6 +6892,8 @@ final class AdventureComboBuilderViewModel: ObservableObject {
                 items: state.items,
                 foodReservation: foodDraft,
                 packageDiscountAmount: state.packageDiscountAmount,
+                loyaltyDiscountAmount: state.rewardPreview.totalDiscount,
+                appliedRewards: state.rewardPreview.appliedRewards,
                 notes: validated.notes
             )
 
@@ -6462,7 +6904,7 @@ final class AdventureComboBuilderViewModel: ObservableObject {
             state.errorMessage = error.localizedDescription
         }
     }
-    
+
     private struct ValidatedReservationInput {
         let clientName: String
         let whatsappNumber: String
@@ -6553,7 +6995,7 @@ final class AdventureComboBuilderViewModel: ObservableObject {
             notes: cleanNotes.isEmpty ? nil : cleanNotes
         )
     }
-    
+
     private func normalizedText(_ value: String) -> String {
         value
             .components(separatedBy: .whitespacesAndNewlines)
@@ -6594,7 +7036,7 @@ final class AdventureComboBuilderViewModel: ObservableObject {
         }
 
         guard let normalized else { return nil }
-        guard Set(normalized).count > 1 else { return nil } // rejects 0999999999, 0000000000, etc.
+        guard Set(normalized).count > 1 else { return nil }
 
         return normalized
     }
@@ -6680,63 +7122,6 @@ final class AdventureComboBuilderViewModel: ObservableObject {
             second: 0,
             of: state.selectedDate
         )
-    }
-    
-    private func normalizedPackageSignature(
-        for items: [AdventureReservationItemDraft]
-    ) -> [PackageItemSignature] {
-        items
-            .map(PackageItemSignature.init)
-            .sorted()
-    }
-
-    private func resolvedPackageDiscountAmount(
-        for items: [AdventureReservationItemDraft]
-    ) -> Double {
-        guard items.count >= 2 else { return 0 }
-
-        let currentSignature = normalizedPackageSignature(for: items)
-
-        return state.catalog.activePackagesSorted.first(where: { package in
-            normalizedPackageSignature(for: package.items) == currentSignature
-        })?.packageDiscountAmount ?? 0
-    }
-
-    private struct PackageItemSignature: Hashable, Comparable {
-        let activity: AdventureActivityType
-        let durationMinutes: Int
-        let peopleCount: Int
-        let vehicleCount: Int
-        let offRoadRiderCount: Int
-        let nights: Int
-
-        init(_ item: AdventureReservationItemDraft) {
-            self.activity = item.activity
-            self.durationMinutes = item.durationMinutes
-            self.peopleCount = item.peopleCount
-            self.vehicleCount = item.vehicleCount
-            self.offRoadRiderCount = item.offRoadRiderCount
-            self.nights = item.nights
-        }
-
-        static func < (lhs: PackageItemSignature, rhs: PackageItemSignature) -> Bool {
-            if lhs.activity.rawValue != rhs.activity.rawValue {
-                return lhs.activity.rawValue < rhs.activity.rawValue
-            }
-            if lhs.durationMinutes != rhs.durationMinutes {
-                return lhs.durationMinutes < rhs.durationMinutes
-            }
-            if lhs.peopleCount != rhs.peopleCount {
-                return lhs.peopleCount < rhs.peopleCount
-            }
-            if lhs.vehicleCount != rhs.vehicleCount {
-                return lhs.vehicleCount < rhs.vehicleCount
-            }
-            if lhs.offRoadRiderCount != rhs.offRoadRiderCount {
-                return lhs.offRoadRiderCount < rhs.offRoadRiderCount
-            }
-            return lhs.nights < rhs.nights
-        }
     }
 }
 
@@ -7891,12 +8276,14 @@ import AuthenticationServices
 @MainActor
 final class AppSessionViewModel: ObservableObject {
     @Published private(set) var state: AppSessionState = .loading
+    @Published private(set) var rewardWalletSnapshot: RewardWalletSnapshot = .empty(nationalId: "")
 
     private let signInWithAppleUseCase: SignInWithAppleUseCase
     private let resolveSessionUseCase: ResolveSessionUseCase
     private let completeClientProfileUseCase: CompleteClientProfileUseCase
     private let deleteCurrentAccountUseCase: DeleteCurrentAccountUseCase
     private let signOutUseCase: SignOutUseCase
+    private let loyaltyRewardsService: LoyaltyRewardsServiceable
 
     private var currentNonce: String?
 
@@ -7905,13 +8292,15 @@ final class AppSessionViewModel: ObservableObject {
         resolveSessionUseCase: ResolveSessionUseCase,
         completeClientProfileUseCase: CompleteClientProfileUseCase,
         deleteCurrentAccountUseCase: DeleteCurrentAccountUseCase,
-        signOutUseCase: SignOutUseCase
+        signOutUseCase: SignOutUseCase,
+        loyaltyRewardsService: LoyaltyRewardsServiceable
     ) {
         self.signInWithAppleUseCase = signInWithAppleUseCase
         self.resolveSessionUseCase = resolveSessionUseCase
         self.completeClientProfileUseCase = completeClientProfileUseCase
         self.deleteCurrentAccountUseCase = deleteCurrentAccountUseCase
         self.signOutUseCase = signOutUseCase
+        self.loyaltyRewardsService = loyaltyRewardsService
 
         Task { await bootstrap() }
     }
@@ -8003,7 +8392,7 @@ final class AppSessionViewModel: ObservableObject {
         let saveUseCase = completeClientProfileUseCase
         let deleteUseCase = deleteCurrentAccountUseCase
         let imageStorageService = ProfileImageStorageService()
-        let statsService = ProfileStatsService()
+        let statsService = ProfileStatsService(loyaltyRewardsService: loyaltyRewardsService)
 
         return { [weak self] in
             ProfileViewModel(
@@ -9516,6 +9905,480 @@ final class RemoteImageLoader: ObservableObject {
 
 ---
 
+# Altos del Murco/root/feature/altos/profile/data/LoyaltyRewardsService.swift
+
+```swift
+//
+//  LoyaltyRewardsService.swift
+//  Altos del Murco
+//
+//  Created by José Ruiz on 21/4/26.
+//
+
+import Foundation
+import FirebaseFirestore
+
+protocol LoyaltyRewardsListenerToken {
+    func remove()
+}
+
+final class FirestoreLoyaltyWalletListenerToken: LoyaltyRewardsListenerToken {
+    private var registration: ListenerRegistration?
+
+    init(registration: ListenerRegistration?) {
+        self.registration = registration
+    }
+
+    func remove() {
+        registration?.remove()
+        registration = nil
+    }
+}
+
+protocol LoyaltyRewardsServiceable {
+    func loadWalletSnapshot(for nationalId: String) async throws -> RewardWalletSnapshot
+
+    func observeWalletSnapshot(
+        for nationalId: String,
+        onChange: @escaping (Result<RewardWalletSnapshot, Error>) -> Void
+    ) -> LoyaltyRewardsListenerToken
+
+    func previewRestaurantRewards(
+        for nationalId: String,
+        items: [OrderItem]
+    ) async throws -> RewardComputationResult
+
+    func previewAdventureRewards(
+        for nationalId: String,
+        activityItems: [AdventureReservationItemDraft],
+        foodItems: [ReservationFoodItemDraft],
+        catalog: AdventureCatalogSnapshot
+    ) async throws -> RewardComputationResult
+
+    func reserveRewards(
+        nationalId: String,
+        referenceType: LoyaltyRewardReferenceType,
+        referenceId: String,
+        appliedRewards: [AppliedReward]
+    ) async throws
+
+    func consumeRewards(
+        nationalId: String,
+        referenceId: String
+    ) async throws
+
+    func releaseRewards(
+        nationalId: String,
+        referenceId: String
+    ) async throws
+}
+
+final class LoyaltyRewardsService: LoyaltyRewardsServiceable {
+    private let db: Firestore
+
+    init(db: Firestore = Firestore.firestore()) {
+        self.db = db
+    }
+
+    func loadWalletSnapshot(for nationalId: String) async throws -> RewardWalletSnapshot {
+        let cleanNationalId = nationalId.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleanNationalId.isEmpty else { return .empty(nationalId: "") }
+
+        async let templatesTask = fetchTemplates()
+        async let totalsTask = computeTotals(for: cleanNationalId)
+        async let walletTask = fetchWalletDocument(for: cleanNationalId)
+
+        let templates = try await templatesTask
+        let totals = try await totalsTask
+        let walletDocument = try await walletTask
+
+        let currentLevel = LoyaltyLevel.from(totalSpent: totals.totalSpent)
+
+        let eligibleTemplates = templates.filter { template in
+            template.isActive &&
+            template.triggerMode == .automatic &&
+            template.isEligible(for: currentLevel) &&
+            usageCount(
+                templateId: template.id,
+                inside: walletDocument.events
+            ) < max(1, template.maxUsesPerClient)
+        }
+        .sorted { lhs, rhs in
+            if lhs.priority != rhs.priority { return lhs.priority < rhs.priority }
+            return lhs.title < rhs.title
+        }
+
+        let reserved = walletDocument.events.filter { $0.status == .reserved }
+        let consumed = walletDocument.events.filter { $0.status == .consumed }
+        let released = walletDocument.events.filter { $0.status == .released }
+
+        return RewardWalletSnapshot(
+            nationalId: cleanNationalId,
+            currentLevel: currentLevel,
+            totalSpent: totals.totalSpent,
+            points: Int(totals.totalSpent.rounded(.down)),
+            availableTemplates: eligibleTemplates,
+            reservedEvents: reserved,
+            consumedEvents: consumed,
+            releasedEvents: released
+        )
+    }
+
+    func observeWalletSnapshot(
+        for nationalId: String,
+        onChange: @escaping (Result<RewardWalletSnapshot, Error>) -> Void
+    ) -> LoyaltyRewardsListenerToken {
+        let cleanNationalId = nationalId.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard !cleanNationalId.isEmpty else {
+            onChange(.success(.empty(nationalId: "")))
+            return FirestoreLoyaltyWalletListenerToken(registration: nil)
+        }
+
+        let walletRef = db.collection(FirestoreConstants.client_loyalty_wallets).document(cleanNationalId)
+
+        let registration = walletRef.addSnapshotListener { [weak self] _, error in
+            guard let self else { return }
+
+            if let error {
+                onChange(.failure(error))
+                return
+            }
+
+            Task {
+                do {
+                    let snapshot = try await self.loadWalletSnapshot(for: cleanNationalId)
+                    await MainActor.run {
+                        onChange(.success(snapshot))
+                    }
+                } catch {
+                    await MainActor.run {
+                        onChange(.failure(error))
+                    }
+                }
+            }
+        }
+
+        return FirestoreLoyaltyWalletListenerToken(registration: registration)
+    }
+
+    func previewRestaurantRewards(
+        for nationalId: String,
+        items: [OrderItem]
+    ) async throws -> RewardComputationResult {
+        let wallet = try await loadWalletSnapshot(for: nationalId)
+
+        let lines = items.map {
+            RewardMenuLine(
+                menuItemId: $0.menuItemId,
+                name: $0.name,
+                unitPrice: $0.unitPrice,
+                quantity: $0.quantity
+            )
+        }
+
+        return LoyaltyRewardEngine.evaluateRestaurant(
+            templates: wallet.availableTemplates,
+            wallet: wallet,
+            menuLines: lines
+        )
+    }
+
+    func previewAdventureRewards(
+        for nationalId: String,
+        activityItems: [AdventureReservationItemDraft],
+        foodItems: [ReservationFoodItemDraft],
+        catalog: AdventureCatalogSnapshot
+    ) async throws -> RewardComputationResult {
+        let wallet = try await loadWalletSnapshot(for: nationalId)
+
+        let activityLines = activityItems.compactMap { item -> RewardActivityLine? in
+            guard let activity = catalog.activity(for: item.activity) else { return nil }
+            let linePrice = AdventurePricingEngine.subtotal(for: item, catalog: catalog)
+
+            return RewardActivityLine(
+                activityId: activity.id,
+                title: activity.title,
+                linePrice: linePrice
+            )
+        }
+
+        let foodLines = foodItems.map {
+            RewardMenuLine(
+                menuItemId: $0.menuItemId,
+                name: $0.name,
+                unitPrice: $0.unitPrice,
+                quantity: $0.quantity
+            )
+        }
+
+        return LoyaltyRewardEngine.evaluateAdventure(
+            templates: wallet.availableTemplates,
+            wallet: wallet,
+            activityLines: activityLines,
+            foodLines: foodLines
+        )
+    }
+
+    func reserveRewards(
+        nationalId: String,
+        referenceType: LoyaltyRewardReferenceType,
+        referenceId: String,
+        appliedRewards: [AppliedReward]
+    ) async throws {
+        guard !appliedRewards.isEmpty else { return }
+
+        let cleanNationalId = nationalId.trimmingCharacters(in: .whitespacesAndNewlines)
+        let walletRef = db.collection(FirestoreConstants.client_loyalty_wallets).document(cleanNationalId)
+
+        _ = try await db.runTransaction { transaction, errorPointer in
+            do {
+                let walletDocument = try Self.loadWalletDocument(
+                    from: transaction,
+                    walletRef: walletRef
+                )
+
+                var events = walletDocument.events
+
+                for reward in appliedRewards {
+                    let templateRef = self.db
+                        .collection(FirestoreConstants.loyalty_reward_templates)
+                        .document(reward.templateId)
+
+                    let templateSnapshot = try transaction.getDocument(templateRef)
+                    guard templateSnapshot.exists else {
+                        throw NSError(
+                            domain: "LoyaltyRewardsService",
+                            code: 10,
+                            userInfo: [NSLocalizedDescriptionKey: "Reward template \(reward.templateId) no longer exists."]
+                        )
+                    }
+
+                    let templateDto = try templateSnapshot.data(as: LoyaltyRewardTemplateDto.self)
+                    let template = templateDto.toDomain()
+
+                    let alreadyUsed = Self.usageCount(
+                        templateId: reward.templateId,
+                        inside: events
+                    )
+
+                    guard alreadyUsed < max(1, template.maxUsesPerClient) else {
+                        throw NSError(
+                            domain: "LoyaltyRewardsService",
+                            code: 11,
+                            userInfo: [NSLocalizedDescriptionKey: "The reward \(template.title) is no longer available."]
+                        )
+                    }
+
+                    events.append(
+                        LoyaltyWalletEvent(
+                            id: reward.id,
+                            templateId: reward.templateId,
+                            templateTitle: reward.title,
+                            referenceType: referenceType,
+                            referenceId: referenceId,
+                            status: .reserved,
+                            amount: reward.amount,
+                            createdAt: Date(),
+                            updatedAt: Date()
+                        )
+                    )
+                }
+
+                let updated = LoyaltyWalletDocument(
+                    nationalId: cleanNationalId,
+                    updatedAt: Date(),
+                    events: events
+                )
+
+                try transaction.setData(from: updated, forDocument: walletRef, merge: true)
+                return nil
+            } catch {
+                errorPointer?.pointee = error as NSError
+                return nil
+            }
+        }
+    }
+
+    func consumeRewards(
+        nationalId: String,
+        referenceId: String
+    ) async throws {
+        try await mutateReferenceStatus(
+            nationalId: nationalId,
+            referenceId: referenceId,
+            targetStatus: .consumed
+        )
+    }
+
+    func releaseRewards(
+        nationalId: String,
+        referenceId: String
+    ) async throws {
+        try await mutateReferenceStatus(
+            nationalId: nationalId,
+            referenceId: referenceId,
+            targetStatus: .released
+        )
+    }
+
+    private func mutateReferenceStatus(
+        nationalId: String,
+        referenceId: String,
+        targetStatus: LoyaltyWalletEventStatus
+    ) async throws {
+        let cleanNationalId = nationalId.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleanNationalId.isEmpty else { return }
+
+        let walletRef = db.collection(FirestoreConstants.client_loyalty_wallets).document(cleanNationalId)
+
+        _ = try await db.runTransaction { transaction, errorPointer in
+            do {
+                let wallet = try Self.loadWalletDocument(
+                    from: transaction,
+                    walletRef: walletRef
+                )
+
+                let updatedEvents = wallet.events.map { event in
+                    guard event.referenceId == referenceId else { return event }
+                    guard event.status == .reserved else { return event }
+
+                    return LoyaltyWalletEvent(
+                        id: event.id,
+                        templateId: event.templateId,
+                        templateTitle: event.templateTitle,
+                        referenceType: event.referenceType,
+                        referenceId: event.referenceId,
+                        status: targetStatus,
+                        amount: event.amount,
+                        createdAt: event.createdAt,
+                        updatedAt: Date()
+                    )
+                }
+
+                let updated = LoyaltyWalletDocument(
+                    nationalId: cleanNationalId,
+                    updatedAt: Date(),
+                    events: updatedEvents
+                )
+
+                try transaction.setData(from: updated, forDocument: walletRef, merge: true)
+                return nil
+            } catch {
+                errorPointer?.pointee = error as NSError
+                return nil
+            }
+        }
+    }
+
+    private func fetchTemplates() async throws -> [LoyaltyRewardTemplate] {
+        let snapshot = try await db
+            .collection(FirestoreConstants.loyalty_reward_templates)
+            .getDocuments()
+
+        return try snapshot.documents
+            .map { try $0.data(as: LoyaltyRewardTemplateDto.self).toDomain() }
+            .sorted { lhs, rhs in
+                if lhs.priority != rhs.priority { return lhs.priority < rhs.priority }
+                return lhs.title < rhs.title
+            }
+    }
+
+    private func fetchWalletDocument(
+        for nationalId: String
+    ) async throws -> LoyaltyWalletDocument {
+        let ref = db.collection(FirestoreConstants.client_loyalty_wallets).document(nationalId)
+        let snapshot = try await ref.getDocument()
+
+        guard snapshot.exists else {
+            return LoyaltyWalletDocument(
+                nationalId: nationalId,
+                updatedAt: Date(),
+                events: []
+            )
+        }
+
+        return try snapshot.data(as: LoyaltyWalletDocument.self)
+    }
+
+    private func computeTotals(
+        for nationalId: String
+    ) async throws -> (restaurantSpent: Double, adventureSpent: Double, totalSpent: Double) {
+        async let ordersTask = db
+            .collection(FirestoreConstants.restaurant_orders)
+            .whereField("nationalId", isEqualTo: nationalId)
+            .getDocuments()
+
+        async let bookingsTask = db
+            .collection(FirestoreConstants.adventure_bookings)
+            .whereField("nationalId", isEqualTo: nationalId)
+            .getDocuments()
+
+        let orderSnapshot = try await ordersTask
+        let bookingSnapshot = try await bookingsTask
+
+        let orders: [Order] = try orderSnapshot.documents.compactMap { document in
+            let dto = try document.data(as: OrderDto.self)
+            return dto.toDomain()
+        }
+
+        let bookings: [AdventureBooking] = try bookingSnapshot.documents.compactMap { document in
+            let dto = try document.data(as: AdventureBookingDto.self)
+            return dto.toDomain(documentId: document.documentID)
+        }
+
+        let completedOrders = orders.filter { $0.recalculatedStatus() == .completed }
+        let completedBookings = bookings.filter { $0.status == .completed }
+
+        let restaurantSpent = completedOrders.reduce(0) { $0 + $1.totalAmount }
+        let adventureSpent = completedBookings.reduce(0) { $0 + $1.totalAmount }
+
+        return (
+            restaurantSpent: restaurantSpent,
+            adventureSpent: adventureSpent,
+            totalSpent: restaurantSpent + adventureSpent
+        )
+    }
+
+    private func usageCount(
+        templateId: String,
+        inside events: [LoyaltyWalletEvent]
+    ) -> Int {
+        Self.usageCount(templateId: templateId, inside: events)
+    }
+
+    private static func usageCount(
+        templateId: String,
+        inside events: [LoyaltyWalletEvent]
+    ) -> Int {
+        events.filter {
+            $0.templateId == templateId &&
+            ($0.status == .reserved || $0.status == .consumed)
+        }.count
+    }
+
+    private static func loadWalletDocument(
+        from transaction: Transaction,
+        walletRef: DocumentReference
+    ) throws -> LoyaltyWalletDocument {
+        let snapshot = try transaction.getDocument(walletRef)
+
+        guard snapshot.exists else {
+            return LoyaltyWalletDocument(
+                nationalId: walletRef.documentID,
+                updatedAt: Date(),
+                events: []
+            )
+        }
+
+        return try snapshot.data(as: LoyaltyWalletDocument.self)
+    }
+}
+
+```
+
+---
+
 # Altos del Murco/root/feature/altos/profile/data/ProfileImageCache.swift
 
 ```swift
@@ -9683,11 +10546,44 @@ final class ProfileImageStorageService {
 import Foundation
 import FirebaseFirestore
 
+protocol ProfileStatsListenerToken {
+    func remove()
+}
+
+private final class EmptyProfileStatsListenerToken: ProfileStatsListenerToken {
+    func remove() { }
+}
+
+private final class CompositeProfileStatsListenerToken: ProfileStatsListenerToken {
+    private var registrations: [ListenerRegistration]
+    private var walletListenerToken: LoyaltyRewardsListenerToken?
+
+    init(
+        registrations: [ListenerRegistration],
+        walletListenerToken: LoyaltyRewardsListenerToken?
+    ) {
+        self.registrations = registrations
+        self.walletListenerToken = walletListenerToken
+    }
+
+    func remove() {
+        registrations.forEach { $0.remove() }
+        registrations.removeAll()
+        walletListenerToken?.remove()
+        walletListenerToken = nil
+    }
+}
+
 final class ProfileStatsService {
     private let db: Firestore
+    private let loyaltyRewardsService: LoyaltyRewardsServiceable
 
-    init(db: Firestore = Firestore.firestore()) {
+    init(
+        db: Firestore = Firestore.firestore(),
+        loyaltyRewardsService: LoyaltyRewardsServiceable
+    ) {
         self.db = db
+        self.loyaltyRewardsService = loyaltyRewardsService
     }
 
     func loadStats(for nationalId: String) async throws -> ProfileStats {
@@ -9704,15 +10600,18 @@ final class ProfileStatsService {
             .whereField("nationalId", isEqualTo: cleanNationalId)
             .getDocuments()
 
+        async let walletTask = loyaltyRewardsService.loadWalletSnapshot(for: cleanNationalId)
+
         let ordersSnapshot = try await ordersTask
         let bookingsSnapshot = try await bookingsTask
+        let wallet = try await walletTask
 
         let orders: [Order] = try ordersSnapshot.documents.compactMap { document in
             let dto = try document.data(as: OrderDto.self)
             return dto.toDomain()
         }
 
-        let bookings: [AdventureBooking] = try bookingsSnapshot.documents.map { document in
+        let bookings: [AdventureBooking] = try bookingsSnapshot.documents.compactMap { document in
             let dto = try document.data(as: AdventureBookingDto.self)
             return dto.toDomain(documentId: document.documentID)
         }
@@ -9725,13 +10624,84 @@ final class ProfileStatsService {
         let totalSpent = restaurantSpent + adventureSpent
 
         return ProfileStats(
-            points: Int(totalSpent.rounded(.down)),
+            points: wallet.points,
             completedOrders: completedOrders.count,
             completedBookings: completedBookings.count,
             restaurantSpent: restaurantSpent,
             adventureSpent: adventureSpent,
             totalSpent: totalSpent,
-            level: LoyaltyLevel.from(totalSpent: totalSpent)
+            level: wallet.currentLevel,
+            wallet: wallet
+        )
+    }
+
+    func observeStats(
+        for nationalId: String,
+        onChange: @escaping (Result<ProfileStats, Error>) -> Void
+    ) -> ProfileStatsListenerToken {
+        let cleanNationalId = nationalId.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard !cleanNationalId.isEmpty else {
+            onChange(.success(.empty))
+            return EmptyProfileStatsListenerToken()
+        }
+
+        let emit: @Sendable () -> Void = { [weak self] in
+            guard let self else { return }
+
+            Task {
+                do {
+                    let stats = try await self.loadStats(for: cleanNationalId)
+                    await MainActor.run {
+                        onChange(.success(stats))
+                    }
+                } catch {
+                    await MainActor.run {
+                        onChange(.failure(error))
+                    }
+                }
+            }
+        }
+
+        let ordersRegistration = db
+            .collection(FirestoreConstants.restaurant_orders)
+            .whereField("nationalId", isEqualTo: cleanNationalId)
+            .addSnapshotListener { _, error in
+                if let error {
+                    onChange(.failure(error))
+                    return
+                }
+
+                emit()
+            }
+
+        let bookingsRegistration = db
+            .collection(FirestoreConstants.adventure_bookings)
+            .whereField("nationalId", isEqualTo: cleanNationalId)
+            .addSnapshotListener { _, error in
+                if let error {
+                    onChange(.failure(error))
+                    return
+                }
+
+                emit()
+            }
+
+        let walletListener = loyaltyRewardsService.observeWalletSnapshot(for: cleanNationalId) { result in
+            switch result {
+            case .success:
+                emit()
+
+            case .failure(let error):
+                onChange(.failure(error))
+            }
+        }
+
+        emit()
+
+        return CompositeProfileStatsListenerToken(
+            registrations: [ordersRegistration, bookingsRegistration],
+            walletListenerToken: walletListener
         )
     }
 }
@@ -9815,6 +10785,883 @@ struct ClientProfileDocument: Codable {
 
 ---
 
+# Altos del Murco/root/feature/altos/profile/domain/LoyaltyLevel.swift
+
+```swift
+//
+//  LoyaltyLevel.swift
+//  Altos del Murco
+//
+//  Created by José Ruiz on 19/4/26.
+//
+
+import Foundation
+
+enum LoyaltyLevel: String, Codable, CaseIterable, Hashable, Identifiable {
+    case bronze
+    case silver
+    case gold
+    case platinum
+    case diamond
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .bronze: return "Bronce"
+        case .silver: return "Plata"
+        case .gold: return "Oro"
+        case .platinum: return "Platino"
+        case .diamond: return "Diamante"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .bronze: return "sparkles"
+        case .silver: return "seal.fill"
+        case .gold: return "star.circle.fill"
+        case .platinum: return "crown.fill"
+        case .diamond: return "diamond.fill"
+        }
+    }
+
+    var badgeSubtitle: String {
+        switch self {
+        case .bronze: return "Tus primeras visitas ya empiezan a premiarte"
+        case .silver: return "Más beneficios cada vez que vuelves"
+        case .gold: return "Descuentos más fuertes y regalos más frecuentes"
+        case .platinum: return "Nivel preferente con premios premium"
+        case .diamond: return "Nuestro máximo nivel para clientes top"
+        }
+    }
+
+    var minimumSpent: Double {
+        switch self {
+        case .bronze: return 0
+        case .silver: return 100
+        case .gold: return 300
+        case .platinum: return 800
+        case .diamond: return 1500
+        }
+    }
+
+    var spendRangeText: String {
+        switch self {
+        case .bronze: return "De $0 a $99"
+        case .silver: return "De $100 a $299"
+        case .gold: return "De $300 a $799"
+        case .platinum: return "De $800 a $1499"
+        case .diamond: return "Desde $1500"
+        }
+    }
+
+    var nextLevel: LoyaltyLevel? {
+        switch self {
+        case .bronze: return .silver
+        case .silver: return .gold
+        case .gold: return .platinum
+        case .platinum: return .diamond
+        case .diamond: return nil
+        }
+    }
+
+    func remainingSpend(from totalSpent: Double) -> Double {
+        guard let nextLevel else { return 0 }
+        return max(nextLevel.minimumSpent - totalSpent, 0)
+    }
+
+    static func from(totalSpent: Double) -> LoyaltyLevel {
+        switch totalSpent {
+        case 0..<100: return .bronze
+        case 100..<300: return .silver
+        case 300..<800: return .gold
+        case 800..<1500: return .platinum
+        default: return .diamond
+        }
+    }
+
+    static func progress(for totalSpent: Double) -> Double {
+        let current = from(totalSpent: totalSpent)
+        guard let next = current.nextLevel else { return 1 }
+
+        let start = current.minimumSpent
+        let end = next.minimumSpent
+        guard end > start else { return 1 }
+
+        let raw = (totalSpent - start) / (end - start)
+        return min(max(raw, 0), 1)
+    }
+}
+
+```
+
+---
+
+# Altos del Murco/root/feature/altos/profile/domain/LoyaltyRewardEngine.swift
+
+```swift
+//
+//  LoyaltyRewardEngine.swift
+//  Altos del Murco
+//
+//  Created by José Ruiz on 21/4/26.
+//
+
+import Foundation
+
+enum LoyaltyRewardEngine {
+    static func evaluateRestaurant(
+        templates: [LoyaltyRewardTemplate],
+        wallet: RewardWalletSnapshot,
+        menuLines: [RewardMenuLine]
+    ) -> RewardComputationResult {
+        let eligible = templates.filter {
+            $0.isActive &&
+            $0.triggerMode == .automatic &&
+            $0.scope.matchesRestaurant() &&
+            $0.isEligible(for: wallet.currentLevel)
+        }
+
+        let stackableTemplates = eligible.filter(\.canStack).sorted { lhs, rhs in
+            if lhs.priority != rhs.priority { return lhs.priority < rhs.priority }
+            return lhs.title < rhs.title
+        }
+
+        let exclusiveTemplates = eligible.filter { !$0.canStack }.sorted { lhs, rhs in
+            if lhs.priority != rhs.priority { return lhs.priority < rhs.priority }
+            return lhs.title < rhs.title
+        }
+
+        let stackableResult = applyRestaurantTemplates(stackableTemplates, menuLines: menuLines)
+        let bestExclusive = exclusiveTemplates
+            .map { applyRestaurantTemplates([$0], menuLines: menuLines) }
+            .max { lhs, rhs in lhs.totalDiscount < rhs.totalDiscount }
+
+        let winner = (bestExclusive?.totalDiscount ?? 0) > stackableResult.totalDiscount
+            ? bestExclusive!
+            : stackableResult
+
+        return RewardComputationResult(
+            appliedRewards: winner.appliedRewards,
+            totalDiscount: winner.totalDiscount,
+            walletSnapshot: wallet
+        )
+    }
+
+    static func evaluateAdventure(
+        templates: [LoyaltyRewardTemplate],
+        wallet: RewardWalletSnapshot,
+        activityLines: [RewardActivityLine],
+        foodLines: [RewardMenuLine]
+    ) -> RewardComputationResult {
+        let eligible = templates.filter {
+            $0.isActive &&
+            $0.triggerMode == .automatic &&
+            $0.scope.matchesAdventure() &&
+            $0.isEligible(for: wallet.currentLevel)
+        }
+
+        let stackableTemplates = eligible.filter(\.canStack).sorted { lhs, rhs in
+            if lhs.priority != rhs.priority { return lhs.priority < rhs.priority }
+            return lhs.title < rhs.title
+        }
+
+        let exclusiveTemplates = eligible.filter { !$0.canStack }.sorted { lhs, rhs in
+            if lhs.priority != rhs.priority { return lhs.priority < rhs.priority }
+            return lhs.title < rhs.title
+        }
+
+        let stackableResult = applyAdventureTemplates(
+            stackableTemplates,
+            activityLines: activityLines,
+            foodLines: foodLines
+        )
+
+        let bestExclusive = exclusiveTemplates
+            .map { applyAdventureTemplates([$0], activityLines: activityLines, foodLines: foodLines) }
+            .max { lhs, rhs in lhs.totalDiscount < rhs.totalDiscount }
+
+        let winner = (bestExclusive?.totalDiscount ?? 0) > stackableResult.totalDiscount
+            ? bestExclusive!
+            : stackableResult
+
+        return RewardComputationResult(
+            appliedRewards: winner.appliedRewards,
+            totalDiscount: winner.totalDiscount,
+            walletSnapshot: wallet
+        )
+    }
+
+    private struct InternalRewardResult {
+        var appliedRewards: [AppliedReward]
+        var totalDiscount: Double
+    }
+
+    private struct MutableMenuLine {
+        let menuItemId: String
+        let name: String
+        let unitPrice: Double
+        var remainingRewardableUnits: Int
+    }
+
+    private struct MutableActivityLine {
+        let activityId: String
+        let title: String
+        var remainingRewardableAmount: Double
+    }
+
+    private static func applyRestaurantTemplates(
+        _ templates: [LoyaltyRewardTemplate],
+        menuLines: [RewardMenuLine]
+    ) -> InternalRewardResult {
+        var workingLines = menuLines.map {
+            MutableMenuLine(
+                menuItemId: $0.menuItemId,
+                name: $0.name,
+                unitPrice: $0.unitPrice,
+                remainingRewardableUnits: max(0, $0.quantity)
+            )
+        }
+
+        var appliedRewards: [AppliedReward] = []
+        var totalDiscount = 0.0
+
+        for template in templates {
+            guard let reward = applyRestaurantTemplate(template, lines: &workingLines) else { continue }
+            appliedRewards.append(reward)
+            totalDiscount += reward.amount
+        }
+
+        return InternalRewardResult(
+            appliedRewards: appliedRewards,
+            totalDiscount: totalDiscount
+        )
+    }
+
+    private static func applyAdventureTemplates(
+        _ templates: [LoyaltyRewardTemplate],
+        activityLines: [RewardActivityLine],
+        foodLines: [RewardMenuLine]
+    ) -> InternalRewardResult {
+        var workingActivities = activityLines.map {
+            MutableActivityLine(
+                activityId: $0.activityId,
+                title: $0.title,
+                remainingRewardableAmount: max(0, $0.linePrice)
+            )
+        }
+
+        var workingFood = foodLines.map {
+            MutableMenuLine(
+                menuItemId: $0.menuItemId,
+                name: $0.name,
+                unitPrice: $0.unitPrice,
+                remainingRewardableUnits: max(0, $0.quantity)
+            )
+        }
+
+        var appliedRewards: [AppliedReward] = []
+        var totalDiscount = 0.0
+
+        for template in templates {
+            switch template.rule.type {
+            case .activityPercentage:
+                guard let reward = applyActivityTemplate(template, lines: &workingActivities) else { continue }
+                appliedRewards.append(reward)
+                totalDiscount += reward.amount
+
+            default:
+                guard let reward = applyRestaurantTemplate(template, lines: &workingFood) else { continue }
+                appliedRewards.append(reward)
+                totalDiscount += reward.amount
+            }
+        }
+
+        return InternalRewardResult(
+            appliedRewards: appliedRewards,
+            totalDiscount: totalDiscount
+        )
+    }
+
+    private static func applyRestaurantTemplate(
+        _ template: LoyaltyRewardTemplate,
+        lines: inout [MutableMenuLine]
+    ) -> AppliedReward? {
+        switch template.rule.type {
+        case .mostExpensiveMenuItemPercentage:
+            guard let percentage = template.rule.percentage else { return nil }
+            guard let index = lines.indices
+                .filter({ lines[$0].remainingRewardableUnits > 0 })
+                .max(by: { lines[$0].unitPrice < lines[$1].unitPrice }) else { return nil }
+
+            let line = lines[index]
+            let amount = roundMoney(line.unitPrice * (percentage / 100))
+            guard amount > 0 else { return nil }
+
+            lines[index].remainingRewardableUnits -= 1
+
+            return AppliedReward(
+                id: UUID().uuidString,
+                templateId: template.id,
+                title: template.title,
+                amount: amount,
+                note: "\(Int(percentage))% en \(line.name)",
+                affectedMenuItemIds: [line.menuItemId],
+                affectedActivityIds: []
+            )
+
+        case .specificMenuItemPercentage:
+            let percentage = template.rule.percentage ?? 0
+            let quantity = max(1, template.rule.quantity ?? 1)
+            let targetId = template.rule.menuItemId?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+
+            guard !targetId.isEmpty else { return nil }
+            guard let index = lines.firstIndex(where: {
+                $0.menuItemId == targetId && $0.remainingRewardableUnits > 0
+            }) else { return nil }
+
+            let applicableUnits = min(quantity, lines[index].remainingRewardableUnits)
+            guard applicableUnits > 0 else { return nil }
+
+            let amount = roundMoney(Double(applicableUnits) * lines[index].unitPrice * (percentage / 100))
+            guard amount > 0 else { return nil }
+
+            lines[index].remainingRewardableUnits -= applicableUnits
+
+            return AppliedReward(
+                id: UUID().uuidString,
+                templateId: template.id,
+                title: template.title,
+                amount: amount,
+                note: "\(Int(percentage))% en \(lines[index].name)",
+                affectedMenuItemIds: [targetId],
+                affectedActivityIds: []
+            )
+
+        case .freeMenuItem:
+            let quantity = max(1, template.rule.quantity ?? 1)
+            let targetId = template.rule.menuItemId?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+
+            guard !targetId.isEmpty else { return nil }
+            guard let index = lines.firstIndex(where: {
+                $0.menuItemId == targetId && $0.remainingRewardableUnits > 0
+            }) else { return nil }
+
+            let applicableUnits = min(quantity, lines[index].remainingRewardableUnits)
+            guard applicableUnits > 0 else { return nil }
+
+            let amount = roundMoney(Double(applicableUnits) * lines[index].unitPrice)
+            guard amount > 0 else { return nil }
+
+            lines[index].remainingRewardableUnits -= applicableUnits
+
+            return AppliedReward(
+                id: UUID().uuidString,
+                templateId: template.id,
+                title: template.title,
+                amount: amount,
+                note: "\(applicableUnits)x \(lines[index].name) gratis",
+                affectedMenuItemIds: [targetId],
+                affectedActivityIds: []
+            )
+
+        case .buyXGetYFree:
+            let targetId = template.rule.menuItemId?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            let buyQuantity = max(1, template.rule.buyQuantity ?? 1)
+            let freeQuantity = max(1, template.rule.freeQuantity ?? 1)
+            let repeatable = template.rule.repeatable ?? true
+
+            guard !targetId.isEmpty else { return nil }
+            guard let index = lines.firstIndex(where: { $0.menuItemId == targetId }) else { return nil }
+
+            let line = lines[index]
+            let totalUnits = line.remainingRewardableUnits
+            guard totalUnits >= buyQuantity else { return nil }
+
+            let freeUnits: Int = {
+                if repeatable {
+                    return min(totalUnits, (totalUnits / buyQuantity) * freeQuantity)
+                }
+                return totalUnits >= buyQuantity ? min(totalUnits, freeQuantity) : 0
+            }()
+
+            guard freeUnits > 0 else { return nil }
+
+            let amount = roundMoney(Double(freeUnits) * line.unitPrice)
+            guard amount > 0 else { return nil }
+
+            lines[index].remainingRewardableUnits -= freeUnits
+
+            return AppliedReward(
+                id: UUID().uuidString,
+                templateId: template.id,
+                title: template.title,
+                amount: amount,
+                note: "Compra \(buyQuantity) y recibe \(freeUnits) gratis en \(line.name)",
+                affectedMenuItemIds: [targetId],
+                affectedActivityIds: []
+            )
+
+        case .activityPercentage:
+            return nil
+        }
+    }
+
+    private static func applyActivityTemplate(
+        _ template: LoyaltyRewardTemplate,
+        lines: inout [MutableActivityLine]
+    ) -> AppliedReward? {
+        guard template.rule.type == .activityPercentage else { return nil }
+
+        let percentage = template.rule.percentage ?? 0
+        let targetId = template.rule.activityId?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+
+        guard !targetId.isEmpty else { return nil }
+        guard let index = lines.firstIndex(where: {
+            $0.activityId == targetId && $0.remainingRewardableAmount > 0
+        }) else { return nil }
+
+        let amount = roundMoney(lines[index].remainingRewardableAmount * (percentage / 100))
+        guard amount > 0 else { return nil }
+
+        lines[index].remainingRewardableAmount = 0
+
+        return AppliedReward(
+            id: UUID().uuidString,
+            templateId: template.id,
+            title: template.title,
+            amount: amount,
+            note: "\(Int(percentage))% en \(lines[index].title)",
+            affectedMenuItemIds: [],
+            affectedActivityIds: [targetId]
+        )
+    }
+
+    private static func roundMoney(_ value: Double) -> Double {
+        (value * 100).rounded() / 100
+    }
+}
+
+```
+
+---
+
+# Altos del Murco/root/feature/altos/profile/domain/LoyaltyRewardModels.swift
+
+```swift
+//
+//  LoyaltyRewardModels.swift
+//  Altos del Murco
+//
+//  Created by José Ruiz on 21/4/26.
+//
+
+import Foundation
+
+enum LoyaltyRewardScope: String, Codable, CaseIterable, Identifiable, Hashable {
+    case restaurant
+    case adventure
+    case both
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .restaurant: return "Restaurante"
+        case .adventure: return "Aventura"
+        case .both: return "Ambos"
+        }
+    }
+
+    func matchesRestaurant() -> Bool {
+        self == .restaurant || self == .both
+    }
+
+    func matchesAdventure() -> Bool {
+        self == .adventure || self == .both
+    }
+}
+
+enum LoyaltyRewardTriggerMode: String, Codable, CaseIterable, Identifiable, Hashable {
+    case automatic
+    case manual
+
+    var id: String { rawValue }
+}
+
+enum LoyaltyRewardRuleType: String, Codable, CaseIterable, Identifiable, Hashable {
+    case mostExpensiveMenuItemPercentage
+    case specificMenuItemPercentage
+    case activityPercentage
+    case freeMenuItem
+    case buyXGetYFree
+
+    var id: String { rawValue }
+}
+
+struct LoyaltyRewardRule: Codable, Hashable {
+    var type: LoyaltyRewardRuleType
+    var percentage: Double?
+    var menuItemId: String?
+    var activityId: String?
+    var quantity: Int?
+    var buyQuantity: Int?
+    var freeQuantity: Int?
+    var repeatable: Bool?
+
+    static func mostExpensiveMenuItemDiscount(_ percentage: Double) -> LoyaltyRewardRule {
+        LoyaltyRewardRule(
+            type: .mostExpensiveMenuItemPercentage,
+            percentage: percentage,
+            menuItemId: nil,
+            activityId: nil,
+            quantity: 1,
+            buyQuantity: nil,
+            freeQuantity: nil,
+            repeatable: nil
+        )
+    }
+
+    static func specificMenuItemDiscount(
+        menuItemId: String,
+        percentage: Double,
+        quantity: Int = 1
+    ) -> LoyaltyRewardRule {
+        LoyaltyRewardRule(
+            type: .specificMenuItemPercentage,
+            percentage: percentage,
+            menuItemId: menuItemId,
+            activityId: nil,
+            quantity: max(1, quantity),
+            buyQuantity: nil,
+            freeQuantity: nil,
+            repeatable: nil
+        )
+    }
+
+    static func activityDiscount(
+        activityId: String,
+        percentage: Double
+    ) -> LoyaltyRewardRule {
+        LoyaltyRewardRule(
+            type: .activityPercentage,
+            percentage: percentage,
+            menuItemId: nil,
+            activityId: activityId,
+            quantity: 1,
+            buyQuantity: nil,
+            freeQuantity: nil,
+            repeatable: nil
+        )
+    }
+
+    static func freeMenuItem(
+        menuItemId: String,
+        quantity: Int = 1
+    ) -> LoyaltyRewardRule {
+        LoyaltyRewardRule(
+            type: .freeMenuItem,
+            percentage: nil,
+            menuItemId: menuItemId,
+            activityId: nil,
+            quantity: max(1, quantity),
+            buyQuantity: nil,
+            freeQuantity: nil,
+            repeatable: nil
+        )
+    }
+
+    static func buyXGetYFree(
+        menuItemId: String,
+        buyQuantity: Int,
+        freeQuantity: Int = 1,
+        repeatable: Bool = true
+    ) -> LoyaltyRewardRule {
+        LoyaltyRewardRule(
+            type: .buyXGetYFree,
+            percentage: nil,
+            menuItemId: menuItemId,
+            activityId: nil,
+            quantity: nil,
+            buyQuantity: max(1, buyQuantity),
+            freeQuantity: max(1, freeQuantity),
+            repeatable: repeatable
+        )
+    }
+}
+
+struct LoyaltyRewardTemplate: Identifiable, Codable, Hashable {
+    let id: String
+    var title: String
+    var subtitle: String
+    var scope: LoyaltyRewardScope
+    var minimumLevel: LoyaltyLevel
+    var triggerMode: LoyaltyRewardTriggerMode
+    var isActive: Bool
+    var canStack: Bool
+    var priority: Int
+    var maxUsesPerClient: Int
+    var expiresInDays: Int?
+    var rule: LoyaltyRewardRule
+    var createdAt: Date
+    var updatedAt: Date
+
+    var displaySummary: String {
+        switch rule.type {
+        case .mostExpensiveMenuItemPercentage:
+            return "\(Int(rule.percentage ?? 0))% en el plato elegible más caro"
+        case .specificMenuItemPercentage:
+            return "\(Int(rule.percentage ?? 0))% en item específico"
+        case .activityPercentage:
+            return "\(Int(rule.percentage ?? 0))% en actividad específica"
+        case .freeMenuItem:
+            return "\(max(1, rule.quantity ?? 1)) item(s) gratis"
+        case .buyXGetYFree:
+            return "Compra \(max(1, rule.buyQuantity ?? 1)) y recibe \(max(1, rule.freeQuantity ?? 1)) gratis"
+        }
+    }
+
+    func isEligible(for level: LoyaltyLevel) -> Bool {
+        level.minimumSpent >= minimumLevel.minimumSpent
+    }
+}
+
+enum LoyaltyRewardReferenceType: String, Codable, Hashable {
+    case order
+    case booking
+}
+
+enum LoyaltyWalletEventStatus: String, Codable, CaseIterable, Hashable {
+    case reserved
+    case consumed
+    case released
+    case expired
+}
+
+struct LoyaltyWalletEvent: Identifiable, Codable, Hashable {
+    let id: String
+    let templateId: String
+    let templateTitle: String
+    let referenceType: LoyaltyRewardReferenceType
+    let referenceId: String
+    let status: LoyaltyWalletEventStatus
+    let amount: Double
+    let createdAt: Date
+    let updatedAt: Date
+}
+
+struct AppliedReward: Identifiable, Codable, Hashable {
+    let id: String
+    let templateId: String
+    let title: String
+    let amount: Double
+    let note: String
+    let affectedMenuItemIds: [String]
+    let affectedActivityIds: [String]
+}
+
+struct RewardWalletSnapshot: Hashable {
+    let nationalId: String
+    let currentLevel: LoyaltyLevel
+    let totalSpent: Double
+    let points: Int
+    let availableTemplates: [LoyaltyRewardTemplate]
+    let reservedEvents: [LoyaltyWalletEvent]
+    let consumedEvents: [LoyaltyWalletEvent]
+    let releasedEvents: [LoyaltyWalletEvent]
+
+    static func empty(nationalId: String) -> RewardWalletSnapshot {
+        RewardWalletSnapshot(
+            nationalId: nationalId,
+            currentLevel: .bronze,
+            totalSpent: 0,
+            points: 0,
+            availableTemplates: [],
+            reservedEvents: [],
+            consumedEvents: [],
+            releasedEvents: []
+        )
+    }
+}
+
+struct RewardComputationResult: Hashable {
+    let appliedRewards: [AppliedReward]
+    let totalDiscount: Double
+    let walletSnapshot: RewardWalletSnapshot
+
+    static func empty(wallet: RewardWalletSnapshot) -> RewardComputationResult {
+        RewardComputationResult(
+            appliedRewards: [],
+            totalDiscount: 0,
+            walletSnapshot: wallet
+        )
+    }
+}
+
+struct RewardMenuLine: Hashable {
+    let menuItemId: String
+    let name: String
+    let unitPrice: Double
+    let quantity: Int
+}
+
+struct RewardActivityLine: Hashable {
+    let activityId: String
+    let title: String
+    let linePrice: Double
+}
+
+```
+
+---
+
+# Altos del Murco/root/feature/altos/profile/domain/LoyaltyRewardTemplateDto.swift
+
+```swift
+//
+//  LoyaltyRewardTemplateDto.swift
+//  Altos del Murco
+//
+//  Created by José Ruiz on 21/4/26.
+//
+
+import FirebaseFirestore
+import Foundation
+
+struct LoyaltyRewardTemplateDto: Codable {
+    let id: String
+    let title: String
+    let subtitle: String
+    let scope: String
+    let minimumLevel: String
+    let triggerMode: String
+    let isActive: Bool
+    let canStack: Bool
+    let priority: Int
+    let maxUsesPerClient: Int
+    let expiresInDays: Int?
+    let rule: LoyaltyRewardRule
+    let createdAt: Timestamp
+    let updatedAt: Timestamp
+
+    init(domain: LoyaltyRewardTemplate) {
+        self.id = domain.id
+        self.title = domain.title
+        self.subtitle = domain.subtitle
+        self.scope = domain.scope.rawValue
+        self.minimumLevel = domain.minimumLevel.rawValue
+        self.triggerMode = domain.triggerMode.rawValue
+        self.isActive = domain.isActive
+        self.canStack = domain.canStack
+        self.priority = domain.priority
+        self.maxUsesPerClient = max(1, domain.maxUsesPerClient)
+        self.expiresInDays = domain.expiresInDays
+        self.rule = domain.rule
+        self.createdAt = Timestamp(date: domain.createdAt)
+        self.updatedAt = Timestamp(date: domain.updatedAt)
+    }
+
+    func toDomain() -> LoyaltyRewardTemplate {
+        LoyaltyRewardTemplate(
+            id: id,
+            title: title,
+            subtitle: subtitle,
+            scope: LoyaltyRewardScope(rawValue: scope) ?? .both,
+            minimumLevel: LoyaltyLevel(rawValue: minimumLevel) ?? .bronze,
+            triggerMode: LoyaltyRewardTriggerMode(rawValue: triggerMode) ?? .automatic,
+            isActive: isActive,
+            canStack: canStack,
+            priority: priority,
+            maxUsesPerClient: max(1, maxUsesPerClient),
+            expiresInDays: expiresInDays,
+            rule: rule,
+            createdAt: createdAt.dateValue(),
+            updatedAt: updatedAt.dateValue()
+        )
+    }
+}
+
+struct LoyaltyWalletEventDto: Codable {
+    let id: String
+    let templateId: String
+    let templateTitle: String
+    let referenceType: String
+    let referenceId: String
+    let status: String
+    let amount: Double
+    let createdAt: Timestamp
+    let updatedAt: Timestamp
+
+    init(domain: LoyaltyWalletEvent) {
+        self.id = domain.id
+        self.templateId = domain.templateId
+        self.templateTitle = domain.templateTitle
+        self.referenceType = domain.referenceType.rawValue
+        self.referenceId = domain.referenceId
+        self.status = domain.status.rawValue
+        self.amount = domain.amount
+        self.createdAt = Timestamp(date: domain.createdAt)
+        self.updatedAt = Timestamp(date: domain.updatedAt)
+    }
+
+    func toDomain() -> LoyaltyWalletEvent {
+        LoyaltyWalletEvent(
+            id: id,
+            templateId: templateId,
+            templateTitle: templateTitle,
+            referenceType: LoyaltyRewardReferenceType(rawValue: referenceType) ?? .order,
+            referenceId: referenceId,
+            status: LoyaltyWalletEventStatus(rawValue: status) ?? .reserved,
+            amount: amount,
+            createdAt: createdAt.dateValue(),
+            updatedAt: updatedAt.dateValue()
+        )
+    }
+}
+
+struct LoyaltyWalletDocument: Codable {
+    let nationalId: String
+    let updatedAt: Date
+    let events: [LoyaltyWalletEvent]
+
+    init(
+        nationalId: String,
+        updatedAt: Date,
+        events: [LoyaltyWalletEvent]
+    ) {
+        self.nationalId = nationalId
+        self.updatedAt = updatedAt
+        self.events = events
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        nationalId = try container.decode(String.self, forKey: .nationalId)
+        let updatedAtTimestamp = try container.decode(Timestamp.self, forKey: .updatedAt)
+        let eventDtos = try container.decodeIfPresent([LoyaltyWalletEventDto].self, forKey: .events) ?? []
+        updatedAt = updatedAtTimestamp.dateValue()
+        events = eventDtos.map { $0.toDomain() }
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case nationalId
+        case updatedAt
+        case events
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(nationalId, forKey: .nationalId)
+        try container.encode(Timestamp(date: updatedAt), forKey: .updatedAt)
+        try container.encode(events.map(LoyaltyWalletEventDto.init(domain:)), forKey: .events)
+    }
+}
+
+```
+
+---
+
 # Altos del Murco/root/feature/altos/profile/domain/ProfileStats.swift
 
 ```swift
@@ -9835,6 +11682,7 @@ struct ProfileStats {
     let adventureSpent: Double
     let totalSpent: Double
     let level: LoyaltyLevel
+    let wallet: RewardWalletSnapshot
 
     static let empty = ProfileStats(
         points: 0,
@@ -9843,8 +11691,185 @@ struct ProfileStats {
         restaurantSpent: 0,
         adventureSpent: 0,
         totalSpent: 0,
-        level: .silver
+        level: .bronze,
+        wallet: .empty(nationalId: "")
     )
+}
+
+```
+
+---
+
+# Altos del Murco/root/feature/altos/profile/domain/RewardPresentation.swift
+
+```swift
+//
+//  RewardPresentationModels.swift
+//  Altos del Murco
+//
+//  Created by José Ruiz on 21/4/26.
+//
+
+import Foundation
+
+struct RewardPresentation: Identifiable, Hashable {
+    let id: String
+    let badge: String
+    let title: String
+    let message: String
+    let amountText: String?
+
+    init(
+        id: String = UUID().uuidString,
+        badge: String,
+        title: String,
+        message: String,
+        amountText: String? = nil
+    ) {
+        self.id = id
+        self.badge = badge
+        self.title = title
+        self.message = message
+        self.amountText = amountText
+    }
+
+    static func from(appliedReward reward: AppliedReward) -> RewardPresentation {
+        let lowercasedNote = reward.note.lowercased()
+        let badge: String
+
+        if lowercasedNote.contains("gratis") {
+            badge = "Gratis"
+        } else if lowercasedNote.contains("%") {
+            badge = "Descuento"
+        } else {
+            badge = "Premio"
+        }
+
+        return RewardPresentation(
+            id: reward.id,
+            badge: badge,
+            title: reward.title,
+            message: reward.note,
+            amountText: reward.amount.priceText
+        )
+    }
+}
+
+enum RewardPresentationFactory {
+    static func menuPresentation(
+        for item: MenuItem,
+        wallet: RewardWalletSnapshot
+    ) -> RewardPresentation? {
+        for template in wallet.availableTemplates where template.scope.matchesRestaurant() {
+            switch template.rule.type {
+            case .freeMenuItem:
+                let targetId = template.rule.menuItemId?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                guard targetId == item.id else { continue }
+
+                return RewardPresentation(
+                    id: template.id,
+                    badge: "Gratis",
+                    title: template.title,
+                    message: "\(item.name) puede salirte gratis por tu nivel \(wallet.currentLevel.title)."
+                )
+
+            case .specificMenuItemPercentage:
+                let targetId = template.rule.menuItemId?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                guard targetId == item.id else { continue }
+
+                let percentage = Int((template.rule.percentage ?? 0).rounded())
+                guard percentage > 0 else { continue }
+
+                return RewardPresentation(
+                    id: template.id,
+                    badge: "\(percentage)% OFF",
+                    title: template.title,
+                    message: "\(item.name) tiene \(percentage)% de descuento automático por tu nivel \(wallet.currentLevel.title)."
+                )
+
+            case .buyXGetYFree:
+                let targetId = template.rule.menuItemId?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                guard targetId == item.id else { continue }
+
+                let buyQuantity = max(1, template.rule.buyQuantity ?? 1)
+                let freeQuantity = max(1, template.rule.freeQuantity ?? 1)
+
+                return RewardPresentation(
+                    id: template.id,
+                    badge: "Promo",
+                    title: template.title,
+                    message: "Compra \(buyQuantity) y recibe \(freeQuantity) gratis."
+                )
+
+            case .mostExpensiveMenuItemPercentage:
+                let percentage = Int((template.rule.percentage ?? 0).rounded())
+                guard percentage > 0 else { continue }
+
+                return RewardPresentation(
+                    id: template.id,
+                    badge: "\(percentage)% OFF",
+                    title: template.title,
+                    message: "Puede aplicar \(percentage)% si este plato es el elegible más caro del pedido."
+                )
+
+            case .activityPercentage:
+                continue
+            }
+        }
+
+        return nil
+    }
+
+    static func activityPresentation(
+        for activity: AdventureActivityCatalogItem,
+        wallet: RewardWalletSnapshot
+    ) -> RewardPresentation? {
+        for template in wallet.availableTemplates where template.scope.matchesAdventure() {
+            switch template.rule.type {
+            case .activityPercentage:
+                let targetId = template.rule.activityId?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                guard targetId == activity.id else { continue }
+
+                let percentage = Int((template.rule.percentage ?? 0).rounded())
+                guard percentage > 0 else { continue }
+
+                return RewardPresentation(
+                    id: template.id,
+                    badge: "\(percentage)% OFF",
+                    title: template.title,
+                    message: "\(activity.title) tiene \(percentage)% de descuento automático por tu nivel \(wallet.currentLevel.title)."
+                )
+
+            default:
+                continue
+            }
+        }
+
+        return nil
+    }
+
+    static func packagePresentation(
+        for package: AdventureFeaturedPackage,
+        catalog: AdventureCatalogSnapshot,
+        menuItemsById: [String: MenuItem],
+        wallet: RewardWalletSnapshot
+    ) -> RewardPresentation? {
+        for item in package.items {
+            guard let activity = catalog.activity(for: item.activity) else { continue }
+            if let presentation = activityPresentation(for: activity, wallet: wallet) {
+                return presentation
+            }
+        }
+
+        for item in package.foodItems {
+            guard let menuItem = menuItemsById[item.menuItemId] else { continue }
+            if let presentation = menuPresentation(for: menuItem, wallet: wallet) {
+                return presentation
+            }
+        }
+
+        return nil
+    }
 }
 
 ```
@@ -10620,21 +12645,14 @@ struct LoyaltyProgramView: View {
     let points: Int
     let completedOrders: Int
     let completedBookings: Int
+    var walletSnapshot: RewardWalletSnapshot = .empty(nationalId: "")
 
     private var palette: ThemePalette {
         AppTheme.palette(for: theme, scheme: colorScheme)
     }
 
-    private var totalVisits: Int {
-        completedOrders + completedBookings
-    }
-
     private var nextLevel: LoyaltyLevel? {
         currentLevel.nextLevel
-    }
-
-    private var remainingToNextLevel: Double {
-        currentLevel.remainingSpend(from: totalSpent)
     }
 
     private var progressToNextLevel: Double {
@@ -10645,11 +12663,10 @@ struct LoyaltyProgramView: View {
         ScrollView {
             VStack(spacing: 18) {
                 heroSection
-                howItWorksSection
-                currentBenefitsSection
                 progressSection
-                levelsSection
-                rewardsSection
+                availableRewardsSection
+                reservedRewardsSection
+                usedRewardsSection
             }
             .padding(.horizontal, 16)
             .padding(.top, 12)
@@ -10661,7 +12678,7 @@ struct LoyaltyProgramView: View {
     }
 
     private var heroSection: some View {
-        VStack(alignment: .leading, spacing: 18) {
+        VStack(alignment: .leading, spacing: 16) {
             HStack(alignment: .top, spacing: 14) {
                 ZStack {
                     Circle()
@@ -10674,374 +12691,187 @@ struct LoyaltyProgramView: View {
                 }
 
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("Tu nivel actual")
-                        .font(.caption.bold())
-                        .foregroundStyle(palette.textSecondary)
-
-                    Text(currentLevel.title)
-                        .font(.system(size: 28, weight: .bold, design: .rounded))
+                    Text("Nivel \(currentLevel.title)")
+                        .font(.title3.bold())
                         .foregroundStyle(palette.textPrimary)
 
                     Text(currentLevel.badgeSubtitle)
                         .font(.subheadline)
                         .foregroundStyle(palette.textSecondary)
+
+                    Text("Consumo acumulado: \(totalSpent.priceText)")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(palette.primary)
                 }
 
                 Spacer()
             }
 
-            Text("Cada vez que vuelves a Altos del Murco acumulas más valor en tu cuenta, subes de nivel y desbloqueas descuentos y regalos en platos, jugos, bebidas y postres.")
-                .font(.subheadline)
-                .foregroundStyle(palette.textPrimary)
-
             HStack(spacing: 12) {
-                heroMetric(
-                    title: "Consumo",
-                    value: totalSpent.priceText,
-                    systemImage: "creditcard.fill"
-                )
-
-                heroMetric(
-                    title: "Puntos",
-                    value: "\(points)",
-                    systemImage: "star.fill"
-                )
-
-                heroMetric(
-                    title: "Visitas",
-                    value: "\(totalVisits)",
-                    systemImage: "figure.walk"
-                )
-            }
-
-            if let nextLevel {
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack {
-                        Text("Progreso a \(nextLevel.title)")
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(palette.textPrimary)
-
-                        Spacer()
-
-                        Text("\(Int(progressToNextLevel * 100))%")
-                            .font(.caption.bold())
-                            .foregroundStyle(palette.primary)
-                    }
-
-                    ProgressView(value: progressToNextLevel)
-                        .tint(palette.primary)
-
-                    Text("Te faltan \(remainingToNextLevel.priceText) en consumo acumulado para subir al nivel \(nextLevel.title).")
-                        .font(.caption.weight(.medium))
-                        .foregroundStyle(palette.textSecondary)
-                }
-            } else {
-                Label("Ya alcanzaste el nivel más alto del programa", systemImage: "sparkles")
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(palette.primary)
+                statCard("Puntos", "\(points)")
+                statCard("Pedidos", "\(completedOrders)")
+                statCard("Reservas", "\(completedBookings)")
             }
         }
-        .padding(20)
-        .background(
-            RoundedRectangle(cornerRadius: 28, style: .continuous)
-                .fill(palette.cardGradient)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 28, style: .continuous)
-                .stroke(palette.stroke, lineWidth: 1)
-        )
-        .shadow(
-            color: palette.shadow.opacity(colorScheme == .dark ? 0.16 : 0.08),
-            radius: 10,
-            x: 0,
-            y: 6
-        )
+        .appCardStyle(theme)
     }
 
-    private var howItWorksSection: some View {
-        sectionCard(
-            title: "¿Cómo funciona?",
-            subtitle: "Simple: disfruta, vuelve y desbloquea mejores recompensas."
-        ) {
-            VStack(spacing: 12) {
-                loyaltyStep(
-                    title: "1. Consume y disfruta",
-                    description: "Tus pedidos y reservas completadas suman consumo acumulado y fortalecen tu nivel.",
-                    systemImage: "fork.knife"
-                )
-
-                loyaltyStep(
-                    title: "2. Regresa y sube",
-                    description: "Cada nueva visita te acerca al siguiente nivel con mejores descuentos y premios.",
-                    systemImage: "arrow.up.right.circle.fill"
-                )
-
-                loyaltyStep(
-                    title: "3. Recibe recompensas",
-                    description: "Mientras más fiel seas, más opciones tendrás de ganar platos, jugos, bebidas y postres gratis.",
-                    systemImage: "gift.fill"
-                )
-            }
-
-            Text("Solo cuentan los pedidos y reservas completadas.")
-                .font(.caption.weight(.medium))
-                .foregroundStyle(palette.textSecondary)
-        }
-    }
-
-    private var currentBenefitsSection: some View {
-        sectionCard(
-            title: "Tus beneficios actuales",
-            subtitle: "Esto es lo que ya tienes disponible en tu nivel \(currentLevel.title)."
-        ) {
-            VStack(spacing: 12) {
-                ForEach(currentLevel.benefits) { benefit in
-                    benefitRow(benefit)
-                }
-            }
-        }
-    }
-    
     private var progressSection: some View {
-        sectionCard(
-            title: "Tu siguiente meta",
-            subtitle: nextLevel == nil
-                ? "Ya alcanzaste el nivel más alto del programa."
-                : "Sigue acumulando para desbloquear recompensas mejores y más valiosas."
-        ) {
+        VStack(alignment: .leading, spacing: 12) {
+            BrandSectionHeader(
+                theme: theme,
+                title: "Tu progreso",
+                subtitle: nextLevel == nil
+                    ? "Ya estás en la cima del programa."
+                    : "Sigue acumulando para desbloquear tu próximo premio fuerte."
+            )
+
             if let nextLevel {
-                VStack(alignment: .leading, spacing: 14) {
-                    HStack(alignment: .center) {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("Próximo nivel: \(nextLevel.title)")
-                                .font(.headline)
-                                .foregroundStyle(palette.textPrimary)
-
-                            Text(nextLevel.spendRangeText)
-                                .font(.caption.weight(.semibold))
-                                .foregroundStyle(palette.textSecondary)
-                        }
-
-                        Spacer()
-
-                        ZStack {
-                            Circle()
-                                .fill(palette.chipGradient)
-                                .frame(width: 42, height: 42)
-
-                            Image(systemName: nextLevel.systemImage)
-                                .font(.subheadline.bold())
-                                .foregroundStyle(palette.primary)
-                        }
-                    }
-
-                    VStack(alignment: .leading, spacing: 8) {
-                        HStack {
-                            Text("Progreso")
-                                .font(.caption.bold())
-                                .foregroundStyle(palette.textSecondary)
-
-                            Spacer()
-
-                            Text("\(Int(progressToNextLevel * 100))%")
-                                .font(.caption.bold())
-                                .foregroundStyle(palette.primary)
-                        }
-
-                        ProgressView(value: progressToNextLevel)
-                            .tint(palette.primary)
-
-                        Text("Te faltan \(remainingToNextLevel.priceText) de consumo acumulado para subir a \(nextLevel.title).")
-                            .font(.subheadline)
-                            .foregroundStyle(palette.textSecondary)
-                    }
-
-                    VStack(alignment: .leading, spacing: 10) {
-                        Text("Lo que desbloquearás")
-                            .font(.subheadline.bold())
-                            .foregroundStyle(palette.textPrimary)
-
-                        ForEach(Array(nextLevel.benefits.prefix(2))) { benefit in
-                            benefitRow(benefit, highlighted: true)
-                        }
-                    }
-                }
-            } else {
-                VStack(alignment: .leading, spacing: 14) {
-                    Label("Nivel \(currentLevel.title) desbloqueado", systemImage: currentLevel.systemImage)
+                HStack {
+                    Text("Próximo nivel: \(nextLevel.title)")
                         .font(.headline)
-                        .foregroundStyle(palette.primary)
-
-                    Text("Ya estás en el nivel más alto. Ahora puedes aprovechar los beneficios más fuertes del programa, con descuentos y regalos más valiosos.")
-                        .font(.subheadline)
-                        .foregroundStyle(palette.textSecondary)
-
-                    VStack(spacing: 12) {
-                        ForEach(currentLevel.benefits.prefix(2)) { benefit in
-                            benefitRow(benefit, highlighted: true)
-                        }
-                    }
-                }
-            }
-        }
-    }
-    
-    private func benefitRow(
-        _ benefit: LoyaltyBenefit,
-        highlighted: Bool = false
-    ) -> some View {
-        HStack(alignment: .top, spacing: 12) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(highlighted ? AnyShapeStyle(palette.cardGradient) : AnyShapeStyle(palette.elevatedCard))
-                    .frame(width: 46, height: 46)
-
-                Image(systemName: benefitIcon(for: benefit))
-                    .font(.subheadline.bold())
-                    .foregroundStyle(highlighted ? palette.onPrimary : palette.primary)
-            }
-
-            VStack(alignment: .leading, spacing: 8) {
-                HStack(alignment: .top, spacing: 8) {
-                    Text(benefit.title)
-                        .font(.subheadline.bold())
-                        .foregroundStyle(palette.textPrimary)
 
                     Spacer()
 
-                    Text(benefitBadgeText(for: benefit))
-                        .font(.caption2.bold())
-                        .foregroundStyle(highlighted ? palette.onPrimary : palette.primary)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 5)
-                        .background(
-                            Capsule()
-                                .fill(highlighted ? palette.primary : palette.primary.opacity(0.12))
-                        )
+                    Text(nextLevel.spendRangeText)
+                        .font(.caption.bold())
+                        .foregroundStyle(palette.primary)
                 }
 
-                Text(benefit.detail)
+                ProgressView(value: progressToNextLevel)
+                    .tint(palette.primary)
+
+                Text("Te faltan \(currentLevel.remainingSpend(from: totalSpent).priceText) para subir.")
                     .font(.subheadline)
                     .foregroundStyle(palette.textSecondary)
-
-                HStack(spacing: 8) {
-                    if let productName = benefit.productName {
-                        benefitMetaChip(
-                            text: productName,
-                            systemImage: "fork.knife"
-                        )
-                    }
-
-                    if let requiredVisits = benefit.requiredVisits {
-                        benefitMetaChip(
-                            text: "\(requiredVisits) visitas",
-                            systemImage: "calendar.badge.clock"
-                        )
-                    }
-                }
             }
-
-            Spacer(minLength: 0)
         }
-        .padding(14)
-        .background(
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .fill(highlighted ? AnyShapeStyle(palette.cardGradient) : AnyShapeStyle(palette.elevatedCard))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .stroke(
-                    highlighted ? palette.primary.opacity(0.28) : palette.stroke,
-                    lineWidth: 1
+        .appCardStyle(theme, emphasized: false)
+    }
+
+    private var availableRewardsSection: some View {
+        rewardSection(
+            title: "Premios disponibles",
+            subtitle: "Estos se aplican automáticamente cuando el pedido o la reserva cumplen la regla.",
+            emptyText: "Todavía no tienes premios automáticos disponibles para tu nivel."
+        ) {
+            walletSnapshot.availableTemplates.map { template in
+                AnyView(
+                    HStack(alignment: .top, spacing: 12) {
+                        BrandIconBubble(theme: theme, systemImage: "gift.fill", size: 42)
+
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(template.title).font(.headline)
+                            Text(template.subtitle)
+                                .font(.subheadline)
+                                .foregroundStyle(palette.textSecondary)
+                            Text(template.displaySummary)
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(palette.primary)
+                        }
+
+                        Spacer()
+                    }
+                    .padding(12)
+                    .background(
+                        RoundedRectangle(cornerRadius: 18, style: .continuous)
+                            .fill(palette.elevatedCard)
+                    )
                 )
-        )
-    }
-    
-    private func benefitMetaChip(
-        text: String,
-        systemImage: String
-    ) -> some View {
-        HStack(spacing: 6) {
-            Image(systemName: systemImage)
-                .font(.caption2.bold())
-
-            Text(text)
-                .font(.caption.weight(.semibold))
-                .lineLimit(1)
-        }
-        .foregroundStyle(palette.primary)
-        .padding(.horizontal, 10)
-        .padding(.vertical, 6)
-        .background(
-            Capsule()
-                .fill(palette.primary.opacity(0.10))
-        )
-    }
-
-    private func benefitIcon(for benefit: LoyaltyBenefit) -> String {
-        switch benefit.kind {
-        case .percentageDiscount:
-            return "percent"
-        case .freeProduct:
-            return "gift.fill"
-        case .campaignReward:
-            return "sparkles"
+            }
         }
     }
 
-    private func benefitBadgeText(for benefit: LoyaltyBenefit) -> String {
-        switch benefit.kind {
-        case .percentageDiscount(let value):
-            return "\(Int(value))% OFF"
-        case .freeProduct:
-            return "GRATIS"
-        case .campaignReward:
-            return "PROMO"
-        }
-    }
-
-    private var levelsSection: some View {
-        sectionCard(
-            title: "Niveles de lealtad",
-            subtitle: "Cada escalón mejora tu experiencia y hace más valioso volver."
+    private var reservedRewardsSection: some View {
+        rewardSection(
+            title: "Premios reservados",
+            subtitle: "Ya están apartados en un pedido o reserva pendiente.",
+            emptyText: "No tienes premios reservados ahora mismo."
         ) {
-            VStack(spacing: 12) {
-                ForEach(LoyaltyLevel.allCases, id: \.self) { level in
-                    levelRow(level)
+            walletSnapshot.reservedEvents.map { event in
+                AnyView(
+                    HStack {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(event.templateTitle).font(.headline)
+                            Text(event.referenceType == .order ? "Pedido \(event.referenceId)" : "Reserva \(event.referenceId)")
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Text(event.amount.priceText)
+                            .font(.subheadline.bold())
+                            .foregroundStyle(.orange)
+                    }
+                    .padding(12)
+                    .background(
+                        RoundedRectangle(cornerRadius: 18, style: .continuous)
+                            .fill(palette.elevatedCard)
+                    )
+                )
+            }
+        }
+    }
+
+    private var usedRewardsSection: some View {
+        rewardSection(
+            title: "Historial de premios usados",
+            subtitle: "Tus beneficios ya consumidos.",
+            emptyText: "Todavía no has usado premios."
+        ) {
+            walletSnapshot.consumedEvents.map { event in
+                AnyView(
+                    HStack {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(event.templateTitle).font(.headline)
+                            Text(event.referenceType == .order ? "Pedido \(event.referenceId)" : "Reserva \(event.referenceId)")
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Text(event.amount.priceText)
+                            .font(.subheadline.bold())
+                            .foregroundStyle(.green)
+                    }
+                    .padding(12)
+                    .background(
+                        RoundedRectangle(cornerRadius: 18, style: .continuous)
+                            .fill(palette.elevatedCard)
+                    )
+                )
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func rewardSection(
+        title: String,
+        subtitle: String,
+        emptyText: String,
+        rows: () -> [AnyView]
+    ) -> some View {
+        let content = rows()
+
+        VStack(alignment: .leading, spacing: 14) {
+            BrandSectionHeader(theme: theme, title: title, subtitle: subtitle)
+
+            if content.isEmpty {
+                Text(emptyText)
+                    .font(.subheadline)
+                    .foregroundStyle(palette.textSecondary)
+            } else {
+                ForEach(Array(content.enumerated()), id: \.offset) { _, row in
+                    row
                 }
             }
         }
+        .appCardStyle(theme)
     }
 
-    private var rewardsSection: some View {
-        sectionCard(
-            title: "¿Qué puedes ganar?",
-            subtitle: "El programa está pensado para motivarte a regresar y disfrutar más en cada visita."
-        ) {
-            VStack(spacing: 10) {
-                rewardHighlight("Descuentos en platos y combos seleccionados", systemImage: "tag.fill")
-                rewardHighlight("Jugos o bebidas gratis en beneficios especiales", systemImage: "takeoutbag.and.cup.and.straw.fill")
-                rewardHighlight("Postres de cortesía para celebrar tu fidelidad", systemImage: "birthday.cake.fill")
-                rewardHighlight("Premios sorpresa al seguir subiendo de nivel", systemImage: "sparkles")
-            }
-        }
-    }
-
-    private func heroMetric(
-        title: String,
-        value: String,
-        systemImage: String
-    ) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Image(systemName: systemImage)
-                .font(.caption.bold())
-                .foregroundStyle(palette.primary)
-
+    private func statCard(_ title: String, _ value: String) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
             Text(value)
                 .font(.headline.bold())
                 .foregroundStyle(palette.textPrimary)
-                .lineLimit(1)
-                .minimumScaleFactor(0.8)
 
             Text(title)
                 .font(.caption)
@@ -11053,196 +12883,8 @@ struct LoyaltyProgramView: View {
             RoundedRectangle(cornerRadius: 18, style: .continuous)
                 .fill(palette.elevatedCard)
         )
-        .overlay(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .stroke(palette.stroke, lineWidth: 1)
-        )
-    }
-
-    private func loyaltyStep(
-        title: String,
-        description: String,
-        systemImage: String
-    ) -> some View {
-        HStack(alignment: .top, spacing: 12) {
-            ZStack {
-                Circle()
-                    .fill(palette.chipGradient)
-                    .frame(width: 40, height: 40)
-
-                Image(systemName: systemImage)
-                    .font(.subheadline.bold())
-                    .foregroundStyle(palette.primary)
-            }
-
-            VStack(alignment: .leading, spacing: 4) {
-                Text(title)
-                    .font(.subheadline.bold())
-                    .foregroundStyle(palette.textPrimary)
-
-                Text(description)
-                    .font(.subheadline)
-                    .foregroundStyle(palette.textSecondary)
-            }
-
-            Spacer()
-        }
-        .padding(14)
-        .background(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(palette.elevatedCard)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .stroke(palette.stroke, lineWidth: 1)
-        )
-    }
-
-    private func benefitRow(_ text: String) -> some View {
-        HStack(alignment: .top, spacing: 10) {
-            Image(systemName: "checkmark.seal.fill")
-                .font(.subheadline)
-                .foregroundStyle(palette.primary)
-                .padding(.top, 2)
-
-            Text(text)
-                .font(.subheadline)
-                .foregroundStyle(palette.textPrimary)
-
-            Spacer()
-        }
-    }
-
-    private func rewardHighlight(
-        _ title: String,
-        systemImage: String
-    ) -> some View {
-        HStack(spacing: 12) {
-            ZStack {
-                Circle()
-                    .fill(palette.chipGradient)
-                    .frame(width: 38, height: 38)
-
-                Image(systemName: systemImage)
-                    .font(.subheadline.weight(.bold))
-                    .foregroundStyle(palette.primary)
-            }
-
-            Text(title)
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(palette.textPrimary)
-
-            Spacer()
-        }
-        .padding(12)
-        .background(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(palette.elevatedCard)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .stroke(palette.stroke, lineWidth: 1)
-        )
-    }
-
-    private func levelRow(_ level: LoyaltyLevel) -> some View {
-        let isCurrent = level == currentLevel
-        let isUnlocked = totalSpent >= level.minimumSpent
-
-        return HStack(alignment: .top, spacing: 14) {
-            ZStack {
-                Circle()
-                    .fill(isCurrent ? palette.heroGradient : palette.chipGradient)
-                    .frame(width: 52, height: 52)
-
-                Image(systemName: level.systemImage)
-                    .font(.headline.bold())
-                    .foregroundStyle(isCurrent ? palette.onPrimary : palette.primary)
-            }
-
-            VStack(alignment: .leading, spacing: 6) {
-                HStack {
-                    Text(level.title)
-                        .font(.headline)
-                        .foregroundStyle(palette.textPrimary)
-
-                    Spacer()
-
-                    Text(isCurrent ? "Actual" : (isUnlocked ? "Desbloqueado" : "Bloqueado"))
-                        .font(.caption.bold())
-                        .foregroundStyle(isCurrent ? palette.onPrimary : palette.primary)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 6)
-                        .background(
-                            Capsule()
-                                .fill(isCurrent ? palette.primary : palette.primary.opacity(0.12))
-                        )
-                }
-
-                Text(level.spendRangeText)
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(palette.textSecondary)
-
-                Text(level.badgeSubtitle)
-                    .font(.subheadline)
-                    .foregroundStyle(palette.textPrimary)
-
-                Text(level.benefits.map { $0.title }.joined(separator: " • "))
-                    .font(.caption)
-                    .foregroundStyle(palette.textSecondary)
-            }
-        }
-        .padding(14)
-        .background(
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .fill(isCurrent ? AnyShapeStyle(palette.cardGradient) : AnyShapeStyle(palette.elevatedCard))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .stroke(isCurrent ? palette.primary.opacity(0.35) : palette.stroke, lineWidth: 1)
-        )
-        .opacity(isUnlocked || isCurrent ? 1 : 0.72)
-    }
-
-    private func sectionCard<Content: View>(
-        title: String,
-        subtitle: String? = nil,
-        @ViewBuilder content: () -> Content
-    ) -> some View {
-        VStack(alignment: .leading, spacing: 14) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(title)
-                    .font(.headline)
-                    .foregroundStyle(palette.textPrimary)
-
-                if let subtitle {
-                    Text(subtitle)
-                        .font(.subheadline)
-                        .foregroundStyle(palette.textSecondary)
-                }
-            }
-
-            content()
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(18)
-        .background(
-            RoundedRectangle(cornerRadius: 26, style: .continuous)
-                .fill(palette.cardGradient)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 26, style: .continuous)
-                .stroke(palette.stroke, lineWidth: 1)
-        )
-        .shadow(
-            color: palette.shadow.opacity(colorScheme == .dark ? 0.14 : 0.06),
-            radius: 8,
-            x: 0,
-            y: 4
-        )
     }
 }
-
 
 ```
 
@@ -11899,7 +13541,8 @@ struct ProfileView: View {
                 totalSpent: viewModel.stats.totalSpent,
                 points: viewModel.stats.points,
                 completedOrders: viewModel.stats.completedOrders,
-                completedBookings: viewModel.stats.completedBookings
+                completedBookings: viewModel.stats.completedBookings,
+                walletSnapshot: viewModel.stats.wallet
             )
         } label: {
             VStack(alignment: .leading, spacing: 16) {
@@ -12528,6 +14171,7 @@ final class ProfileViewModel: ObservableObject {
     private let onAccountDeleted: @MainActor () -> Void
 
     private var deleteNonce: String?
+    private var statsListenerToken: ProfileStatsListenerToken?
 
     init(
         initialProfile: ClientProfile,
@@ -12552,7 +14196,7 @@ final class ProfileViewModel: ObservableObject {
 
         Task {
             await loadAvatar()
-            await refreshStats()
+            startObservingStats()
         }
     }
 
@@ -12593,7 +14237,7 @@ final class ProfileViewModel: ObservableObject {
     }
 
     func onAppear() {
-        Task { await refreshStats() }
+        startObservingStats()
     }
 
     func updateAppearance(_ appearance: AppAppearance) {
@@ -12619,7 +14263,7 @@ final class ProfileViewModel: ObservableObject {
 
         Task {
             await loadAvatar()
-            await refreshStats()
+            startObservingStats()
         }
     }
 
@@ -12631,6 +14275,38 @@ final class ProfileViewModel: ObservableObject {
                 self?.handleProfileSaved(updatedProfile)
             }
         )
+    }
+
+
+    private func startObservingStats() {
+        statsListenerToken?.remove()
+        statsListenerToken = nil
+
+        let nationalId = profile.nationalId.filter(\.isNumber)
+        guard !nationalId.isEmpty else {
+            stats = .empty
+            isLoadingStats = false
+            return
+        }
+
+        isLoadingStats = true
+
+        statsListenerToken = profileStatsService.observeStats(for: nationalId) { [weak self] result in
+            guard let self else { return }
+
+            switch result {
+            case .success(let stats):
+                self.stats = stats
+                self.isLoadingStats = false
+
+            case .failure(let error):
+                self.isLoadingStats = false
+                self.alertItem = ProfileAlertItem(
+                    title: "Could not load profile stats",
+                    message: error.localizedDescription
+                )
+            }
+        }
     }
 
     func refreshStats() async {
@@ -12916,6 +14592,38 @@ struct MenuItemDto: Codable {
 import Foundation
 import FirebaseFirestore
 
+struct AppliedRewardDto: Codable {
+    let id: String
+    let templateId: String
+    let title: String
+    let amount: Double
+    let note: String
+    let affectedMenuItemIds: [String]
+    let affectedActivityIds: [String]
+
+    init(domain: AppliedReward) {
+        self.id = domain.id
+        self.templateId = domain.templateId
+        self.title = domain.title
+        self.amount = domain.amount
+        self.note = domain.note
+        self.affectedMenuItemIds = domain.affectedMenuItemIds
+        self.affectedActivityIds = domain.affectedActivityIds
+    }
+
+    func toDomain() -> AppliedReward {
+        AppliedReward(
+            id: id,
+            templateId: templateId,
+            title: title,
+            amount: amount,
+            note: note,
+            affectedMenuItemIds: affectedMenuItemIds,
+            affectedActivityIds: affectedActivityIds
+        )
+    }
+}
+
 struct OrderDto: Codable {
     let id: String
     let nationalId: String?
@@ -12925,14 +14633,13 @@ struct OrderDto: Codable {
     let updatedAt: Timestamp?
     let items: [OrderItemDto]
     let subtotal: Double
+    let loyaltyDiscountAmount: Double?
+    let appliedRewards: [AppliedRewardDto]?
     let totalAmount: Double
     let status: String?
     let revision: Int?
     let lastConfirmedRevision: Int?
-}
 
-@MainActor
-extension OrderDto {
     init(from domain: Order) {
         self.id = domain.id
         self.nationalId = domain.nationalId
@@ -12940,8 +14647,10 @@ extension OrderDto {
         self.tableNumber = domain.tableNumber
         self.createdAt = Timestamp(date: domain.createdAt)
         self.updatedAt = Timestamp(date: domain.updatedAt)
-        self.items = domain.items.map(OrderItemDto.init(from: ))
+        self.items = domain.items.map(OrderItemDto.init(from:))
         self.subtotal = domain.subtotal
+        self.loyaltyDiscountAmount = domain.loyaltyDiscountAmount
+        self.appliedRewards = domain.appliedRewards.map(AppliedRewardDto.init(domain:))
         self.totalAmount = domain.totalAmount
         self.status = domain.status.rawValue
         self.revision = domain.revision
@@ -12966,6 +14675,8 @@ extension OrderDto {
             updatedAt: safeUpdatedAt,
             items: domainItems,
             subtotal: subtotal,
+            loyaltyDiscountAmount: max(0, loyaltyDiscountAmount ?? 0),
+            appliedRewards: (appliedRewards ?? []).map { $0.toDomain() },
             totalAmount: totalAmount,
             status: safeStatus,
             revision: safeRevision,
@@ -13190,18 +14901,27 @@ import Combine
 import FirebaseFirestore
 
 final class OrdersService: OrdersServiceable {
-    private lazy var db = Firestore.firestore()
-    
+    private let db: Firestore
+    private let loyaltyRewardsService: LoyaltyRewardsServiceable
+
+    init(
+        db: Firestore = Firestore.firestore(),
+        loyaltyRewardsService: LoyaltyRewardsServiceable
+    ) {
+        self.db = db
+        self.loyaltyRewardsService = loyaltyRewardsService
+    }
+
     func submit(order: Order) async throws {
         let quantitiesByMenuItemId = Dictionary(
             grouping: order.items,
             by: \.menuItemId
         )
-            .compactMapValues { items in
-                let total = items.reduce(0) { $0 + $1.quantity }
-                return total > 0 ? total : nil
-            }
-        
+        .compactMapValues { items in
+            let total = items.reduce(0) { $0 + $1.quantity }
+            return total > 0 ? total : nil
+        }
+
         let menuItemsToProcess: [(ref: DocumentReference, totalQuantity: Int)] =
         quantitiesByMenuItemId.map { menuItemId, totalQuantity in
             (
@@ -13211,24 +14931,22 @@ final class OrdersService: OrdersServiceable {
                 totalQuantity: totalQuantity
             )
         }
-        
+
         let _ = try await db.runTransaction { transaction, errorPointer in
             do {
-                // 1. Leer TODO primero
                 var loadedItems: [(ref: DocumentReference, dto: MenuItemDto, totalQuantity: Int)] = []
-                
+
                 for item in menuItemsToProcess {
                     let snapshot = try transaction.getDocument(item.ref)
                     let dto = try snapshot.data(as: MenuItemDto.self)
-                    
+
                     loadedItems.append((
                         ref: item.ref,
                         dto: dto,
                         totalQuantity: item.totalQuantity
                     ))
                 }
-                
-                // 2. Validar y escribir DESPUÉS
+
                 for item in loadedItems {
                     guard item.dto.isAvailable else {
                         throw NSError(
@@ -13239,7 +14957,7 @@ final class OrdersService: OrdersServiceable {
                             ]
                         )
                     }
-                    
+
                     guard item.dto.remainingQuantity >= item.totalQuantity else {
                         throw NSError(
                             domain: "OrdersService",
@@ -13249,44 +14967,53 @@ final class OrdersService: OrdersServiceable {
                             ]
                         )
                     }
-                    
+
                     let newRemainingQuantity = item.dto.remainingQuantity - item.totalQuantity
-                    
+
                     transaction.updateData([
                         "remainingQuantity": newRemainingQuantity,
                         "isAvailable": newRemainingQuantity > 0,
                         "updatedAt": Timestamp(date: Date())
                     ], forDocument: item.ref)
                 }
-                
+
                 let dto = OrderDto(from: order)
                 let orderData = try Firestore.Encoder().encode(dto)
-                
+
                 let orderRef = self.db
                     .collection(FirestoreConstants.restaurant_orders)
                     .document(order.id)
-                
+
                 transaction.setData(orderData, forDocument: orderRef)
-                
             } catch {
                 errorPointer?.pointee = error as NSError
                 return nil
             }
-            
+
             return nil
         }
+
+        if let nationalId = order.nationalId?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !nationalId.isEmpty {
+            try await loyaltyRewardsService.reserveRewards(
+                nationalId: nationalId,
+                referenceType: .order,
+                referenceId: order.id,
+                appliedRewards: order.appliedRewards
+            )
+        }
     }
-    
+
     func observeOrders(for nationalId: String) -> AsyncThrowingStream<[Order], Error> {
         let nationalId = nationalId.trimmingCharacters(in: .whitespacesAndNewlines)
-        
+
         return AsyncThrowingStream { continuation in
             guard !nationalId.isEmpty else {
                 continuation.yield([])
                 continuation.finish()
                 return
             }
-            
+
             let listener = db
                 .collection(FirestoreConstants.restaurant_orders)
                 .whereField("nationalId", isEqualTo: nationalId)
@@ -13296,12 +15023,12 @@ final class OrdersService: OrdersServiceable {
                         continuation.finish(throwing: error)
                         return
                     }
-                    
+
                     guard let documents = snapshot?.documents else {
                         continuation.yield([])
                         return
                     }
-                    
+
                     let orders: [Order] = documents.compactMap { document in
                         do {
                             let dto = try document.data(as: OrderDto.self)
@@ -13310,10 +15037,10 @@ final class OrdersService: OrdersServiceable {
                             return nil
                         }
                     }
-                    
+
                     continuation.yield(orders)
                 }
-            
+
             continuation.onTermination = { _ in
                 listener.remove()
             }
@@ -13747,10 +15474,66 @@ struct Order: Identifiable, Hashable, Codable {
     let updatedAt: Date
     let items: [OrderItem]
     let subtotal: Double
+    let loyaltyDiscountAmount: Double
+    let appliedRewards: [AppliedReward]
     let totalAmount: Double
     var status: OrderStatus
     let revision: Int
     let lastConfirmedRevision: Int?
+
+    init(
+        id: String,
+        nationalId: String?,
+        clientName: String,
+        tableNumber: String,
+        createdAt: Date,
+        updatedAt: Date,
+        items: [OrderItem],
+        subtotal: Double,
+        loyaltyDiscountAmount: Double = 0,
+        appliedRewards: [AppliedReward] = [],
+        totalAmount: Double,
+        status: OrderStatus,
+        revision: Int,
+        lastConfirmedRevision: Int?
+    ) {
+        self.id = id
+        self.nationalId = nationalId
+        self.clientName = clientName
+        self.tableNumber = tableNumber
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
+        self.items = items
+        self.subtotal = subtotal
+        self.loyaltyDiscountAmount = max(0, loyaltyDiscountAmount)
+        self.appliedRewards = appliedRewards
+        self.totalAmount = max(0, totalAmount)
+        self.status = status
+        self.revision = revision
+        self.lastConfirmedRevision = lastConfirmedRevision
+    }
+
+    func withLoyalty(
+        appliedRewards: [AppliedReward],
+        discount: Double
+    ) -> Order {
+        Order(
+            id: id,
+            nationalId: nationalId,
+            clientName: clientName,
+            tableNumber: tableNumber,
+            createdAt: createdAt,
+            updatedAt: updatedAt,
+            items: items,
+            subtotal: subtotal,
+            loyaltyDiscountAmount: max(0, discount),
+            appliedRewards: appliedRewards,
+            totalAmount: max(0, subtotal - max(0, discount)),
+            status: status,
+            revision: revision,
+            lastConfirmedRevision: lastConfirmedRevision
+        )
+    }
 
     var totalItems: Int {
         items.reduce(0) { $0 + $1.quantity }
@@ -13778,109 +15561,12 @@ struct Order: Identifiable, Hashable, Codable {
     }
 
     func recalculatedStatus() -> OrderStatus {
-        if status == .canceled {
-            return .canceled
-        }
-
-        if requiresReconfirmation {
-            return .pending
-        }
-
-        if allItemsCompleted {
-            return .completed
-        }
-
-        if hasStartedPreparing {
-            return .preparing
-        }
-
-        if status == .confirmed {
-            return .confirmed
-        }
-
+        if status == .canceled { return .canceled }
+        if requiresReconfirmation { return .pending }
+        if allItemsCompleted { return .completed }
+        if hasStartedPreparing { return .preparing }
+        if status == .confirmed { return .confirmed }
         return .pending
-    }
-
-    func confirming(now: Date = Date()) -> Order {
-        var updated = Order(
-            id: id,
-            nationalId: nationalId,
-            clientName: clientName,
-            tableNumber: tableNumber,
-            createdAt: createdAt,
-            updatedAt: now,
-            items: items,
-            subtotal: subtotal,
-            totalAmount: totalAmount,
-            status: .confirmed,
-            revision: revision,
-            lastConfirmedRevision: revision
-        )
-        updated.status = updated.recalculatedStatus()
-        return updated
-    }
-
-    func canceling(now: Date = Date()) -> Order {
-        Order(
-            id: id,
-            nationalId: nationalId,
-            clientName: clientName,
-            tableNumber: tableNumber,
-            createdAt: createdAt,
-            updatedAt: now,
-            items: items,
-            subtotal: subtotal,
-            totalAmount: totalAmount,
-            status: .canceled,
-            revision: revision,
-            lastConfirmedRevision: lastConfirmedRevision
-        )
-    }
-
-    func updatingItems(
-        _ newItems: [OrderItem],
-        subtotal: Double,
-        totalAmount: Double,
-        now: Date = Date()
-    ) -> Order {
-        var updated = Order(
-            id: id,
-            nationalId: nationalId,
-            clientName: clientName,
-            tableNumber: tableNumber,
-            createdAt: createdAt,
-            updatedAt: now,
-            items: newItems,
-            subtotal: subtotal,
-            totalAmount: totalAmount,
-            status: .pending,
-            revision: revision + 1,
-            lastConfirmedRevision: lastConfirmedRevision
-        )
-        updated.status = updated.recalculatedStatus()
-        return updated
-    }
-
-    func updatingPreparation(
-        items newItems: [OrderItem],
-        now: Date = Date()
-    ) -> Order {
-        var updated = Order(
-            id: id,
-            nationalId: nationalId,
-            clientName: clientName,
-            tableNumber: tableNumber,
-            createdAt: createdAt,
-            updatedAt: now,
-            items: newItems,
-            subtotal: subtotal,
-            totalAmount: totalAmount,
-            status: status,
-            revision: revision,
-            lastConfirmedRevision: lastConfirmedRevision
-        )
-        updated.status = updated.recalculatedStatus()
-        return updated
     }
 }
 
@@ -14062,28 +15748,6 @@ import Foundation
 protocol OrdersServiceable {
     func submit(order: Order) async throws
     func observeOrders(for nationalId: String) -> AsyncThrowingStream<[Order], Error>
-}
-
-```
-
----
-
-# Altos del Murco/root/feature/altos/restaurant/domain/state/CheckoutState.swift
-
-```swift
-//
-//  CheckoutState.swift
-//  Altos del Murco
-//
-//  Created by José Ruiz on 12/3/26.
-//
-
-import Foundation
-
-struct CheckoutState {
-    var isSubmitting = false
-    var createdOrder: Order?
-    var errorMessage: String?
 }
 
 ```
@@ -14876,21 +16540,32 @@ import SwiftUI
 struct MenuItemDetailView: View {
     var item: MenuItem
     let categoryTitle: String
-    
+    let rewardPresentation: RewardPresentation?
+
     @EnvironmentObject private var cartManager: CartManager
     @Environment(\.dismiss) private var dismiss
     @Environment(\.colorScheme) private var colorScheme
-    
+
     @State private var quantity: Int = 1
     @State private var notesText: String = ""
     @State private var showAddedMessage = false
-    
+
     private let theme: AppSectionTheme = .restaurant
-    
+
     private var palette: ThemePalette {
         AppTheme.palette(for: theme, scheme: colorScheme)
     }
-    
+
+    init(
+        item: MenuItem,
+        categoryTitle: String,
+        rewardPresentation: RewardPresentation? = nil
+    ) {
+        self.item = item
+        self.categoryTitle = categoryTitle
+        self.rewardPresentation = rewardPresentation
+    }
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
@@ -14908,7 +16583,7 @@ struct MenuItemDetailView: View {
             bottomBar
         }
     }
-    
+
     private var heroSection: some View {
         ZStack(alignment: .bottomLeading) {
             RoundedRectangle(cornerRadius: AppTheme.Radius.xLarge, style: .continuous)
@@ -14925,29 +16600,29 @@ struct MenuItemDetailView: View {
                         .blur(radius: 30)
                         .offset(x: 24, y: -24)
                 }
-            
+
             VStack(alignment: .leading, spacing: 14) {
                 HStack {
                     BrandIconBubble(theme: .restaurant, systemImage: "fork.knife", size: 60)
-                    
+
                     Spacer()
-                    
+
                     if item.isFeatured {
                         BrandBadge(theme: .restaurant, title: "Popular", selected: true)
                     }
                 }
-                
+
                 Spacer()
-                
+
                 Text(item.name)
                     .font(.system(size: 30, weight: .bold, design: .rounded))
                     .foregroundStyle(palette.onPrimary)
-                
+
                 HStack(spacing: 10) {
                     Label(categoryTitle, systemImage: "tag.fill")
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(palette.onPrimary.opacity(0.92))
-                    
+
                     Text(item.stockLabel)
                         .font(.caption.weight(.bold))
                         .foregroundStyle(item.canBeOrdered ? palette.onPrimary : palette.destructive)
@@ -14970,9 +16645,13 @@ struct MenuItemDetailView: View {
             y: 10
         )
     }
-    
+
     private var detailsSection: some View {
         VStack(alignment: .leading, spacing: 16) {
+            if let rewardPresentation {
+                rewardsCard(rewardPresentation)
+            }
+
             descriptionCard
             ingredientsCard
             priceCard
@@ -14980,7 +16659,34 @@ struct MenuItemDetailView: View {
             notesCard
         }
     }
-    
+
+    private func rewardsCard(_ reward: RewardPresentation) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            BrandSectionHeader(
+                theme: .restaurant,
+                title: "Premio disponible",
+                subtitle: "Este beneficio se aplica automáticamente cuando se cumpla la regla."
+            )
+
+            HStack(alignment: .top, spacing: 12) {
+                BrandBadge(theme: .restaurant, title: reward.badge, selected: true)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(reward.title)
+                        .font(.headline)
+                        .foregroundStyle(palette.textPrimary)
+
+                    Text(reward.message)
+                        .font(.subheadline)
+                        .foregroundStyle(palette.textSecondary)
+                }
+
+                Spacer()
+            }
+        }
+        .appCardStyle(.restaurant)
+    }
+
     private var descriptionCard: some View {
         VStack(alignment: .leading, spacing: 10) {
             BrandSectionHeader(
@@ -14988,7 +16694,7 @@ struct MenuItemDetailView: View {
                 title: "Descripción",
                 subtitle: "Conoce más sobre este plato."
             )
-            
+
             Text(item.description)
                 .font(.body)
                 .foregroundStyle(palette.textSecondary)
@@ -14996,7 +16702,7 @@ struct MenuItemDetailView: View {
         }
         .appCardStyle(.restaurant, emphasized: false)
     }
-    
+
     private var ingredientsCard: some View {
         VStack(alignment: .leading, spacing: 12) {
             BrandSectionHeader(
@@ -15004,14 +16710,14 @@ struct MenuItemDetailView: View {
                 title: "Ingredientes",
                 subtitle: "Componentes frescos y acompañamientos."
             )
-            
+
             ForEach(item.ingredients, id: \.self) { ingredient in
                 HStack(alignment: .top, spacing: 10) {
                     Circle()
                         .fill(palette.accent)
                         .frame(width: 7, height: 7)
                         .padding(.top, 7)
-                    
+
                     Text(ingredient)
                         .font(.subheadline)
                         .foregroundStyle(palette.textSecondary)
@@ -15020,7 +16726,7 @@ struct MenuItemDetailView: View {
         }
         .appCardStyle(.restaurant)
     }
-    
+
     private var priceCard: some View {
         VStack(alignment: .leading, spacing: 12) {
             BrandSectionHeader(
@@ -15028,14 +16734,14 @@ struct MenuItemDetailView: View {
                 title: "Precio",
                 subtitle: item.hasOffer ? "Oferta especial disponible." : "Precio regular actual."
             )
-            
+
             HStack(alignment: .lastTextBaseline, spacing: 10) {
                 if item.hasOffer, let offerPrice = item.offerPrice {
                     Text(item.price.priceText)
                         .font(.title3.weight(.medium))
                         .foregroundStyle(palette.textTertiary)
                         .strikethrough()
-                    
+
                     Text(offerPrice.priceText)
                         .font(.system(size: 28, weight: .bold, design: .rounded))
                         .foregroundStyle(palette.textPrimary)
@@ -15048,7 +16754,7 @@ struct MenuItemDetailView: View {
         }
         .appCardStyle(.restaurant)
     }
-    
+
     private var quantityCard: some View {
         VStack(alignment: .leading, spacing: 12) {
             BrandSectionHeader(
@@ -15056,19 +16762,19 @@ struct MenuItemDetailView: View {
                 title: "Cantidad",
                 subtitle: "Elige cuántos quieres añadir."
             )
-            
+
             QuantitySelectorView(
                 quantity: $quantity,
                 isEnabled: item.canBeOrdered,
                 theme: .restaurant,
                 minimum: 1,
-                maximum: item.remainingQuantity
+                maximum: max(1, item.remainingQuantity)
             )
             .opacity(item.isAvailable ? 1 : 0.55)
         }
         .appCardStyle(.restaurant)
     }
-    
+
     private var notesCard: some View {
         VStack(alignment: .leading, spacing: 12) {
             BrandSectionHeader(
@@ -15076,7 +16782,7 @@ struct MenuItemDetailView: View {
                 title: "Notas",
                 subtitle: "Instrucciones especiales para la cocina."
             )
-            
+
             TextField("Agrega alguna nota especial (opcional)", text: $notesText, axis: .vertical)
                 .appTextFieldStyle(.restaurant)
                 .lineLimit(3, reservesSpace: true)
@@ -15085,7 +16791,7 @@ struct MenuItemDetailView: View {
         }
         .appCardStyle(.restaurant)
     }
-    
+
     private var bottomBar: some View {
         VStack(spacing: 12) {
             if showAddedMessage {
@@ -15100,41 +16806,41 @@ struct MenuItemDetailView: View {
                     )
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
-            
+
             VStack(spacing: 14) {
                 HStack {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Total")
                             .font(.subheadline.weight(.medium))
                             .foregroundStyle(palette.textSecondary)
-                        
+
                         Text((Double(quantity) * item.finalPrice).priceText)
                             .font(.title3.bold())
                             .foregroundStyle(palette.textPrimary)
                     }
-                    
+
                     Spacer()
                 }
-                
+
                 if !item.canBeOrdered {
                     Text("No quedan platos disponibles por ahora.")
                         .font(.footnote)
                         .foregroundStyle(palette.destructive)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                
+
                 Button {
                     cartManager.add(item: item, quantity: quantity, notes: notesText)
-                    
+
                     withAnimation(.easeInOut(duration: 0.25)) {
                         showAddedMessage = true
                     }
-                    
+
                     DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
                         withAnimation(.easeInOut(duration: 0.25)) {
                             showAddedMessage = false
                         }
-                        
+
                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
                             dismiss()
                         }
@@ -15360,19 +17066,20 @@ import SwiftUI
 
 struct MenuListView: View {
     let sections: [MenuSection]
-    
+
     @ObservedObject var checkoutViewModel: CheckoutViewModel
     @ObservedObject var ordersViewModel: OrdersViewModel
     @ObservedObject var adventureComboBuilderViewModel: AdventureComboBuilderViewModel
     @ObservedObject var menuViewModel: MenuViewModel
-    
+
     @Binding var path: NavigationPath
-    
+
     @EnvironmentObject private var cartManager: CartManager
+    @EnvironmentObject private var sessionViewModel: AppSessionViewModel
     @Environment(\.colorScheme) private var colorScheme
-    
+
     @State private var selectedCategoryId: String?
-    
+
     private var palette: ThemePalette {
         AppTheme.palette(for: .restaurant, scheme: colorScheme)
     }
@@ -15396,10 +17103,7 @@ struct MenuListView: View {
             let lhsRank = categoryRank(for: lhs.category.title)
             let rhsRank = categoryRank(for: rhs.category.title)
 
-            if lhsRank != rhsRank {
-                return lhsRank < rhsRank
-            }
-
+            if lhsRank != rhsRank { return lhsRank < rhsRank }
             return lhs.category.title < rhs.category.title
         }
     }
@@ -15412,7 +17116,7 @@ struct MenuListView: View {
         guard let selectedCategoryId else { return orderedSections }
         return orderedSections.filter { $0.category.id == selectedCategoryId }
     }
-    
+
     private var featuredItems: [MenuItem] {
         sections
             .flatMap(\.items)
@@ -15442,6 +17146,21 @@ struct MenuListView: View {
             if selectedCategoryId == nil {
                 selectedCategoryId = categories.first?.id
             }
+
+            if let nationalId = sessionViewModel.authenticatedProfile?.nationalId {
+                menuViewModel.setNationalId(nationalId)
+            }
+        }
+        .onAppear {
+            menuViewModel.onAppear()
+
+            if let nationalId = sessionViewModel.authenticatedProfile?.nationalId {
+                menuViewModel.setNationalId(nationalId)
+            }
+        }
+        .onChange(of: sessionViewModel.authenticatedProfile?.nationalId) { _, nationalId in
+            guard let nationalId else { return }
+            menuViewModel.setNationalId(nationalId)
         }
         .toolbar {
             ToolbarItemGroup(placement: .topBarTrailing) {
@@ -15489,22 +17208,29 @@ struct MenuListView: View {
         .navigationDestination(for: Route.self) { route in
             switch route {
             case let .menuDetail(item, categoryTitle):
-                MenuItemDetailView(item: item, categoryTitle: categoryTitle)
+                MenuItemDetailView(
+                    item: item,
+                    categoryTitle: categoryTitle,
+                    rewardPresentation: menuViewModel.rewardPresentation(for: item)
+                )
             case .cart:
                 CartView()
             case .checkout:
                 CheckoutView(viewModel: checkoutViewModel, path: $path)
             case .reservationBuilder:
-                AdventureComboBuilderView(adventureComboBuilderViewModel: adventureComboBuilderViewModel, menuViewModel: menuViewModel)
-                    .onAppear {
-                        adventureComboBuilderViewModel.resetForFoodOnly()
-                    }
+                AdventureComboBuilderView(
+                    adventureComboBuilderViewModel: adventureComboBuilderViewModel,
+                    menuViewModel: menuViewModel
+                )
+                .onAppear {
+                    adventureComboBuilderViewModel.resetForFoodOnly()
+                }
             case let .orderSuccess(order):
                 OrderSuccessView(order: order, path: $path)
             }
         }
     }
-    
+
     private var featuredCarousel: some View {
         VStack(alignment: .leading, spacing: 14) {
             BrandSectionHeader(
@@ -15516,16 +17242,22 @@ struct MenuListView: View {
             TabView {
                 ForEach(featuredItems) { item in
                     NavigationLink(value: Route.menuDetail(item, categoryTitle(for: item.categoryId))) {
-                        FeaturedMenuCard(item: item)
+                        VStack(alignment: .leading, spacing: 10) {
+                            FeaturedMenuCard(item: item)
+
+                            if let reward = menuViewModel.rewardPresentation(for: item) {
+                                rewardHintCard(reward)
+                            }
+                        }
                     }
                     .buttonStyle(.plain)
                 }
             }
-            .frame(height: 220)
+            .frame(height: 255)
             .tabViewStyle(.page(indexDisplayMode: .automatic))
         }
     }
-    
+
     private var categorySelector: some View {
         VStack(alignment: .leading, spacing: 12) {
             BrandSectionHeader(
@@ -15554,7 +17286,7 @@ struct MenuListView: View {
             }
         }
     }
-    
+
     @ViewBuilder
     private func sectionContent(_ section: MenuSection) -> some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -15566,32 +17298,49 @@ struct MenuListView: View {
             LazyVStack(spacing: 12) {
                 ForEach(section.items) { item in
                     NavigationLink(value: Route.menuDetail(item, section.category.title)) {
-                        MenuItemRowView(item: item)
+                        VStack(alignment: .leading, spacing: 10) {
+                            MenuItemRowView(item: item)
+
+                            if let reward = menuViewModel.rewardPresentation(for: item) {
+                                rewardHintCard(reward)
+                            }
+                        }
                     }
                     .buttonStyle(.plain)
                 }
             }
         }
     }
-    
+
     private func categoryTitle(for categoryId: String) -> String {
         categories.first(where: { $0.id == categoryId })?.title ?? ""
     }
-    
-    private func stockBadge(for item: MenuItem) -> some View {
-        Text(item.stockLabel)
-            .font(.caption2.weight(.semibold))
-            .foregroundStyle(item.canBeOrdered ? palette.textSecondary : palette.destructive)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 5)
-            .background(
-                Capsule()
-                    .fill(
-                        item.canBeOrdered
-                        ? palette.elevatedCard
-                        : palette.destructive.opacity(0.12)
-                    )
-            )
+
+    private func rewardHintCard(_ reward: RewardPresentation) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            BrandBadge(theme: .restaurant, title: reward.badge, selected: true)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(reward.title)
+                    .font(.caption.bold())
+                    .foregroundStyle(palette.textPrimary)
+
+                Text(reward.message)
+                    .font(.caption)
+                    .foregroundStyle(palette.textSecondary)
+            }
+
+            Spacer()
+        }
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(palette.elevatedCard)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(palette.stroke, lineWidth: 1)
+        )
     }
 }
 
@@ -15765,6 +17514,7 @@ struct CheckoutView: View {
             VStack(spacing: 20) {
                 clientDetailsSection
                 summarySection
+                rewardsSection
                 confirmSection
             }
             .padding(.horizontal, 16)
@@ -15787,6 +17537,8 @@ struct CheckoutView: View {
         )
         .onAppear {
             syncProfileFieldsFromSession()
+            let nationalId = authenticatedProfile?.nationalId ?? cartManager.clientId ?? ""
+            viewModel.onAppear(nationalId: nationalId)
         }
         .onChange(of: viewModel.state.createdOrder) { _, order in
             guard let order else { return }
@@ -15992,6 +17744,46 @@ struct CheckoutView: View {
             cartManager.updateClientName(profile.fullName)
         }
     }
+    
+    private var rewardsSection: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            BrandSectionHeader(
+                theme: .restaurant,
+                title: "Tus premios",
+                subtitle: "Se aplican automáticamente si el pedido cumple la regla."
+            )
+
+            if viewModel.state.isLoadingRewards {
+                ProgressView("Calculando premios...")
+            } else if viewModel.state.rewardPreview.appliedRewards.isEmpty {
+                Text("No hay premios automáticos aplicables para este pedido.")
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(viewModel.state.rewardPreview.appliedRewards) { reward in
+                    HStack {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(reward.title).font(.headline)
+                            Text(reward.note)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+
+                        Spacer()
+
+                        Text("-\(reward.amount.priceText)")
+                            .font(.subheadline.bold())
+                            .foregroundStyle(.green)
+                    }
+                    .padding(12)
+                    .background(
+                        RoundedRectangle(cornerRadius: 18, style: .continuous)
+                            .fill(palette.elevatedCard)
+                    )
+                }
+            }
+        }
+        .appCardStyle(.restaurant)
+    }
 }
 
 ```
@@ -16134,7 +17926,7 @@ import SwiftUI
 struct OrderDetailView: View {
     let order: Order
     @Environment(\.colorScheme) private var colorScheme
-    
+
     private var palette: ThemePalette {
         AppTheme.palette(for: .restaurant, scheme: colorScheme)
     }
@@ -16173,6 +17965,23 @@ struct OrderDetailView: View {
                 .textCase(nil)
             }
 
+            if !order.appliedRewards.isEmpty {
+                Section {
+                    rewardsCard
+                        .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+                        .listRowBackground(Color.clear)
+                } header: {
+                    BrandSectionHeader(
+                        theme: .restaurant,
+                        title: "Premios aplicados",
+                        subtitle: "Beneficios usados automáticamente en este pedido."
+                    )
+                    .padding(.horizontal, 16)
+                    .padding(.top, 8)
+                    .textCase(nil)
+                }
+            }
+
             Section {
                 amountsCard
                     .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
@@ -16194,7 +18003,7 @@ struct OrderDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
         .appScreenStyle(.restaurant)
     }
-    
+
     private var headerCard: some View {
         VStack(alignment: .leading, spacing: 18) {
             HStack(alignment: .top, spacing: 12) {
@@ -16267,16 +18076,52 @@ struct OrderDetailView: View {
         }
         .appCardStyle(.restaurant, emphasized: false)
     }
-    
+
+    private var rewardsCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            ForEach(order.appliedRewards) { reward in
+                HStack(alignment: .top, spacing: 12) {
+                    BrandBadge(theme: .restaurant, title: "Premio", selected: true)
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(reward.title)
+                            .font(.headline)
+                            .foregroundStyle(palette.textPrimary)
+
+                        Text(reward.note)
+                            .font(.caption)
+                            .foregroundStyle(palette.textSecondary)
+                    }
+
+                    Spacer()
+
+                    Text("-\(reward.amount.priceText)")
+                        .font(.subheadline.bold())
+                        .foregroundStyle(palette.success)
+                }
+            }
+        }
+        .appCardStyle(.restaurant)
+    }
+
     private var amountsCard: some View {
         VStack(spacing: 0) {
             detailLine(title: "Subtotal", value: order.subtotal.priceText)
+
+            if order.loyaltyDiscountAmount > 0 {
+                Divider().overlay(palette.stroke)
+                detailLine(
+                    title: "Murco Loyalty",
+                    value: "-\(order.loyaltyDiscountAmount.priceText)"
+                )
+            }
+
             Divider().overlay(palette.stroke)
             detailLine(title: "Total", value: order.totalAmount.priceText, emphasized: true)
         }
         .appCardStyle(.restaurant)
     }
-    
+
     private func detailLine(title: String, value: String, emphasized: Bool = false) -> some View {
         HStack(spacing: 12) {
             Text(title)
@@ -16330,7 +18175,7 @@ struct OrderRowView: View {
             return palette.destructive
         }
     }
-    
+
     let order: Order
 
     private var effectiveStatus: OrderStatus {
@@ -16339,11 +18184,6 @@ struct OrderRowView: View {
 
     private var progressText: String {
         "\(order.preparedItemsCount)/\(order.totalItems) productos"
-    }
-
-    private var progressValue: Double {
-        guard order.totalItems > 0 else { return 0 }
-        return Double(order.preparedItemsCount) / Double(order.totalItems)
     }
 
     var body: some View {
@@ -16386,6 +18226,24 @@ struct OrderRowView: View {
                     .tint(progressColor)
             }
 
+            if order.loyaltyDiscountAmount > 0 {
+                HStack(spacing: 8) {
+                    BrandBadge(theme: .restaurant, title: "Murco Loyalty", selected: true)
+
+                    Text("-\(order.loyaltyDiscountAmount.priceText)")
+                        .font(.caption.bold())
+                        .foregroundStyle(palette.success)
+
+                    Spacer()
+                }
+
+                if let reward = order.appliedRewards.first {
+                    Text(reward.note)
+                        .font(.caption)
+                        .foregroundStyle(palette.textSecondary)
+                }
+            }
+
             if order.requiresReconfirmation {
                 Label("Editado después de la confirmación", systemImage: "exclamationmark.arrow.trianglehead.2.clockwise")
                     .font(.caption)
@@ -16396,6 +18254,11 @@ struct OrderRowView: View {
                     .foregroundStyle(palette.textSecondary)
             }
         }
+    }
+
+    private var progressValue: Double {
+        guard order.totalItems > 0 else { return 0 }
+        return Double(order.preparedItemsCount) / Double(order.totalItems)
     }
 }
 
@@ -17239,42 +19102,108 @@ struct OrdersView: View {
 import Combine
 import Foundation
 
+struct CheckoutRewardPreview: Hashable {
+    let appliedRewards: [AppliedReward]
+    let discountAmount: Double
+    let walletSnapshot: RewardWalletSnapshot
+
+    static func empty(nationalId: String) -> CheckoutRewardPreview {
+        CheckoutRewardPreview(
+            appliedRewards: [],
+            discountAmount: 0,
+            walletSnapshot: .empty(nationalId: nationalId)
+        )
+    }
+}
+
+struct CheckoutState {
+    var isSubmitting = false
+    var isLoadingRewards = false
+    var createdOrder: Order?
+    var rewardPreview: CheckoutRewardPreview = .empty(nationalId: "")
+    var errorMessage: String?
+}
+
 @MainActor
 final class CheckoutViewModel: ObservableObject {
     @Published private(set) var state = CheckoutState()
-    
+
     private let submitOrderUseCase: SubmitOrderUseCase
     private let cartManager: CartManager
-    
+    private let loyaltyRewardsService: LoyaltyRewardsServiceable
+
     init(
         submitOrderUseCase: SubmitOrderUseCase,
-        cartManager: CartManager
+        cartManager: CartManager,
+        loyaltyRewardsService: LoyaltyRewardsServiceable
     ) {
         self.submitOrderUseCase = submitOrderUseCase
         self.cartManager = cartManager
+        self.loyaltyRewardsService = loyaltyRewardsService
     }
-    
+
+    func onAppear(nationalId: String) {
+        Task { await refreshRewardPreview(nationalId: nationalId) }
+    }
+
+    func refreshRewardPreview(nationalId: String) async {
+        let cleanNationalId = nationalId.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleanNationalId.isEmpty else {
+            state.rewardPreview = .empty(nationalId: "")
+            return
+        }
+
+        guard let draftOrder = cartManager.createOrder() else {
+            state.rewardPreview = .empty(nationalId: cleanNationalId)
+            return
+        }
+
+        state.isLoadingRewards = true
+        defer { state.isLoadingRewards = false }
+
+        do {
+            let result = try await loyaltyRewardsService.previewRestaurantRewards(
+                for: cleanNationalId,
+                items: draftOrder.items
+            )
+
+            state.rewardPreview = CheckoutRewardPreview(
+                appliedRewards: result.appliedRewards,
+                discountAmount: result.totalDiscount,
+                walletSnapshot: result.walletSnapshot
+            )
+        } catch {
+            state.errorMessage = error.localizedDescription
+            state.rewardPreview = .empty(nationalId: cleanNationalId)
+        }
+    }
+
     func onEvent(_ event: CheckoutEvent) {
         switch event {
         case .confirmTapped:
             submitOrder()
         }
     }
-    
+
     private func submitOrder() {
-        guard let order = cartManager.createOrder() else {
+        guard let baseOrder = cartManager.createOrder() else {
             state.errorMessage = "Please complete client name, table number, and cart items."
             return
         }
-        
+
+        let finalOrder = baseOrder.withLoyalty(
+            appliedRewards: state.rewardPreview.appliedRewards,
+            discount: state.rewardPreview.discountAmount
+        )
+
         state.isSubmitting = true
         state.errorMessage = nil
-        
+
         Task {
             do {
-                try await submitOrderUseCase.execute(order: order)
+                try await submitOrderUseCase.execute(order: finalOrder)
                 cartManager.clear()
-                state.createdOrder = order
+                state.createdOrder = finalOrder
                 state.isSubmitting = false
             } catch {
                 state.isSubmitting = false
@@ -17282,7 +19211,7 @@ final class CheckoutViewModel: ObservableObject {
             }
         }
     }
-    
+
     func clearError() {
         state.errorMessage = nil
     }
@@ -17308,6 +19237,9 @@ import Foundation
 struct RestaurantMenuState {
     var sections: [MenuSection] = []
     var isLoading = false
+    var isLoadingRewards = false
+    var currentNationalId: String = ""
+    var rewardWalletSnapshot: RewardWalletSnapshot = .empty(nationalId: "")
     var errorMessage: String?
 }
 
@@ -17316,39 +19248,86 @@ final class MenuViewModel: ObservableObject {
     @Published private(set) var state = RestaurantMenuState()
 
     private let service: MenuServiceable
+    private let loyaltyRewardsService: LoyaltyRewardsServiceable
     private var listenerToken: MenuListenerTokenable?
 
-    init(service: MenuServiceable) {
+    init(
+        service: MenuServiceable,
+        loyaltyRewardsService: LoyaltyRewardsServiceable
+    ) {
         self.service = service
+        self.loyaltyRewardsService = loyaltyRewardsService
     }
 
     func onAppear() {
-        guard listenerToken == nil else { return }
+        if listenerToken == nil {
+            state.isLoading = true
+            state.errorMessage = nil
 
-        state.isLoading = true
-        state.errorMessage = nil
+            listenerToken = service.observeMenu { [weak self] result in
+                Task { @MainActor in
+                    guard let self else { return }
 
-        listenerToken = service.observeMenu { [weak self] result in
-            Task { @MainActor in
-                guard let self else { return }
+                    switch result {
+                    case .success(let sections):
+                        self.state.sections = sections
+                        self.state.isLoading = false
 
-                switch result {
-                case .success(let sections):
-                    self.state.sections = sections
-                    self.state.isLoading = false
-
-                case .failure(let error):
-                    self.state.sections = []
-                    self.state.errorMessage = error.localizedDescription
-                    self.state.isLoading = false
+                    case .failure(let error):
+                        self.state.sections = []
+                        self.state.errorMessage = error.localizedDescription
+                        self.state.isLoading = false
+                    }
                 }
             }
         }
+
+        Task {
+            await refreshRewardWallet()
+        }
+    }
+
+    func setNationalId(_ nationalId: String) {
+        let cleanNationalId = nationalId.filter(\.isNumber)
+        guard state.currentNationalId != cleanNationalId else { return }
+
+        state.currentNationalId = cleanNationalId
+
+        Task {
+            await refreshRewardWallet()
+        }
+    }
+
+    func rewardPresentation(for item: MenuItem) -> RewardPresentation? {
+        RewardPresentationFactory.menuPresentation(
+            for: item,
+            wallet: state.rewardWalletSnapshot
+        )
     }
 
     func onDisappear() {
         listenerToken?.remove()
         listenerToken = nil
+    }
+
+    private func refreshRewardWallet() async {
+        let cleanNationalId = state.currentNationalId.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard !cleanNationalId.isEmpty else {
+            state.rewardWalletSnapshot = .empty(nationalId: "")
+            state.isLoadingRewards = false
+            return
+        }
+
+        state.isLoadingRewards = true
+        defer { state.isLoadingRewards = false }
+
+        do {
+            state.rewardWalletSnapshot = try await loyaltyRewardsService.loadWalletSnapshot(for: cleanNationalId)
+        } catch {
+            state.rewardWalletSnapshot = .empty(nationalId: cleanNationalId)
+            state.errorMessage = error.localizedDescription
+        }
     }
 }
 
@@ -18673,6 +20652,8 @@ enum FirestoreConstants {
     static let loyalty_transactions = "loyalty_transactions"
     static let posts = "posts"
     static let restaurant_menu_items = "restaurant_menu_items"
+    static let client_loyalty_wallets = "client_loyalty_wallets"
+    static let loyalty_reward_templates = "loyalty_reward_templates"
 }
 
 ```

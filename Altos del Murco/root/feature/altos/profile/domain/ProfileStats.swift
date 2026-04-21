@@ -15,6 +15,7 @@ struct ProfileStats {
     let adventureSpent: Double
     let totalSpent: Double
     let level: LoyaltyLevel
+    let wallet: RewardWalletSnapshot
 
     static let empty = ProfileStats(
         points: 0,
@@ -23,6 +24,7 @@ struct ProfileStats {
         restaurantSpent: 0,
         adventureSpent: 0,
         totalSpent: 0,
-        level: .silver
+        level: .bronze,
+        wallet: .empty(nationalId: "")
     )
 }

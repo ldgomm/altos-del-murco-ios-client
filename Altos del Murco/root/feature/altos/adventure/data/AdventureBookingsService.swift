@@ -12,13 +12,16 @@ final class AdventureBookingsService: AdventureBookingsServiceable {
     private let db: Firestore
     private let bookingsCollection = "adventure_bookings"
     private let catalogService: AdventureCatalogServiceable
+    private let loyaltyRewardsService: LoyaltyRewardsServiceable
 
     init(
         db: Firestore = Firestore.firestore(),
-        catalogService: AdventureCatalogServiceable
+        catalogService: AdventureCatalogServiceable,
+        loyaltyRewardsService: LoyaltyRewardsServiceable
     ) {
         self.db = db
         self.catalogService = catalogService
+        self.loyaltyRewardsService = loyaltyRewardsService
     }
 
     func observeBookings(
@@ -78,7 +81,7 @@ final class AdventureBookingsService: AdventureBookingsServiceable {
     func createBooking(_ request: AdventureBookingRequest) async throws -> AdventureBooking {
         let catalog = try await catalogService.fetchCatalog()
 
-        guard let plan = AdventurePlanner.buildPlan(
+        guard let basePlan = AdventurePlanner.buildPlan(
             day: request.date,
             startAt: request.selectedStartAt,
             items: request.items,
@@ -89,12 +92,53 @@ final class AdventureBookingsService: AdventureBookingsServiceable {
             throw makeError("Invalid reservation configuration.")
         }
 
+        let rewardPreview = try await loyaltyRewardsService.previewAdventureRewards(
+            for: request.nationalId,
+            activityItems: request.items,
+            foodItems: request.foodReservation?.items ?? [],
+            catalog: catalog
+        )
+
+        let finalPlan = AdventureBuildPlan(
+            startAt: basePlan.startAt,
+            endAt: basePlan.endAt,
+            blocks: basePlan.blocks,
+            adventureSubtotal: basePlan.adventureSubtotal,
+            foodSubtotal: basePlan.foodSubtotal,
+            subtotal: basePlan.subtotal,
+            discountAmount: basePlan.discountAmount,
+            loyaltyDiscountAmount: rewardPreview.totalDiscount,
+            appliedRewards: rewardPreview.appliedRewards,
+            nightPremium: basePlan.nightPremium,
+            totalAmount: max(0, basePlan.totalAmount - rewardPreview.totalDiscount),
+            hasNightPremium: basePlan.hasNightPremium
+        )
+
+        let normalizedRequest = AdventureBookingRequest(
+            clientId: request.clientId,
+            clientName: request.clientName,
+            whatsappNumber: request.whatsappNumber,
+            nationalId: request.nationalId,
+            date: request.date,
+            selectedStartAt: request.selectedStartAt,
+            guestCount: request.guestCount,
+            eventType: request.eventType,
+            customEventTitle: request.customEventTitle,
+            eventNotes: request.eventNotes,
+            items: request.items,
+            foodReservation: request.foodReservation,
+            packageDiscountAmount: request.packageDiscountAmount,
+            loyaltyDiscountAmount: rewardPreview.totalDiscount,
+            appliedRewards: rewardPreview.appliedRewards,
+            notes: request.notes
+        )
+
         let createdAt = Date()
         let bookingRef = db.collection(bookingsCollection).document()
         let dto = AdventureBookingDto.from(
             bookingId: bookingRef.documentID,
-            request: request,
-            plan: plan,
+            request: normalizedRequest,
+            plan: finalPlan,
             createdAt: createdAt
         )
 
@@ -108,6 +152,13 @@ final class AdventureBookingsService: AdventureBookingsServiceable {
                 }
             }
         }
+
+        try await loyaltyRewardsService.reserveRewards(
+            nationalId: normalizedRequest.nationalId,
+            referenceType: .booking,
+            referenceId: bookingRef.documentID,
+            appliedRewards: normalizedRequest.appliedRewards
+        )
 
         return dto.toDomain(documentId: bookingRef.documentID)
     }
@@ -136,6 +187,11 @@ final class AdventureBookingsService: AdventureBookingsServiceable {
                 }
             }
         }
+
+        try await loyaltyRewardsService.releaseRewards(
+            nationalId: dto.nationalId,
+            referenceId: id
+        )
     }
 
     private func makeError(_ message: String) -> NSError {

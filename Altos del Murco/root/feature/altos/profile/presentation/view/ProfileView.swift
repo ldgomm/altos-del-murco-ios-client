@@ -304,7 +304,8 @@ struct ProfileView: View {
                 totalSpent: viewModel.stats.totalSpent,
                 points: viewModel.stats.points,
                 completedOrders: viewModel.stats.completedOrders,
-                completedBookings: viewModel.stats.completedBookings
+                completedBookings: viewModel.stats.completedBookings,
+                walletSnapshot: viewModel.stats.wallet
             )
         } label: {
             VStack(alignment: .leading, spacing: 16) {

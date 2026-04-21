@@ -13,4 +13,6 @@ enum FirestoreConstants {
     static let loyalty_transactions = "loyalty_transactions"
     static let posts = "posts"
     static let restaurant_menu_items = "restaurant_menu_items"
+    static let client_loyalty_wallets = "client_loyalty_wallets"
+    static let loyalty_reward_templates = "loyalty_reward_templates"
 }

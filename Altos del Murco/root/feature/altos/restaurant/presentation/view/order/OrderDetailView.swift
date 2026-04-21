@@ -10,7 +10,7 @@ import SwiftUI
 struct OrderDetailView: View {
     let order: Order
     @Environment(\.colorScheme) private var colorScheme
-    
+
     private var palette: ThemePalette {
         AppTheme.palette(for: .restaurant, scheme: colorScheme)
     }
@@ -49,6 +49,23 @@ struct OrderDetailView: View {
                 .textCase(nil)
             }
 
+            if !order.appliedRewards.isEmpty {
+                Section {
+                    rewardsCard
+                        .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+                        .listRowBackground(Color.clear)
+                } header: {
+                    BrandSectionHeader(
+                        theme: .restaurant,
+                        title: "Premios aplicados",
+                        subtitle: "Beneficios usados automáticamente en este pedido."
+                    )
+                    .padding(.horizontal, 16)
+                    .padding(.top, 8)
+                    .textCase(nil)
+                }
+            }
+
             Section {
                 amountsCard
                     .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
@@ -70,7 +87,7 @@ struct OrderDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
         .appScreenStyle(.restaurant)
     }
-    
+
     private var headerCard: some View {
         VStack(alignment: .leading, spacing: 18) {
             HStack(alignment: .top, spacing: 12) {
@@ -143,16 +160,52 @@ struct OrderDetailView: View {
         }
         .appCardStyle(.restaurant, emphasized: false)
     }
-    
+
+    private var rewardsCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            ForEach(order.appliedRewards) { reward in
+                HStack(alignment: .top, spacing: 12) {
+                    BrandBadge(theme: .restaurant, title: "Premio", selected: true)
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(reward.title)
+                            .font(.headline)
+                            .foregroundStyle(palette.textPrimary)
+
+                        Text(reward.note)
+                            .font(.caption)
+                            .foregroundStyle(palette.textSecondary)
+                    }
+
+                    Spacer()
+
+                    Text("-\(reward.amount.priceText)")
+                        .font(.subheadline.bold())
+                        .foregroundStyle(palette.success)
+                }
+            }
+        }
+        .appCardStyle(.restaurant)
+    }
+
     private var amountsCard: some View {
         VStack(spacing: 0) {
             detailLine(title: "Subtotal", value: order.subtotal.priceText)
+
+            if order.loyaltyDiscountAmount > 0 {
+                Divider().overlay(palette.stroke)
+                detailLine(
+                    title: "Murco Loyalty",
+                    value: "-\(order.loyaltyDiscountAmount.priceText)"
+                )
+            }
+
             Divider().overlay(palette.stroke)
             detailLine(title: "Total", value: order.totalAmount.priceText, emphasized: true)
         }
         .appCardStyle(.restaurant)
     }
-    
+
     private func detailLine(title: String, value: String, emphasized: Bool = false) -> some View {
         HStack(spacing: 12) {
             Text(title)

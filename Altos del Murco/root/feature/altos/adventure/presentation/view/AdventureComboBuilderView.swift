@@ -161,7 +161,10 @@ struct AdventureComboBuilderView: View {
                 Button {
                     editingItem = item
                 } label: {
-                    ComboItemCard(item: item)
+                    ComboItemCard(
+                        item: item,
+                        rewardPresentation: adventureComboBuilderViewModel.appliedRewardPresentation(for: item)
+                    )
                 }
                 .buttonStyle(.plain)
                 .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
@@ -290,6 +293,7 @@ struct AdventureComboBuilderView: View {
                 ForEach(adventureComboBuilderViewModel.state.foodItems) { item in
                     ReservationFoodRow(
                         item: item,
+                        rewardPresentation: adventureComboBuilderViewModel.appliedRewardPresentation(for: item),
                         onEdit: { editingFoodItem = item },
                         onIncrease: { adventureComboBuilderViewModel.increaseFoodQuantity(item.id) },
                         onDecrease: { adventureComboBuilderViewModel.decreaseFoodQuantity(item.id) },
@@ -416,6 +420,7 @@ struct AdventureComboBuilderView: View {
     
     private struct ReservationFoodRow: View {
         let item: ReservationFoodItemDraft
+        let rewardPresentation: RewardPresentation?
         let onEdit: () -> Void
         let onIncrease: () -> Void
         let onDecrease: () -> Void
@@ -441,6 +446,17 @@ struct AdventureComboBuilderView: View {
                         Text(notes)
                             .font(.caption)
                             .foregroundStyle(.secondary)
+                    }
+
+                    if let rewardPresentation {
+                        HStack(spacing: 8) {
+                            BrandBadge(theme: .adventure, title: rewardPresentation.badge, selected: true)
+
+                            Text(rewardPresentation.message)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(2)
+                        }
                     }
                 }
 
@@ -1145,21 +1161,75 @@ struct AdventureComboBuilderView: View {
                     title: "Resumen",
                     subtitle: "Revisa el total antes de confirmar."
                 )
-                
-                //Later
+
                 if let slot = adventureComboBuilderViewModel.state.selectedSlot {
-                    summaryRow("Aventura", "$\(slot.adventureSubtotal.priceText)")
-                    summaryRow("Comida", "$\(slot.foodSubtotal.priceText)")
-                    summaryRow("Subtotal", "$\(slot.subtotal.priceText)")
-                    summaryRow("Descuento aventura", "-$\(slot.discountAmount.priceText)")
+                    summaryRow("Aventura", slot.adventureSubtotal.priceText)
+                    summaryRow("Comida", slot.foodSubtotal.priceText)
+                    summaryRow("Subtotal", slot.subtotal.priceText)
+                    summaryRow("Descuento aventura", "-\(slot.discountAmount.priceText)")
+
+                    if adventureComboBuilderViewModel.state.rewardPreview.totalDiscount > 0 {
+                        summaryRow(
+                            "Murco Loyalty",
+                            "-\(adventureComboBuilderViewModel.state.rewardPreview.totalDiscount.priceText)"
+                        )
+                    }
+
                     Divider()
-                    summaryRow("Total", "$\(slot.totalAmount.priceText)", bold: true)
+
+                    summaryRow(
+                        "Total",
+                        max(0, slot.totalAmount - adventureComboBuilderViewModel.state.rewardPreview.totalDiscount).priceText,
+                        bold: true
+                    )
                 } else {
                     summaryRow("Aventura estimada", adventureComboBuilderViewModel.estimatedAdventureSubtotal.priceText)
                     summaryRow("Comida estimada", adventureComboBuilderViewModel.estimatedFoodSubtotal.priceText)
                     summaryRow("Descuento estimado", "-\(adventureComboBuilderViewModel.estimatedDiscountAmount.priceText)")
+
+                    if adventureComboBuilderViewModel.state.rewardPreview.totalDiscount > 0 {
+                        summaryRow(
+                            "Murco Loyalty",
+                            "-\(adventureComboBuilderViewModel.state.rewardPreview.totalDiscount.priceText)"
+                        )
+                    }
+
                     Divider()
                     summaryRow("Total estimado", adventureComboBuilderViewModel.estimatedTotal.priceText, bold: true)
+                }
+
+                if !adventureComboBuilderViewModel.activeRewardPresentations.isEmpty {
+                    Divider()
+
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("Premios aplicados")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(palette.textPrimary)
+
+                        ForEach(adventureComboBuilderViewModel.activeRewardPresentations) { reward in
+                            HStack(alignment: .top, spacing: 10) {
+                                BrandBadge(theme: .adventure, title: reward.badge, selected: true)
+
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(reward.title)
+                                        .font(.caption.bold())
+                                        .foregroundStyle(palette.textPrimary)
+
+                                    Text(reward.message)
+                                        .font(.caption)
+                                        .foregroundStyle(palette.textSecondary)
+                                }
+
+                                Spacer()
+
+                                if let amountText = reward.amountText {
+                                    Text("-\(amountText)")
+                                        .font(.caption.bold())
+                                        .foregroundStyle(palette.success)
+                                }
+                            }
+                        }
+                    }
                 }
             }
             .appCardStyle(.adventure)
@@ -1168,12 +1238,12 @@ struct AdventureComboBuilderView: View {
             .listRowSeparator(.hidden)
         }
     }
-    
+
     private var confirmSection: some View {
         Section {
             VStack(spacing: 12) {
                 if showAddedMessage {
-                    Text("Order has been added")
+                    Text("Reserva agregada")
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(.white)
                         .padding(.horizontal, 16)
@@ -1208,8 +1278,6 @@ struct AdventureComboBuilderView: View {
                             dismiss()
                         }
                     }
-
-                    dismiss()
                 } label: {
                     if adventureComboBuilderViewModel.state.isSubmitting {
                         ProgressView()
@@ -1243,8 +1311,7 @@ struct AdventureComboBuilderView: View {
 
 private struct ComboItemCard: View {
     let item: AdventureReservationItemDraft
-
-    @EnvironmentObject private var sessionViewModel: AppSessionViewModel
+    let rewardPresentation: RewardPresentation?
 
     var body: some View {
         HStack(spacing: 14) {
@@ -1258,6 +1325,17 @@ private struct ComboItemCard: View {
                 Text(item.summaryText)
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
+
+                if let rewardPresentation {
+                    HStack(spacing: 8) {
+                        BrandBadge(theme: .adventure, title: rewardPresentation.badge, selected: true)
+
+                        Text(rewardPresentation.message)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(2)
+                    }
+                }
             }
 
             Spacer()

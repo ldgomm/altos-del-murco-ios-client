@@ -10,13 +10,16 @@ import Foundation
 final class AdventureModuleFactory {
     private let bookingsService: AdventureBookingsServiceable
     private let catalogService: AdventureCatalogServiceable
+    private let loyaltyRewardsService: LoyaltyRewardsServiceable
 
     init(
         bookingsService: AdventureBookingsServiceable,
-        catalogService: AdventureCatalogServiceable
+        catalogService: AdventureCatalogServiceable,
+        loyaltyRewardsService: LoyaltyRewardsServiceable
     ) {
         self.bookingsService = bookingsService
         self.catalogService = catalogService
+        self.loyaltyRewardsService = loyaltyRewardsService
     }
 
     func makeBuilderViewModel(
@@ -29,14 +32,15 @@ final class AdventureModuleFactory {
             getAvailabilityUseCase: GetAdventureAvailabilityUseCase(service: bookingsService),
             createBookingUseCase: CreateAdventureBookingUseCase(service: bookingsService),
             fetchAdventureCatalogUseCase: FetchAdventureCatalogUseCase(service: catalogService),
-            observeAdventureCatalogUseCase: ObserveAdventureCatalogUseCase(service: catalogService)
+            observeAdventureCatalogUseCase: ObserveAdventureCatalogUseCase(service: catalogService),
+            loyaltyRewardsService: loyaltyRewardsService
         )
     }
 
     func makeCatalogViewModel() -> AdventureCatalogViewModel {
         AdventureCatalogViewModel(service: catalogService)
     }
-    
+
     func makeBookingsViewModel() -> AdventureBookingsViewModel {
         AdventureBookingsViewModel(
             observeBookingsUseCase: ObserveAdventureBookingsUseCase(service: bookingsService),

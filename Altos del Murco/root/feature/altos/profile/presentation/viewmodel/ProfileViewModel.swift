@@ -33,6 +33,7 @@ final class ProfileViewModel: ObservableObject {
     private let onAccountDeleted: @MainActor () -> Void
 
     private var deleteNonce: String?
+    private var statsListenerToken: ProfileStatsListenerToken?
 
     init(
         initialProfile: ClientProfile,
@@ -57,7 +58,7 @@ final class ProfileViewModel: ObservableObject {
 
         Task {
             await loadAvatar()
-            await refreshStats()
+            startObservingStats()
         }
     }
 
@@ -98,7 +99,7 @@ final class ProfileViewModel: ObservableObject {
     }
 
     func onAppear() {
-        Task { await refreshStats() }
+        startObservingStats()
     }
 
     func updateAppearance(_ appearance: AppAppearance) {
@@ -124,7 +125,7 @@ final class ProfileViewModel: ObservableObject {
 
         Task {
             await loadAvatar()
-            await refreshStats()
+            startObservingStats()
         }
     }
 
@@ -136,6 +137,38 @@ final class ProfileViewModel: ObservableObject {
                 self?.handleProfileSaved(updatedProfile)
             }
         )
+    }
+
+
+    private func startObservingStats() {
+        statsListenerToken?.remove()
+        statsListenerToken = nil
+
+        let nationalId = profile.nationalId.filter(\.isNumber)
+        guard !nationalId.isEmpty else {
+            stats = .empty
+            isLoadingStats = false
+            return
+        }
+
+        isLoadingStats = true
+
+        statsListenerToken = profileStatsService.observeStats(for: nationalId) { [weak self] result in
+            guard let self else { return }
+
+            switch result {
+            case .success(let stats):
+                self.stats = stats
+                self.isLoadingStats = false
+
+            case .failure(let error):
+                self.isLoadingStats = false
+                self.alertItem = ProfileAlertItem(
+                    title: "Could not load profile stats",
+                    message: error.localizedDescription
+                )
+            }
+        }
     }
 
     func refreshStats() async {

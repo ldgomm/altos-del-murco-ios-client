@@ -61,14 +61,22 @@ struct AltosDelMurcoApp: App {
 
             _cartManager = StateObject(wrappedValue: sharedCartManager)
 
-            let ordersService: OrdersServiceable = OrdersService()
+            let loyaltyRewardsService: LoyaltyRewardsServiceable = LoyaltyRewardsService()
+
+            let ordersService: OrdersServiceable = OrdersService(
+                loyaltyRewardsService: loyaltyRewardsService
+            )
             let observeOrdersUseCase = ObserveOrdersUseCase(service: ordersService)
             let submitOrderUseCase = SubmitOrderUseCase(service: ordersService)
 
-            let ordersVM = OrdersViewModel(observeOrdersUseCase: observeOrdersUseCase)
+            let ordersVM = OrdersViewModel(
+                observeOrdersUseCase: observeOrdersUseCase
+            )
+
             let checkoutVM = CheckoutViewModel(
                 submitOrderUseCase: submitOrderUseCase,
-                cartManager: sharedCartManager
+                cartManager: sharedCartManager,
+                loyaltyRewardsService: loyaltyRewardsService
             )
 
             _ordersViewModel = StateObject(wrappedValue: ordersVM)
@@ -76,13 +84,16 @@ struct AltosDelMurcoApp: App {
 
             let adventureCatalogService = AdventureCatalogService()
             let adventureBookingsService = AdventureBookingsService(
-                catalogService: adventureCatalogService
+                catalogService: adventureCatalogService,
+                loyaltyRewardsService: loyaltyRewardsService
             )
+
             self.adventureModuleFactory = AdventureModuleFactory(
                 bookingsService: adventureBookingsService,
-                catalogService: adventureCatalogService
+                catalogService: adventureCatalogService,
+                loyaltyRewardsService: loyaltyRewardsService
             )
-            
+
             let authRepository: AuthenticationRepositoriable = AuthenticationRepository()
             let clientProfileRepository: ClientProfileRepositoriable = ClientProfileRepository()
 
@@ -105,13 +116,17 @@ struct AltosDelMurcoApp: App {
                 resolveSessionUseCase: resolveSessionUseCase,
                 completeClientProfileUseCase: completeClientProfileUseCase,
                 deleteCurrentAccountUseCase: deleteCurrentAccountUseCase,
-                signOutUseCase: signOutUseCase
+                signOutUseCase: signOutUseCase,
+                loyaltyRewardsService: loyaltyRewardsService
             )
 
             _sessionViewModel = StateObject(wrappedValue: sessionVM)
-            
+
             let menuService = MenuService()
-            let menuViewModel = MenuViewModel(service: menuService)
+            let menuViewModel = MenuViewModel(
+                service: menuService,
+                loyaltyRewardsService: loyaltyRewardsService
+            )
             _menuViewModel = StateObject(wrappedValue: menuViewModel)
 
         } catch {

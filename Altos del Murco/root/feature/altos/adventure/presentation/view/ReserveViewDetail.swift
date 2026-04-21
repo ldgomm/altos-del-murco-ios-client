@@ -349,7 +349,48 @@ struct ReserveViewDetail: View {
             amountRow("Comida", booking.foodSubtotal)
             amountRow("Subtotal", booking.subtotal)
             amountRow("Descuento", -booking.discountAmount)
-            amountRow("Total", booking.totalAmount, isPrimary: true)
+
+            if booking.loyaltyDiscountAmount > 0 {
+                amountRow("Murco Loyalty", -booking.loyaltyDiscountAmount)
+            }
+
+            amountRow(
+                "Total",
+                max(0, booking.totalAmount - booking.loyaltyDiscountAmount),
+                isPrimary: true
+            )
+
+            if !booking.appliedRewards.isEmpty {
+                Divider()
+
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Premios aplicados")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(palette.textPrimary)
+
+                    ForEach(booking.appliedRewards) { reward in
+                        HStack(alignment: .top, spacing: 10) {
+                            BrandBadge(theme: .adventure, title: "Premio", selected: true)
+
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(reward.title)
+                                    .font(.caption.bold())
+                                    .foregroundStyle(palette.textPrimary)
+
+                                Text(reward.note)
+                                    .font(.caption)
+                                    .foregroundStyle(palette.textSecondary)
+                            }
+
+                            Spacer()
+
+                            Text("-\(reward.amount.priceText)")
+                                .font(.caption.bold())
+                                .foregroundStyle(palette.success)
+                        }
+                    }
+                }
+            }
         }
         .appCardStyle(.adventure)
     }

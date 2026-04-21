@@ -305,6 +305,8 @@ struct AdventureBuildPlan: Hashable {
     let foodSubtotal: Double
     let subtotal: Double
     let discountAmount: Double
+    let loyaltyDiscountAmount: Double
+    let appliedRewards: [AppliedReward]
     let nightPremium: Double
     let totalAmount: Double
     let hasNightPremium: Bool
@@ -337,7 +339,45 @@ struct AdventureBookingRequest: Hashable {
     let items: [AdventureReservationItemDraft]
     let foodReservation: ReservationFoodDraft?
     let packageDiscountAmount: Double
+    let loyaltyDiscountAmount: Double
+    let appliedRewards: [AppliedReward]
     let notes: String?
+
+    init(
+        clientId: String?,
+        clientName: String,
+        whatsappNumber: String,
+        nationalId: String,
+        date: Date,
+        selectedStartAt: Date,
+        guestCount: Int,
+        eventType: ReservationEventType,
+        customEventTitle: String?,
+        eventNotes: String?,
+        items: [AdventureReservationItemDraft],
+        foodReservation: ReservationFoodDraft?,
+        packageDiscountAmount: Double = 0,
+        loyaltyDiscountAmount: Double = 0,
+        appliedRewards: [AppliedReward] = [],
+        notes: String?
+    ) {
+        self.clientId = clientId
+        self.clientName = clientName
+        self.whatsappNumber = whatsappNumber
+        self.nationalId = nationalId
+        self.date = date
+        self.selectedStartAt = selectedStartAt
+        self.guestCount = guestCount
+        self.eventType = eventType
+        self.customEventTitle = customEventTitle
+        self.eventNotes = eventNotes
+        self.items = items
+        self.foodReservation = foodReservation
+        self.packageDiscountAmount = max(0, packageDiscountAmount)
+        self.loyaltyDiscountAmount = max(0, loyaltyDiscountAmount)
+        self.appliedRewards = appliedRewards
+        self.notes = notes
+    }
 
     var hasActivities: Bool { !items.isEmpty }
     var hasFoodReservation: Bool { !(foodReservation?.isEmpty ?? true) }
@@ -363,15 +403,17 @@ struct AdventureBooking: Identifiable, Hashable {
     let foodSubtotal: Double
     let subtotal: Double
     let discountAmount: Double
+    let loyaltyDiscountAmount: Double
+    let appliedRewards: [AppliedReward]
     let nightPremium: Double
     let totalAmount: Double
     let status: AdventureBookingStatus
     let createdAt: Date
     let notes: String?
-    
+
     var hasActivities: Bool { !items.isEmpty }
     var hasFoodReservation: Bool { !(foodReservation?.isEmpty ?? true) }
-    
+
     var eventDisplayTitle: String {
         if eventType == .custom {
             let clean = customEventTitle?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
@@ -379,7 +421,7 @@ struct AdventureBooking: Identifiable, Hashable {
         }
         return eventType.title
     }
-    
+
     var visitTypeTitle: String {
         switch (hasActivities, hasFoodReservation) {
         case (true, true): return "Aventura + comida"
@@ -610,6 +652,8 @@ enum AdventurePlanner {
                 foodSubtotal: foodSubtotal,
                 subtotal: foodSubtotal,
                 discountAmount: 0,
+                loyaltyDiscountAmount: 0,
+                appliedRewards: [],
                 nightPremium: 0,
                 totalAmount: foodSubtotal,
                 hasNightPremium: false
@@ -833,6 +877,8 @@ enum AdventurePlanner {
             foodSubtotal: foodSubtotal,
             subtotal: totalSubtotal,
             discountAmount: totalDiscountAmount,
+            loyaltyDiscountAmount: 0,
+            appliedRewards: [],
             nightPremium: 0,
             totalAmount: totalAmount,
             hasNightPremium: hasNightPremium

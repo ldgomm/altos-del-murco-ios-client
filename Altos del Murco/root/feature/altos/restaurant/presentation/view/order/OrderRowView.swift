@@ -28,7 +28,7 @@ struct OrderRowView: View {
             return palette.destructive
         }
     }
-    
+
     let order: Order
 
     private var effectiveStatus: OrderStatus {
@@ -37,11 +37,6 @@ struct OrderRowView: View {
 
     private var progressText: String {
         "\(order.preparedItemsCount)/\(order.totalItems) productos"
-    }
-
-    private var progressValue: Double {
-        guard order.totalItems > 0 else { return 0 }
-        return Double(order.preparedItemsCount) / Double(order.totalItems)
     }
 
     var body: some View {
@@ -84,6 +79,24 @@ struct OrderRowView: View {
                     .tint(progressColor)
             }
 
+            if order.loyaltyDiscountAmount > 0 {
+                HStack(spacing: 8) {
+                    BrandBadge(theme: .restaurant, title: "Murco Loyalty", selected: true)
+
+                    Text("-\(order.loyaltyDiscountAmount.priceText)")
+                        .font(.caption.bold())
+                        .foregroundStyle(palette.success)
+
+                    Spacer()
+                }
+
+                if let reward = order.appliedRewards.first {
+                    Text(reward.note)
+                        .font(.caption)
+                        .foregroundStyle(palette.textSecondary)
+                }
+            }
+
             if order.requiresReconfirmation {
                 Label("Editado después de la confirmación", systemImage: "exclamationmark.arrow.trianglehead.2.clockwise")
                     .font(.caption)
@@ -94,5 +107,10 @@ struct OrderRowView: View {
                     .foregroundStyle(palette.textSecondary)
             }
         }
+    }
+
+    private var progressValue: Double {
+        guard order.totalItems > 0 else { return 0 }
+        return Double(order.preparedItemsCount) / Double(order.totalItems)
     }
 }

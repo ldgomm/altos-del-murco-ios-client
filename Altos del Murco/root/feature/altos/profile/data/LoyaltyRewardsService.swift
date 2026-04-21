@@ -1,0 +1,466 @@
+//
+//  LoyaltyRewardsService.swift
+//  Altos del Murco
+//
+//  Created by José Ruiz on 21/4/26.
+//
+
+import Foundation
+import FirebaseFirestore
+
+protocol LoyaltyRewardsListenerToken {
+    func remove()
+}
+
+final class FirestoreLoyaltyWalletListenerToken: LoyaltyRewardsListenerToken {
+    private var registration: ListenerRegistration?
+
+    init(registration: ListenerRegistration?) {
+        self.registration = registration
+    }
+
+    func remove() {
+        registration?.remove()
+        registration = nil
+    }
+}
+
+protocol LoyaltyRewardsServiceable {
+    func loadWalletSnapshot(for nationalId: String) async throws -> RewardWalletSnapshot
+
+    func observeWalletSnapshot(
+        for nationalId: String,
+        onChange: @escaping (Result<RewardWalletSnapshot, Error>) -> Void
+    ) -> LoyaltyRewardsListenerToken
+
+    func previewRestaurantRewards(
+        for nationalId: String,
+        items: [OrderItem]
+    ) async throws -> RewardComputationResult
+
+    func previewAdventureRewards(
+        for nationalId: String,
+        activityItems: [AdventureReservationItemDraft],
+        foodItems: [ReservationFoodItemDraft],
+        catalog: AdventureCatalogSnapshot
+    ) async throws -> RewardComputationResult
+
+    func reserveRewards(
+        nationalId: String,
+        referenceType: LoyaltyRewardReferenceType,
+        referenceId: String,
+        appliedRewards: [AppliedReward]
+    ) async throws
+
+    func consumeRewards(
+        nationalId: String,
+        referenceId: String
+    ) async throws
+
+    func releaseRewards(
+        nationalId: String,
+        referenceId: String
+    ) async throws
+}
+
+final class LoyaltyRewardsService: LoyaltyRewardsServiceable {
+    private let db: Firestore
+
+    init(db: Firestore = Firestore.firestore()) {
+        self.db = db
+    }
+
+    func loadWalletSnapshot(for nationalId: String) async throws -> RewardWalletSnapshot {
+        let cleanNationalId = nationalId.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleanNationalId.isEmpty else { return .empty(nationalId: "") }
+
+        async let templatesTask = fetchTemplates()
+        async let totalsTask = computeTotals(for: cleanNationalId)
+        async let walletTask = fetchWalletDocument(for: cleanNationalId)
+
+        let templates = try await templatesTask
+        let totals = try await totalsTask
+        let walletDocument = try await walletTask
+
+        let currentLevel = LoyaltyLevel.from(totalSpent: totals.totalSpent)
+
+        let eligibleTemplates = templates.filter { template in
+            template.isActive &&
+            template.triggerMode == .automatic &&
+            template.isEligible(for: currentLevel) &&
+            usageCount(
+                templateId: template.id,
+                inside: walletDocument.events
+            ) < max(1, template.maxUsesPerClient)
+        }
+        .sorted { lhs, rhs in
+            if lhs.priority != rhs.priority { return lhs.priority < rhs.priority }
+            return lhs.title < rhs.title
+        }
+
+        let reserved = walletDocument.events.filter { $0.status == .reserved }
+        let consumed = walletDocument.events.filter { $0.status == .consumed }
+        let released = walletDocument.events.filter { $0.status == .released }
+
+        return RewardWalletSnapshot(
+            nationalId: cleanNationalId,
+            currentLevel: currentLevel,
+            totalSpent: totals.totalSpent,
+            points: Int(totals.totalSpent.rounded(.down)),
+            availableTemplates: eligibleTemplates,
+            reservedEvents: reserved,
+            consumedEvents: consumed,
+            releasedEvents: released
+        )
+    }
+
+    func observeWalletSnapshot(
+        for nationalId: String,
+        onChange: @escaping (Result<RewardWalletSnapshot, Error>) -> Void
+    ) -> LoyaltyRewardsListenerToken {
+        let cleanNationalId = nationalId.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard !cleanNationalId.isEmpty else {
+            onChange(.success(.empty(nationalId: "")))
+            return FirestoreLoyaltyWalletListenerToken(registration: nil)
+        }
+
+        let walletRef = db.collection(FirestoreConstants.client_loyalty_wallets).document(cleanNationalId)
+
+        let registration = walletRef.addSnapshotListener { [weak self] _, error in
+            guard let self else { return }
+
+            if let error {
+                onChange(.failure(error))
+                return
+            }
+
+            Task {
+                do {
+                    let snapshot = try await self.loadWalletSnapshot(for: cleanNationalId)
+                    await MainActor.run {
+                        onChange(.success(snapshot))
+                    }
+                } catch {
+                    await MainActor.run {
+                        onChange(.failure(error))
+                    }
+                }
+            }
+        }
+
+        return FirestoreLoyaltyWalletListenerToken(registration: registration)
+    }
+
+    func previewRestaurantRewards(
+        for nationalId: String,
+        items: [OrderItem]
+    ) async throws -> RewardComputationResult {
+        let wallet = try await loadWalletSnapshot(for: nationalId)
+
+        let lines = items.map {
+            RewardMenuLine(
+                menuItemId: $0.menuItemId,
+                name: $0.name,
+                unitPrice: $0.unitPrice,
+                quantity: $0.quantity
+            )
+        }
+
+        return LoyaltyRewardEngine.evaluateRestaurant(
+            templates: wallet.availableTemplates,
+            wallet: wallet,
+            menuLines: lines
+        )
+    }
+
+    func previewAdventureRewards(
+        for nationalId: String,
+        activityItems: [AdventureReservationItemDraft],
+        foodItems: [ReservationFoodItemDraft],
+        catalog: AdventureCatalogSnapshot
+    ) async throws -> RewardComputationResult {
+        let wallet = try await loadWalletSnapshot(for: nationalId)
+
+        let activityLines = activityItems.compactMap { item -> RewardActivityLine? in
+            guard let activity = catalog.activity(for: item.activity) else { return nil }
+            let linePrice = AdventurePricingEngine.subtotal(for: item, catalog: catalog)
+
+            return RewardActivityLine(
+                activityId: activity.id,
+                title: activity.title,
+                linePrice: linePrice
+            )
+        }
+
+        let foodLines = foodItems.map {
+            RewardMenuLine(
+                menuItemId: $0.menuItemId,
+                name: $0.name,
+                unitPrice: $0.unitPrice,
+                quantity: $0.quantity
+            )
+        }
+
+        return LoyaltyRewardEngine.evaluateAdventure(
+            templates: wallet.availableTemplates,
+            wallet: wallet,
+            activityLines: activityLines,
+            foodLines: foodLines
+        )
+    }
+
+    func reserveRewards(
+        nationalId: String,
+        referenceType: LoyaltyRewardReferenceType,
+        referenceId: String,
+        appliedRewards: [AppliedReward]
+    ) async throws {
+        guard !appliedRewards.isEmpty else { return }
+
+        let cleanNationalId = nationalId.trimmingCharacters(in: .whitespacesAndNewlines)
+        let walletRef = db.collection(FirestoreConstants.client_loyalty_wallets).document(cleanNationalId)
+
+        _ = try await db.runTransaction { transaction, errorPointer in
+            do {
+                let walletDocument = try Self.loadWalletDocument(
+                    from: transaction,
+                    walletRef: walletRef
+                )
+
+                var events = walletDocument.events
+
+                for reward in appliedRewards {
+                    let templateRef = self.db
+                        .collection(FirestoreConstants.loyalty_reward_templates)
+                        .document(reward.templateId)
+
+                    let templateSnapshot = try transaction.getDocument(templateRef)
+                    guard templateSnapshot.exists else {
+                        throw NSError(
+                            domain: "LoyaltyRewardsService",
+                            code: 10,
+                            userInfo: [NSLocalizedDescriptionKey: "Reward template \(reward.templateId) no longer exists."]
+                        )
+                    }
+
+                    let templateDto = try templateSnapshot.data(as: LoyaltyRewardTemplateDto.self)
+                    let template = templateDto.toDomain()
+
+                    let alreadyUsed = Self.usageCount(
+                        templateId: reward.templateId,
+                        inside: events
+                    )
+
+                    guard alreadyUsed < max(1, template.maxUsesPerClient) else {
+                        throw NSError(
+                            domain: "LoyaltyRewardsService",
+                            code: 11,
+                            userInfo: [NSLocalizedDescriptionKey: "The reward \(template.title) is no longer available."]
+                        )
+                    }
+
+                    events.append(
+                        LoyaltyWalletEvent(
+                            id: reward.id,
+                            templateId: reward.templateId,
+                            templateTitle: reward.title,
+                            referenceType: referenceType,
+                            referenceId: referenceId,
+                            status: .reserved,
+                            amount: reward.amount,
+                            createdAt: Date(),
+                            updatedAt: Date()
+                        )
+                    )
+                }
+
+                let updated = LoyaltyWalletDocument(
+                    nationalId: cleanNationalId,
+                    updatedAt: Date(),
+                    events: events
+                )
+
+                try transaction.setData(from: updated, forDocument: walletRef, merge: true)
+                return nil
+            } catch {
+                errorPointer?.pointee = error as NSError
+                return nil
+            }
+        }
+    }
+
+    func consumeRewards(
+        nationalId: String,
+        referenceId: String
+    ) async throws {
+        try await mutateReferenceStatus(
+            nationalId: nationalId,
+            referenceId: referenceId,
+            targetStatus: .consumed
+        )
+    }
+
+    func releaseRewards(
+        nationalId: String,
+        referenceId: String
+    ) async throws {
+        try await mutateReferenceStatus(
+            nationalId: nationalId,
+            referenceId: referenceId,
+            targetStatus: .released
+        )
+    }
+
+    private func mutateReferenceStatus(
+        nationalId: String,
+        referenceId: String,
+        targetStatus: LoyaltyWalletEventStatus
+    ) async throws {
+        let cleanNationalId = nationalId.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleanNationalId.isEmpty else { return }
+
+        let walletRef = db.collection(FirestoreConstants.client_loyalty_wallets).document(cleanNationalId)
+
+        _ = try await db.runTransaction { transaction, errorPointer in
+            do {
+                let wallet = try Self.loadWalletDocument(
+                    from: transaction,
+                    walletRef: walletRef
+                )
+
+                let updatedEvents = wallet.events.map { event in
+                    guard event.referenceId == referenceId else { return event }
+                    guard event.status == .reserved else { return event }
+
+                    return LoyaltyWalletEvent(
+                        id: event.id,
+                        templateId: event.templateId,
+                        templateTitle: event.templateTitle,
+                        referenceType: event.referenceType,
+                        referenceId: event.referenceId,
+                        status: targetStatus,
+                        amount: event.amount,
+                        createdAt: event.createdAt,
+                        updatedAt: Date()
+                    )
+                }
+
+                let updated = LoyaltyWalletDocument(
+                    nationalId: cleanNationalId,
+                    updatedAt: Date(),
+                    events: updatedEvents
+                )
+
+                try transaction.setData(from: updated, forDocument: walletRef, merge: true)
+                return nil
+            } catch {
+                errorPointer?.pointee = error as NSError
+                return nil
+            }
+        }
+    }
+
+    private func fetchTemplates() async throws -> [LoyaltyRewardTemplate] {
+        let snapshot = try await db
+            .collection(FirestoreConstants.loyalty_reward_templates)
+            .getDocuments()
+
+        return try snapshot.documents
+            .map { try $0.data(as: LoyaltyRewardTemplateDto.self).toDomain() }
+            .sorted { lhs, rhs in
+                if lhs.priority != rhs.priority { return lhs.priority < rhs.priority }
+                return lhs.title < rhs.title
+            }
+    }
+
+    private func fetchWalletDocument(
+        for nationalId: String
+    ) async throws -> LoyaltyWalletDocument {
+        let ref = db.collection(FirestoreConstants.client_loyalty_wallets).document(nationalId)
+        let snapshot = try await ref.getDocument()
+
+        guard snapshot.exists else {
+            return LoyaltyWalletDocument(
+                nationalId: nationalId,
+                updatedAt: Date(),
+                events: []
+            )
+        }
+
+        return try snapshot.data(as: LoyaltyWalletDocument.self)
+    }
+
+    private func computeTotals(
+        for nationalId: String
+    ) async throws -> (restaurantSpent: Double, adventureSpent: Double, totalSpent: Double) {
+        async let ordersTask = db
+            .collection(FirestoreConstants.restaurant_orders)
+            .whereField("nationalId", isEqualTo: nationalId)
+            .getDocuments()
+
+        async let bookingsTask = db
+            .collection(FirestoreConstants.adventure_bookings)
+            .whereField("nationalId", isEqualTo: nationalId)
+            .getDocuments()
+
+        let orderSnapshot = try await ordersTask
+        let bookingSnapshot = try await bookingsTask
+
+        let orders: [Order] = try orderSnapshot.documents.compactMap { document in
+            let dto = try document.data(as: OrderDto.self)
+            return dto.toDomain()
+        }
+
+        let bookings: [AdventureBooking] = try bookingSnapshot.documents.compactMap { document in
+            let dto = try document.data(as: AdventureBookingDto.self)
+            return dto.toDomain(documentId: document.documentID)
+        }
+
+        let completedOrders = orders.filter { $0.recalculatedStatus() == .completed }
+        let completedBookings = bookings.filter { $0.status == .completed }
+
+        let restaurantSpent = completedOrders.reduce(0) { $0 + $1.totalAmount }
+        let adventureSpent = completedBookings.reduce(0) { $0 + $1.totalAmount }
+
+        return (
+            restaurantSpent: restaurantSpent,
+            adventureSpent: adventureSpent,
+            totalSpent: restaurantSpent + adventureSpent
+        )
+    }
+
+    private func usageCount(
+        templateId: String,
+        inside events: [LoyaltyWalletEvent]
+    ) -> Int {
+        Self.usageCount(templateId: templateId, inside: events)
+    }
+
+    private static func usageCount(
+        templateId: String,
+        inside events: [LoyaltyWalletEvent]
+    ) -> Int {
+        events.filter {
+            $0.templateId == templateId &&
+            ($0.status == .reserved || $0.status == .consumed)
+        }.count
+    }
+
+    private static func loadWalletDocument(
+        from transaction: Transaction,
+        walletRef: DocumentReference
+    ) throws -> LoyaltyWalletDocument {
+        let snapshot = try transaction.getDocument(walletRef)
+
+        guard snapshot.exists else {
+            return LoyaltyWalletDocument(
+                nationalId: walletRef.documentID,
+                updatedAt: Date(),
+                events: []
+            )
+        }
+
+        return try snapshot.data(as: LoyaltyWalletDocument.self)
+    }
+}

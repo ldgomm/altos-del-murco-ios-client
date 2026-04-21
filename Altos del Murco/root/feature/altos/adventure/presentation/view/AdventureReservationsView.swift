@@ -147,29 +147,6 @@ struct AdventureReservationsView: View {
         } else {
             Section {
                 ForEach(viewModel.state.bookings) { booking in
-//                    NavigationLink {
-//                        ReserveViewDetail(
-//                            booking: booking,
-//                            onCancel: booking.status != .canceled
-//                                ? { viewModel.cancelBooking(booking.id) }
-//                                : nil
-//                        )
-//                    } label: {
-//                        AdventureReservationRow(booking: booking)
-//                    }
-//                    .buttonStyle(.plain)
-//                    .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
-//                    .listRowBackground(Color.clear)
-//                    .listRowSeparator(.hidden)
-//                    .swipeActions(edge: .trailing) {
-//                        if booking.status != .canceled {
-//                            Button(role: .destructive) {
-//                                viewModel.cancelBooking(booking.id)
-//                            } label: {
-//                                Label("Cancelar", systemImage: "xmark")
-//                            }
-//                        }
-//                    }
                     Button {
                         selectedBooking = booking
                     } label: {
@@ -292,8 +269,28 @@ private struct AdventureReservationRow: View {
                 amountRow("Aventura", booking.adventureSubtotal)
                 amountRow("Comida", booking.foodSubtotal)
                 amountRow("Descuento", -booking.discountAmount)
-            //    amountRow("Recargo nocturno", booking.nightPremium)
-                amountRow("Total", booking.totalAmount, isPrimary: true)
+
+                if booking.loyaltyDiscountAmount > 0 {
+                    amountRow("Murco Loyalty", -booking.loyaltyDiscountAmount)
+                }
+
+                amountRow(
+                    "Total",
+                    max(0, booking.totalAmount - booking.loyaltyDiscountAmount),
+                    isPrimary: true
+                )
+
+                if let reward = booking.appliedRewards.first {
+                    HStack(alignment: .top, spacing: 8) {
+                        BrandBadge(theme: .adventure, title: "Premio", selected: true)
+
+                        Text(reward.note)
+                            .font(.caption)
+                            .foregroundStyle(palette.textSecondary)
+
+                        Spacer()
+                    }
+                }
 
                 HStack {
                     Spacer()
