@@ -418,10 +418,6 @@ final class AdventureComboBuilderViewModel: ObservableObject {
         let shouldRestartObservation =
             cleanNationalId != state.nationalId || rewardsListenerToken == nil
 
-        RewardDebugLog.info(
-            "setNationalId old=\(state.nationalId) new=\(cleanNationalId) restart=\(shouldRestartObservation)"
-        )
-
         state.nationalId = cleanNationalId
 
         if shouldRestartObservation {
@@ -509,26 +505,9 @@ final class AdventureComboBuilderViewModel: ObservableObject {
             $0.affectedMenuItemIds.contains(menuItem.id)
         }
 
-        RewardDebugLog.info(
-            """
-            foodPickerRewardPresentation menuItemId=\(menuItem.id) \
-            name=\(menuItem.name) \
-            quantity=\(quantity) \
-            projectedTotalDiscount=\(RewardDebugLog.formatMoney(projected.totalDiscount)) \
-            currentTotalDiscount=\(RewardDebugLog.formatMoney(state.rewardPreview.totalDiscount)) \
-            matchingRewardsCount=\(matchingRewards.count)
-            """
-        )
-        RewardDebugLog.dumpAppliedRewards(projected.appliedRewards, prefix: "foodPickerRewardPresentation")
-
         guard let reward = matchingRewards.first else {
-            RewardDebugLog.info("foodPickerRewardPresentation no applied reward for menuItemId=\(menuItem.id)")
             return nil
         }
-
-        RewardDebugLog.info(
-            "foodPickerRewardPresentation matched reward templateId=\(reward.templateId) title=\(reward.title) amount=\(RewardDebugLog.formatMoney(reward.amount))"
-        )
 
         return RewardPresentation.from(appliedReward: reward)
     }
@@ -538,16 +517,6 @@ final class AdventureComboBuilderViewModel: ObservableObject {
         let value = max(
             0,
             roundMoney(projected.totalDiscount - state.rewardPreview.totalDiscount)
-        )
-
-        RewardDebugLog.info(
-            """
-            foodPickerIncrementalDiscount menuItemId=\(menuItem.id) \
-            quantity=\(quantity) \
-            current=\(RewardDebugLog.formatMoney(state.rewardPreview.totalDiscount)) \
-            projected=\(RewardDebugLog.formatMoney(projected.totalDiscount)) \
-            incremental=\(RewardDebugLog.formatMoney(value))
-            """
         )
 
         return value
@@ -595,10 +564,6 @@ final class AdventureComboBuilderViewModel: ObservableObject {
             catalog: state.catalog
         )
 
-        RewardDebugLog.info(
-            "reset preserving nationalId=\(state.nationalId) clientName=\(state.clientName)"
-        )
-
         state = makeFreshBuilderState(
             items: [defaultItem],
             packageDiscountAmount: 0
@@ -612,10 +577,6 @@ final class AdventureComboBuilderViewModel: ObservableObject {
     }
 
     func resetForFoodOnly() {
-        RewardDebugLog.info(
-            "resetForFoodOnly preserving nationalId=\(state.nationalId) clientName=\(state.clientName)"
-        )
-
         state = makeFreshBuilderState(
             items: [],
             foodItems: [],
@@ -1266,7 +1227,6 @@ final class AdventureComboBuilderViewModel: ObservableObject {
 
         let activityLines = activityItems.compactMap { item -> RewardActivityLine? in
             guard let activity = state.catalog.activity(for: item.activity) else {
-                RewardDebugLog.info("rewardResult missing catalog activity for \(item.activity.rawValue)")
                 return nil
             }
 
@@ -1289,25 +1249,12 @@ final class AdventureComboBuilderViewModel: ObservableObject {
             )
         }
 
-        RewardDebugLog.info(
-            """
-            rewardResult local-eval templates=\(wallet.availableTemplates.count) \
-            activityLines=\(activityLines.map { "\($0.activityId):\(RewardDebugLog.formatMoney($0.linePrice))" }.joined(separator: " | ")) \
-            foodLines=\(foodLines.map { "\($0.menuItemId):qty=\($0.quantity):unit=\(RewardDebugLog.formatMoney($0.unitPrice))" }.joined(separator: " | "))
-            """
-        )
-
         let result = LoyaltyRewardEngine.evaluateAdventure(
             templates: wallet.availableTemplates,
             wallet: wallet,
             activityLines: activityLines,
             foodLines: foodLines
         )
-
-        RewardDebugLog.info(
-            "rewardResult local-eval totalDiscount=\(RewardDebugLog.formatMoney(result.totalDiscount)) appliedRewardsCount=\(result.appliedRewards.count)"
-        )
-        RewardDebugLog.dumpAppliedRewards(result.appliedRewards, prefix: "rewardResult")
 
         return result
     }
@@ -1359,10 +1306,7 @@ final class AdventureComboBuilderViewModel: ObservableObject {
             }
         }
 
-        RewardDebugLog.info("allocatedFoodDiscountByDraftId rawMenuDiscounts=\(menuDiscounts)")
-
         guard !menuDiscounts.isEmpty, !state.foodItems.isEmpty else {
-            RewardDebugLog.info("allocatedFoodDiscountByDraftId empty result because menuDiscounts or foodItems is empty")
             return [:]
         }
 
@@ -1376,21 +1320,15 @@ final class AdventureComboBuilderViewModel: ObservableObject {
         for (menuItemId, entries) in grouped {
             let totalDiscount = roundMoney(menuDiscounts[menuItemId, default: 0])
             guard totalDiscount > 0 else {
-                RewardDebugLog.info("allocatedFoodDiscountByDraftId skip menuItemId=\(menuItemId) because totalDiscount=0")
                 continue
             }
 
             let subtotal = entries.reduce(0.0) { $0 + $1.element.subtotal }
             guard subtotal > 0 else {
-                RewardDebugLog.info("allocatedFoodDiscountByDraftId skip menuItemId=\(menuItemId) because subtotal=0")
                 continue
             }
 
             var remainingDiscount = totalDiscount
-
-            RewardDebugLog.info(
-                "allocatedFoodDiscountByDraftId menuItemId=\(menuItemId) totalDiscount=\(RewardDebugLog.formatMoney(totalDiscount)) subtotal=\(RewardDebugLog.formatMoney(subtotal)) rows=\(entries.count)"
-            )
 
             for offset in entries.indices {
                 let item = entries[offset].element
@@ -1408,21 +1346,8 @@ final class AdventureComboBuilderViewModel: ObservableObject {
                 }
 
                 result[item.id] = allocation
-
-                RewardDebugLog.info(
-                    """
-                    allocatedFoodDiscountByDraftId row \
-                    draftId=\(item.id) \
-                    menuItemId=\(item.menuItemId) \
-                    quantity=\(item.quantity) \
-                    subtotal=\(RewardDebugLog.formatMoney(item.subtotal)) \
-                    allocation=\(RewardDebugLog.formatMoney(allocation))
-                    """
-                )
             }
         }
-
-        RewardDebugLog.info("allocatedFoodDiscountByDraftId final=\(result)")
         return result
     }
 

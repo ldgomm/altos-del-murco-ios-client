@@ -96,7 +96,7 @@ struct MenuListView: View {
             .padding(.horizontal, 16)
             .padding(.vertical, 20)
         }
-        .navigationTitle("Restaurante")
+        .navigationTitle("Sabor de Los Altos")
         .navigationBarTitleDisplayMode(.large)
         .appScreenStyle(.restaurant)
         .task {

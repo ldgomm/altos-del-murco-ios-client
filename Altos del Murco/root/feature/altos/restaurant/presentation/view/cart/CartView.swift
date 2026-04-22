@@ -44,7 +44,6 @@ struct CartView: View {
 
                     Section("Resumen") {
                         summaryRow("Subtotal", cartManager.subtotal.priceText, emphasized: true)
-
                         if viewModel.state.isLoadingRewards {
                             summaryRow("Murco Loyalty", "Calculando...", secondary: true)
                         } else if viewModel.state.rewardPreview.discountAmount > 0 {
@@ -54,11 +53,7 @@ struct CartView: View {
                                 accent: true
                             )
                         }
-
                         summaryRow("Productos", "\(cartManager.totalItems)", secondary: true)
-
-                        Divider()
-
                         summaryRow("Total", effectiveTotal.priceText, emphasized: true)
                     }
 

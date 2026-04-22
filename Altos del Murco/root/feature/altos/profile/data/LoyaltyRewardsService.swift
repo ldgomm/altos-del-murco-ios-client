@@ -318,12 +318,7 @@ final class LoyaltyRewardsService: LoyaltyRewardsServiceable {
             activityLines: activityLines,
             foodLines: foodLines
         )
-
-        RewardDebugLog.info(
-            "previewAdventureRewards result totalDiscount=\(RewardDebugLog.formatMoney(result.totalDiscount)) appliedRewardsCount=\(result.appliedRewards.count)"
-        )
-        RewardDebugLog.dumpAppliedRewards(result.appliedRewards, prefix: "previewAdventureRewards")
-
+        
         return result
     }
 
