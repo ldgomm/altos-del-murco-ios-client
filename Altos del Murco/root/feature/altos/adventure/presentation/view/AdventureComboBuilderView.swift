@@ -13,7 +13,6 @@ struct AdventureComboBuilderView: View {
     @ObservedObject var adventureComboBuilderViewModel: AdventureComboBuilderViewModel
     @ObservedObject var menuViewModel: MenuViewModel
     
-    
     @State private var editingItem: AdventureReservationItemDraft?
     
     @State private var isFoodPickerPresented = false
@@ -163,7 +162,9 @@ struct AdventureComboBuilderView: View {
                 } label: {
                     ComboItemCard(
                         item: item,
-                        rewardPresentation: adventureComboBuilderViewModel.appliedRewardPresentation(for: item)
+                        rewardPresentation: adventureComboBuilderViewModel.appliedRewardPresentation(for: item),
+                        baseSubtotal: adventureComboBuilderViewModel.baseAdventureSubtotal(for: item),
+                        discountedSubtotal: adventureComboBuilderViewModel.displayedAdventureSubtotal(for: item)
                     )
                 }
                 .buttonStyle(.plain)
@@ -294,6 +295,8 @@ struct AdventureComboBuilderView: View {
                     ReservationFoodRow(
                         item: item,
                         rewardPresentation: adventureComboBuilderViewModel.appliedRewardPresentation(for: item),
+                        displayedSubtotal: adventureComboBuilderViewModel.displayedFoodSubtotal(for: item),
+                        rewardAmount: adventureComboBuilderViewModel.rewardAmount(for: item),
                         onEdit: { editingFoodItem = item },
                         onIncrease: { adventureComboBuilderViewModel.increaseFoodQuantity(item.id) },
                         onDecrease: { adventureComboBuilderViewModel.decreaseFoodQuantity(item.id) },
@@ -350,7 +353,8 @@ struct AdventureComboBuilderView: View {
             .sheet(isPresented: $isFoodPickerPresented) {
                 AdventureFoodPickerSheet(
                     menuSections: menuViewModel.state.sections,
-                    selectedDate: adventureComboBuilderViewModel.state.selectedDate
+                    selectedDate: adventureComboBuilderViewModel.state.selectedDate,
+                    rewardWalletSnapshot: adventureComboBuilderViewModel.state.rewardPreview.walletSnapshot
                 ) { item, quantity, notes in
                     adventureComboBuilderViewModel.addFoodItem(
                         item,
@@ -421,6 +425,8 @@ struct AdventureComboBuilderView: View {
     private struct ReservationFoodRow: View {
         let item: ReservationFoodItemDraft
         let rewardPresentation: RewardPresentation?
+        let displayedSubtotal: Double
+        let rewardAmount: Double
         let onEdit: () -> Void
         let onIncrease: () -> Void
         let onDecrease: () -> Void
@@ -438,9 +444,20 @@ struct AdventureComboBuilderView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
 
-                    Text("Subtotal: \(item.subtotal.priceText)")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
+                    if rewardAmount > 0 {
+                        Text("Subtotal: \(item.subtotal.priceText)")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .strikethrough()
+
+                        Text("Con premio: \(displayedSubtotal.priceText)")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.green)
+                    } else {
+                        Text("Subtotal: \(item.subtotal.priceText)")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                    }
 
                     if let notes = item.notes, !notes.isEmpty {
                         Text(notes)
@@ -495,6 +512,7 @@ struct AdventureComboBuilderView: View {
 
         let menuSections: [MenuSection]
         let selectedDate: Date
+        let rewardWalletSnapshot: RewardWalletSnapshot
         let onAdd: (MenuItem, Int, String?) -> Void
 
         @State private var selectedCategoryId: String? = nil
@@ -551,10 +569,17 @@ struct AdventureComboBuilderView: View {
                                         .font(.title3.bold())
 
                                     ForEach(section.items) { item in
+                                        let rewardPresentation = RewardPresentationFactory
+                                            .adventureMenuPresentation(
+                                                for: item,
+                                                wallet: rewardWalletSnapshot
+                                            )
+
                                         NavigationLink {
                                             AdventureFoodDetailView(
                                                 item: item,
-                                                selectedDate: selectedDate
+                                                selectedDate: selectedDate,
+                                                rewardPresentation: rewardPresentation
                                             ) { quantity, notes in
                                                 onAdd(item, quantity, notes)
                                                 dismiss()
@@ -562,7 +587,8 @@ struct AdventureComboBuilderView: View {
                                         } label: {
                                             AdventureFoodMenuRow(
                                                 item: item,
-                                                selectedDate: selectedDate
+                                                selectedDate: selectedDate,
+                                                rewardPresentation: rewardPresentation
                                             )
                                         }
                                         .buttonStyle(.plain)
@@ -625,15 +651,7 @@ struct AdventureComboBuilderView: View {
             }
             .buttonStyle(.plain)
         }
-        
-        private var isTodayReservation: Bool {
-            AdventureDateHelper.calendar.isDateInToday(selectedDate)
-        }
 
-        private func isBlockedForSelectedDate(_ item: MenuItem) -> Bool {
-            isTodayReservation && !item.canBeOrdered
-        }
-        
         private var filteredSections: [MenuSection] {
             let categoryFiltered = orderedSections.filter { section in
                 selectedCategoryId == nil || section.category.id == selectedCategoryId
@@ -662,10 +680,11 @@ struct AdventureComboBuilderView: View {
             }
         }
     }
-
+    
     private struct AdventureFoodMenuRow: View {
         let item: MenuItem
         let selectedDate: Date
+        let rewardPresentation: RewardPresentation?
 
         private var isBlockedForSelectedDate: Bool {
             AdventureDateHelper.calendar.isDateInToday(selectedDate) && !item.canBeOrdered
@@ -698,8 +717,28 @@ struct AdventureComboBuilderView: View {
 
                     Spacer()
 
-                    Text(item.finalPrice.priceText)
-                        .font(.subheadline.bold())
+                    VStack(alignment: .trailing, spacing: 4) {
+                        if rewardPresentation != nil {
+                            Text(item.finalPrice.priceText)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .strikethrough()
+                        }
+
+                        Text(item.finalPrice.priceText)
+                            .font(.subheadline.bold())
+                    }
+                }
+
+                if let rewardPresentation {
+                    HStack(spacing: 8) {
+                        BrandBadge(theme: .adventure, title: rewardPresentation.badge, selected: true)
+
+                        Text(rewardPresentation.message)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(2)
+                    }
                 }
 
                 if isBlockedForSelectedDate {
@@ -744,6 +783,7 @@ struct AdventureComboBuilderView: View {
 
         let item: MenuItem
         let selectedDate: Date
+        let rewardPresentation: RewardPresentation?
         let onAdd: (Int, String?) -> Void
 
         private var isBlockedForSelectedDate: Bool {
@@ -760,6 +800,11 @@ struct AdventureComboBuilderView: View {
                     descriptionCard
                     ingredientsCard
                     priceCard
+
+                    if let rewardPresentation {
+                        rewardCard(rewardPresentation)
+                    }
+
                     if isBlockedForSelectedDate {
                         VStack(alignment: .leading, spacing: 10) {
                             BrandSectionHeader(
@@ -774,6 +819,7 @@ struct AdventureComboBuilderView: View {
                         }
                         .appCardStyle(.adventure, emphasized: false)
                     }
+
                     quantityCard
                     notesCard
 
@@ -873,6 +919,24 @@ struct AdventureComboBuilderView: View {
                 }
             }
             .appCardStyle(.adventure)
+        }
+
+        private func rewardCard(_ rewardPresentation: RewardPresentation) -> some View {
+            HStack(alignment: .top, spacing: 10) {
+                BrandBadge(theme: .adventure, title: rewardPresentation.badge, selected: true)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(rewardPresentation.title)
+                        .font(.caption.bold())
+
+                    Text(rewardPresentation.message)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer()
+            }
+            .appCardStyle(.adventure, emphasized: false)
         }
 
         private var quantityCard: some View {
@@ -1136,7 +1200,9 @@ struct AdventureComboBuilderView: View {
                                 } label: {
                                     AdventureSlotCard(
                                         slot: slot,
-                                        isSelected: adventureComboBuilderViewModel.state.selectedSlot?.id == slot.id
+                                        isSelected: adventureComboBuilderViewModel.state.selectedSlot?.id == slot.id,
+                                        effectiveTotal: adventureComboBuilderViewModel.effectiveTotal(for: slot),
+                                        hasLoyaltyDiscount: adventureComboBuilderViewModel.state.rewardPreview.totalDiscount > 0
                                     )
                                 }
                                 .buttonStyle(.plain)
@@ -1312,6 +1378,8 @@ struct AdventureComboBuilderView: View {
 private struct ComboItemCard: View {
     let item: AdventureReservationItemDraft
     let rewardPresentation: RewardPresentation?
+    let baseSubtotal: Double
+    let discountedSubtotal: Double
 
     var body: some View {
         HStack(spacing: 14) {
@@ -1325,6 +1393,23 @@ private struct ComboItemCard: View {
                 Text(item.summaryText)
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
+
+                if discountedSubtotal < baseSubtotal {
+                    HStack(spacing: 8) {
+                        Text(baseSubtotal.priceText)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .strikethrough()
+
+                        Text("Con premio \(discountedSubtotal.priceText)")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.green)
+                    }
+                } else {
+                    Text(baseSubtotal.priceText)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                }
 
                 if let rewardPresentation {
                     HStack(spacing: 8) {
@@ -1398,29 +1483,31 @@ private struct ReservationFoodRow: View {
 private struct AdventureSlotCard: View {
     let slot: AdventureAvailabilitySlot
     let isSelected: Bool
-    
+    let effectiveTotal: Double
+    let hasLoyaltyDiscount: Bool
+
     @Environment(\.colorScheme) private var colorScheme
-    
+
     var body: some View {
         let palette = AppTheme.palette(for: .adventure, scheme: colorScheme)
-        
+
         VStack(alignment: .leading, spacing: 10) {
             HStack {
                 Text(AdventureDateHelper.timeText(slot.startAt))
                     .font(.headline)
-                
+
                 Spacer()
-                
+
                 if isSelected {
                     Image(systemName: "checkmark.circle.fill")
                         .foregroundStyle(palette.primary)
                 }
             }
-            
+
             Text("Termina \(AdventureDateHelper.timeText(slot.endAt))")
                 .font(.caption)
                 .foregroundStyle(.secondary)
-            
+
             if slot.adventureSubtotal == 0 && slot.foodSubtotal > 0 {
                 Text("Reserva de comida")
                     .font(.caption.weight(.semibold))
@@ -1430,10 +1517,17 @@ private struct AdventureSlotCard: View {
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(palette.primary)
             }
-            
+
             Divider()
-            
-            Text("$\(slot.totalAmount, specifier: "%.2f")")
+
+            if hasLoyaltyDiscount {
+                Text(slot.totalAmount.priceText)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .strikethrough()
+            }
+
+            Text(effectiveTotal.priceText)
                 .font(.headline.weight(.bold))
                 .foregroundStyle(isSelected ? palette.primary : .primary)
         }

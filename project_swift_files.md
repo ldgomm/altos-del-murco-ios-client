@@ -2875,7 +2875,6 @@ struct AdventureComboBuilderView: View {
     @ObservedObject var adventureComboBuilderViewModel: AdventureComboBuilderViewModel
     @ObservedObject var menuViewModel: MenuViewModel
     
-    
     @State private var editingItem: AdventureReservationItemDraft?
     
     @State private var isFoodPickerPresented = false
@@ -3025,7 +3024,9 @@ struct AdventureComboBuilderView: View {
                 } label: {
                     ComboItemCard(
                         item: item,
-                        rewardPresentation: adventureComboBuilderViewModel.appliedRewardPresentation(for: item)
+                        rewardPresentation: adventureComboBuilderViewModel.appliedRewardPresentation(for: item),
+                        baseSubtotal: adventureComboBuilderViewModel.baseAdventureSubtotal(for: item),
+                        discountedSubtotal: adventureComboBuilderViewModel.displayedAdventureSubtotal(for: item)
                     )
                 }
                 .buttonStyle(.plain)
@@ -3156,6 +3157,8 @@ struct AdventureComboBuilderView: View {
                     ReservationFoodRow(
                         item: item,
                         rewardPresentation: adventureComboBuilderViewModel.appliedRewardPresentation(for: item),
+                        displayedSubtotal: adventureComboBuilderViewModel.displayedFoodSubtotal(for: item),
+                        rewardAmount: adventureComboBuilderViewModel.rewardAmount(for: item),
                         onEdit: { editingFoodItem = item },
                         onIncrease: { adventureComboBuilderViewModel.increaseFoodQuantity(item.id) },
                         onDecrease: { adventureComboBuilderViewModel.decreaseFoodQuantity(item.id) },
@@ -3212,7 +3215,8 @@ struct AdventureComboBuilderView: View {
             .sheet(isPresented: $isFoodPickerPresented) {
                 AdventureFoodPickerSheet(
                     menuSections: menuViewModel.state.sections,
-                    selectedDate: adventureComboBuilderViewModel.state.selectedDate
+                    selectedDate: adventureComboBuilderViewModel.state.selectedDate,
+                    rewardWalletSnapshot: adventureComboBuilderViewModel.state.rewardPreview.walletSnapshot
                 ) { item, quantity, notes in
                     adventureComboBuilderViewModel.addFoodItem(
                         item,
@@ -3283,6 +3287,8 @@ struct AdventureComboBuilderView: View {
     private struct ReservationFoodRow: View {
         let item: ReservationFoodItemDraft
         let rewardPresentation: RewardPresentation?
+        let displayedSubtotal: Double
+        let rewardAmount: Double
         let onEdit: () -> Void
         let onIncrease: () -> Void
         let onDecrease: () -> Void
@@ -3300,9 +3306,20 @@ struct AdventureComboBuilderView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
 
-                    Text("Subtotal: \(item.subtotal.priceText)")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
+                    if rewardAmount > 0 {
+                        Text("Subtotal: \(item.subtotal.priceText)")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .strikethrough()
+
+                        Text("Con premio: \(displayedSubtotal.priceText)")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.green)
+                    } else {
+                        Text("Subtotal: \(item.subtotal.priceText)")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                    }
 
                     if let notes = item.notes, !notes.isEmpty {
                         Text(notes)
@@ -3357,6 +3374,7 @@ struct AdventureComboBuilderView: View {
 
         let menuSections: [MenuSection]
         let selectedDate: Date
+        let rewardWalletSnapshot: RewardWalletSnapshot
         let onAdd: (MenuItem, Int, String?) -> Void
 
         @State private var selectedCategoryId: String? = nil
@@ -3413,10 +3431,17 @@ struct AdventureComboBuilderView: View {
                                         .font(.title3.bold())
 
                                     ForEach(section.items) { item in
+                                        let rewardPresentation = RewardPresentationFactory
+                                            .adventureMenuPresentation(
+                                                for: item,
+                                                wallet: rewardWalletSnapshot
+                                            )
+
                                         NavigationLink {
                                             AdventureFoodDetailView(
                                                 item: item,
-                                                selectedDate: selectedDate
+                                                selectedDate: selectedDate,
+                                                rewardPresentation: rewardPresentation
                                             ) { quantity, notes in
                                                 onAdd(item, quantity, notes)
                                                 dismiss()
@@ -3424,7 +3449,8 @@ struct AdventureComboBuilderView: View {
                                         } label: {
                                             AdventureFoodMenuRow(
                                                 item: item,
-                                                selectedDate: selectedDate
+                                                selectedDate: selectedDate,
+                                                rewardPresentation: rewardPresentation
                                             )
                                         }
                                         .buttonStyle(.plain)
@@ -3487,15 +3513,7 @@ struct AdventureComboBuilderView: View {
             }
             .buttonStyle(.plain)
         }
-        
-        private var isTodayReservation: Bool {
-            AdventureDateHelper.calendar.isDateInToday(selectedDate)
-        }
 
-        private func isBlockedForSelectedDate(_ item: MenuItem) -> Bool {
-            isTodayReservation && !item.canBeOrdered
-        }
-        
         private var filteredSections: [MenuSection] {
             let categoryFiltered = orderedSections.filter { section in
                 selectedCategoryId == nil || section.category.id == selectedCategoryId
@@ -3524,10 +3542,11 @@ struct AdventureComboBuilderView: View {
             }
         }
     }
-
+    
     private struct AdventureFoodMenuRow: View {
         let item: MenuItem
         let selectedDate: Date
+        let rewardPresentation: RewardPresentation?
 
         private var isBlockedForSelectedDate: Bool {
             AdventureDateHelper.calendar.isDateInToday(selectedDate) && !item.canBeOrdered
@@ -3560,8 +3579,28 @@ struct AdventureComboBuilderView: View {
 
                     Spacer()
 
-                    Text(item.finalPrice.priceText)
-                        .font(.subheadline.bold())
+                    VStack(alignment: .trailing, spacing: 4) {
+                        if rewardPresentation != nil {
+                            Text(item.finalPrice.priceText)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .strikethrough()
+                        }
+
+                        Text(item.finalPrice.priceText)
+                            .font(.subheadline.bold())
+                    }
+                }
+
+                if let rewardPresentation {
+                    HStack(spacing: 8) {
+                        BrandBadge(theme: .adventure, title: rewardPresentation.badge, selected: true)
+
+                        Text(rewardPresentation.message)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(2)
+                    }
                 }
 
                 if isBlockedForSelectedDate {
@@ -3606,6 +3645,7 @@ struct AdventureComboBuilderView: View {
 
         let item: MenuItem
         let selectedDate: Date
+        let rewardPresentation: RewardPresentation?
         let onAdd: (Int, String?) -> Void
 
         private var isBlockedForSelectedDate: Bool {
@@ -3622,6 +3662,11 @@ struct AdventureComboBuilderView: View {
                     descriptionCard
                     ingredientsCard
                     priceCard
+
+                    if let rewardPresentation {
+                        rewardCard(rewardPresentation)
+                    }
+
                     if isBlockedForSelectedDate {
                         VStack(alignment: .leading, spacing: 10) {
                             BrandSectionHeader(
@@ -3636,6 +3681,7 @@ struct AdventureComboBuilderView: View {
                         }
                         .appCardStyle(.adventure, emphasized: false)
                     }
+
                     quantityCard
                     notesCard
 
@@ -3737,6 +3783,24 @@ struct AdventureComboBuilderView: View {
             .appCardStyle(.adventure)
         }
 
+        private func rewardCard(_ rewardPresentation: RewardPresentation) -> some View {
+            HStack(alignment: .top, spacing: 10) {
+                BrandBadge(theme: .adventure, title: rewardPresentation.badge, selected: true)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(rewardPresentation.title)
+                        .font(.caption.bold())
+
+                    Text(rewardPresentation.message)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer()
+            }
+            .appCardStyle(.adventure, emphasized: false)
+        }
+
         private var quantityCard: some View {
             VStack(alignment: .leading, spacing: 10) {
                 BrandSectionHeader(
@@ -3768,7 +3832,7 @@ struct AdventureComboBuilderView: View {
             }
             .appCardStyle(.adventure)
         }
-    }
+    }x
     
     private var eventSection: some View {
         Section {
@@ -3998,7 +4062,9 @@ struct AdventureComboBuilderView: View {
                                 } label: {
                                     AdventureSlotCard(
                                         slot: slot,
-                                        isSelected: adventureComboBuilderViewModel.state.selectedSlot?.id == slot.id
+                                        isSelected: adventureComboBuilderViewModel.state.selectedSlot?.id == slot.id,
+                                        effectiveTotal: adventureComboBuilderViewModel.effectiveTotal(for: slot),
+                                        hasLoyaltyDiscount: adventureComboBuilderViewModel.state.rewardPreview.totalDiscount > 0
                                     )
                                 }
                                 .buttonStyle(.plain)
@@ -4174,6 +4240,8 @@ struct AdventureComboBuilderView: View {
 private struct ComboItemCard: View {
     let item: AdventureReservationItemDraft
     let rewardPresentation: RewardPresentation?
+    let baseSubtotal: Double
+    let discountedSubtotal: Double
 
     var body: some View {
         HStack(spacing: 14) {
@@ -4187,6 +4255,23 @@ private struct ComboItemCard: View {
                 Text(item.summaryText)
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
+
+                if discountedSubtotal < baseSubtotal {
+                    HStack(spacing: 8) {
+                        Text(baseSubtotal.priceText)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .strikethrough()
+
+                        Text("Con premio \(discountedSubtotal.priceText)")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.green)
+                    }
+                } else {
+                    Text(baseSubtotal.priceText)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                }
 
                 if let rewardPresentation {
                     HStack(spacing: 8) {
@@ -4260,29 +4345,31 @@ private struct ReservationFoodRow: View {
 private struct AdventureSlotCard: View {
     let slot: AdventureAvailabilitySlot
     let isSelected: Bool
-    
+    let effectiveTotal: Double
+    let hasLoyaltyDiscount: Bool
+
     @Environment(\.colorScheme) private var colorScheme
-    
+
     var body: some View {
         let palette = AppTheme.palette(for: .adventure, scheme: colorScheme)
-        
+
         VStack(alignment: .leading, spacing: 10) {
             HStack {
                 Text(AdventureDateHelper.timeText(slot.startAt))
                     .font(.headline)
-                
+
                 Spacer()
-                
+
                 if isSelected {
                     Image(systemName: "checkmark.circle.fill")
                         .foregroundStyle(palette.primary)
                 }
             }
-            
+
             Text("Termina \(AdventureDateHelper.timeText(slot.endAt))")
                 .font(.caption)
                 .foregroundStyle(.secondary)
-            
+
             if slot.adventureSubtotal == 0 && slot.foodSubtotal > 0 {
                 Text("Reserva de comida")
                     .font(.caption.weight(.semibold))
@@ -4292,10 +4379,17 @@ private struct AdventureSlotCard: View {
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(palette.primary)
             }
-            
+
             Divider()
-            
-            Text("$\(slot.totalAmount, specifier: "%.2f")")
+
+            if hasLoyaltyDiscount {
+                Text(slot.totalAmount.priceText)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .strikethrough()
+            }
+
+            Text(effectiveTotal.priceText)
                 .font(.headline.weight(.bold))
                 .foregroundStyle(isSelected ? palette.primary : .primary)
         }
@@ -4714,7 +4808,7 @@ private struct AdventureReservationRow: View {
 
                 amountRow(
                     "Total",
-                    max(0, booking.totalAmount - booking.loyaltyDiscountAmount),
+                    booking.totalAmount,
                     isPrimary: true
                 )
 
@@ -5321,7 +5415,7 @@ struct ReserveViewDetail: View {
 
             amountRow(
                 "Total",
-                max(0, booking.totalAmount - booking.loyaltyDiscountAmount),
+                booking.totalAmount,
                 isPrimary: true
             )
 
@@ -6136,6 +6230,7 @@ final class AdventureComboBuilderViewModel: ObservableObject {
 
     private var hasLoadedCatalog = false
     private var catalogListenerToken: AdventureListenerToken?
+    private var rewardsListenerToken: LoyaltyRewardsListenerToken?
     
     var rewardPreview: RewardComputationResult = .empty(wallet: .empty(nationalId: ""))
     var isLoadingRewards = false
@@ -6166,11 +6261,20 @@ final class AdventureComboBuilderViewModel: ObservableObject {
 
     func onAppear() {
         startCatalogObservationIfNeeded()
+        startRewardsObservation()
 
         Task {
             await loadCatalogIfNeeded()
             await loadAvailability()
         }
+    }
+    
+    func onDisappear() {
+        catalogListenerToken?.remove()
+        catalogListenerToken = nil
+
+        rewardsListenerToken?.remove()
+        rewardsListenerToken = nil
     }
 
     private func startCatalogObservationIfNeeded() {
@@ -6188,6 +6292,43 @@ final class AdventureComboBuilderViewModel: ObservableObject {
                 case .failure(let error):
                     self.state.errorMessage = error.localizedDescription
                     self.state.isLoadingCatalog = false
+                }
+            }
+        }
+    }
+    
+    private func startRewardsObservation() {
+        rewardsListenerToken?.remove()
+        rewardsListenerToken = nil
+
+        let cleanNationalId = state.nationalId.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard !cleanNationalId.isEmpty else {
+            state.rewardPreview = RewardComputationResult.empty(
+                wallet: RewardWalletSnapshot.empty(nationalId: "")
+            )
+            state.isLoadingRewards = false
+            return
+        }
+
+        state.isLoadingRewards = true
+
+        rewardsListenerToken = loyaltyRewardsService.observeWalletSnapshot(
+            for: cleanNationalId
+        ) { [weak self] result in
+            Task { @MainActor in
+                guard let self else { return }
+
+                switch result {
+                case .success:
+                    await self.refreshRewardPreview()
+
+                case .failure(let error):
+                    self.state.isLoadingRewards = false
+                    self.state.errorMessage = error.localizedDescription
+                    self.state.rewardPreview = RewardComputationResult.empty(
+                        wallet: RewardWalletSnapshot.empty(nationalId: cleanNationalId)
+                    )
                 }
             }
         }
@@ -6243,11 +6384,6 @@ final class AdventureComboBuilderViewModel: ObservableObject {
         refreshPackageDiscount()
         state.isLoadingCatalog = false
         Task { await refreshRewardPreview() }
-    }
-
-    func onDisappear() {
-        catalogListenerToken?.remove()
-        catalogListenerToken = nil
     }
 
     var activeActivityConfigs: [AdventureActivityCatalogItem] {
@@ -6440,8 +6576,15 @@ final class AdventureComboBuilderViewModel: ObservableObject {
     func setWhatsapp(_ value: String) { state.whatsappNumber = value }
     
     func setNationalId(_ value: String) {
-        state.nationalId = value
-        Task { await refreshRewardPreview() }
+        let cleanNationalId = value.filter(\.isNumber)
+        let shouldRestartObservation =
+            cleanNationalId != state.nationalId || rewardsListenerToken == nil
+
+        state.nationalId = cleanNationalId
+
+        if shouldRestartObservation {
+            startRewardsObservation()
+        }
     }
     
     func setNotes(_ value: String) { state.notes = value }
@@ -7119,6 +7262,87 @@ final class AdventureComboBuilderViewModel: ObservableObject {
             second: 0,
             of: state.selectedDate
         )
+    }
+    
+    func effectiveTotal(for slot: AdventureAvailabilitySlot) -> Double {
+        max(0, slot.totalAmount - state.rewardPreview.totalDiscount)
+    }
+
+    func baseAdventureSubtotal(for item: AdventureReservationItemDraft) -> Double {
+        AdventurePricingEngine.subtotal(for: item, catalog: state.catalog)
+    }
+
+    func rewardAmount(for item: AdventureReservationItemDraft) -> Double {
+        let activityId = config(for: item.activity)?.id ?? item.activity.rawValue
+
+        return roundMoney(
+            state.rewardPreview.appliedRewards
+                .filter { $0.affectedActivityIds.contains(activityId) }
+                .reduce(0) { $0 + $1.amount }
+        )
+    }
+
+    func displayedAdventureSubtotal(for item: AdventureReservationItemDraft) -> Double {
+        max(0, baseAdventureSubtotal(for: item) - rewardAmount(for: item))
+    }
+
+    func rewardAmount(for foodItem: ReservationFoodItemDraft) -> Double {
+        allocatedFoodDiscountByDraftId()[foodItem.id, default: 0]
+    }
+
+    func displayedFoodSubtotal(for foodItem: ReservationFoodItemDraft) -> Double {
+        max(0, foodItem.subtotal - rewardAmount(for: foodItem))
+    }
+
+    private func allocatedFoodDiscountByDraftId() -> [String: Double] {
+        let menuDiscounts = state.rewardPreview.appliedRewards.reduce(into: [String: Double]()) { partial, reward in
+            for menuItemId in reward.affectedMenuItemIds {
+                partial[menuItemId, default: 0] += reward.amount
+            }
+        }
+
+        guard !menuDiscounts.isEmpty, !state.foodItems.isEmpty else { return [:] }
+
+        let grouped = Dictionary(
+            grouping: Array(state.foodItems.enumerated()),
+            by: { $0.element.menuItemId }
+        )
+
+        var result: [String: Double] = [:]
+
+        for (menuItemId, entries) in grouped {
+            let totalDiscount = roundMoney(menuDiscounts[menuItemId, default: 0])
+            guard totalDiscount > 0 else { continue }
+
+            let subtotal = entries.reduce(0.0) { $0 + $1.element.subtotal }
+            guard subtotal > 0 else { continue }
+
+            var remainingDiscount = totalDiscount
+
+            for offset in entries.indices {
+                let item = entries[offset].element
+                let allocation: Double
+
+                if offset == entries.count - 1 {
+                    allocation = min(item.subtotal, max(0, roundMoney(remainingDiscount)))
+                } else {
+                    let share = item.subtotal / subtotal
+                    allocation = min(
+                        item.subtotal,
+                        max(0, roundMoney(totalDiscount * share))
+                    )
+                    remainingDiscount = roundMoney(remainingDiscount - allocation)
+                }
+
+                result[item.id] = allocation
+            }
+        }
+
+        return result
+    }
+
+    private func roundMoney(_ value: Double) -> Double {
+        (value * 100).rounded() / 100
     }
 }
 
@@ -9932,6 +10156,72 @@ final class FirestoreLoyaltyWalletListenerToken: LoyaltyRewardsListenerToken {
     }
 }
 
+private final class CompositeLoyaltyRewardsListenerToken: LoyaltyRewardsListenerToken {
+    private var registrations: [ListenerRegistration]
+
+    init(registrations: [ListenerRegistration]) {
+        self.registrations = registrations
+    }
+
+    func remove() {
+        registrations.forEach { $0.remove() }
+        registrations.removeAll()
+    }
+}
+
+@MainActor
+private final class LoyaltyWalletObservationCoordinator {
+    private let emit: () -> Void
+    private let onFailure: (Error) -> Void
+
+    private var hasWalletSnapshot = false
+    private var hasTemplatesSnapshot = false
+    private var hasOrdersSnapshot = false
+    private var hasBookingsSnapshot = false
+
+    init(
+        emit: @escaping () -> Void,
+        onFailure: @escaping (Error) -> Void
+    ) {
+        self.emit = emit
+        self.onFailure = onFailure
+    }
+
+    func receiveWallet(error: Error?) {
+        receive(error: error, mark: \.hasWalletSnapshot)
+    }
+
+    func receiveTemplates(error: Error?) {
+        receive(error: error, mark: \.hasTemplatesSnapshot)
+    }
+
+    func receiveOrders(error: Error?) {
+        receive(error: error, mark: \.hasOrdersSnapshot)
+    }
+
+    func receiveBookings(error: Error?) {
+        receive(error: error, mark: \.hasBookingsSnapshot)
+    }
+
+    private func receive(
+        error: Error?,
+        mark keyPath: ReferenceWritableKeyPath<LoyaltyWalletObservationCoordinator, Bool>
+    ) {
+        if let error {
+            onFailure(error)
+            return
+        }
+
+        self[keyPath: keyPath] = true
+
+        guard hasWalletSnapshot, hasTemplatesSnapshot, hasOrdersSnapshot, hasBookingsSnapshot else {
+            return
+        }
+
+        emit()
+    }
+}
+
 protocol LoyaltyRewardsServiceable {
     func loadWalletSnapshot(for nationalId: String) async throws -> RewardWalletSnapshot
 
@@ -10033,31 +10323,74 @@ final class LoyaltyRewardsService: LoyaltyRewardsServiceable {
             return FirestoreLoyaltyWalletListenerToken(registration: nil)
         }
 
-        let walletRef = db.collection(FirestoreConstants.client_loyalty_wallets).document(cleanNationalId)
+        let walletRef = db
+            .collection(FirestoreConstants.client_loyalty_wallets)
+            .document(cleanNationalId)
 
-        let registration = walletRef.addSnapshotListener { [weak self] _, error in
-            guard let self else { return }
+        let templatesRef = db.collection(FirestoreConstants.loyalty_reward_templates)
 
-            if let error {
-                onChange(.failure(error))
-                return
-            }
+        let ordersQuery = db
+            .collection(FirestoreConstants.restaurant_orders)
+            .whereField("nationalId", isEqualTo: cleanNationalId)
 
-            Task {
-                do {
-                    let snapshot = try await self.loadWalletSnapshot(for: cleanNationalId)
-                    await MainActor.run {
-                        onChange(.success(snapshot))
-                    }
-                } catch {
-                    await MainActor.run {
-                        onChange(.failure(error))
+        let bookingsQuery = db
+            .collection(FirestoreConstants.adventure_bookings)
+            .whereField("nationalId", isEqualTo: cleanNationalId)
+
+        let coordinator = LoyaltyWalletObservationCoordinator(
+            emit: { [weak self] in
+                guard let self else { return }
+
+                Task {
+                    do {
+                        let snapshot = try await self.loadWalletSnapshot(for: cleanNationalId)
+                        await MainActor.run {
+                            onChange(.success(snapshot))
+                        }
+                    } catch {
+                        await MainActor.run {
+                            onChange(.failure(error))
+                        }
                     }
                 }
+            },
+            onFailure: { error in
+                onChange(.failure(error))
+            }
+        )
+
+        let walletRegistration = walletRef.addSnapshotListener { _, error in
+            Task { @MainActor in
+                coordinator.receiveWallet(error: error)
             }
         }
 
-        return FirestoreLoyaltyWalletListenerToken(registration: registration)
+        let templatesRegistration = templatesRef.addSnapshotListener { _, error in
+            Task { @MainActor in
+                coordinator.receiveTemplates(error: error)
+            }
+        }
+
+        let ordersRegistration = ordersQuery.addSnapshotListener { _, error in
+            Task { @MainActor in
+                coordinator.receiveOrders(error: error)
+            }
+        }
+
+        let bookingsRegistration = bookingsQuery.addSnapshotListener { _, error in
+            Task { @MainActor in
+                coordinator.receiveBookings(error: error)
+            }
+        }
+
+        return CompositeLoyaltyRewardsListenerToken(
+            registrations: [
+                walletRegistration,
+                templatesRegistration,
+                ordersRegistration,
+                bookingsRegistration
+            ]
+        )
     }
 
     func previewRestaurantRewards(
@@ -10963,11 +11296,11 @@ enum LoyaltyRewardEngine {
         activityLines: [RewardActivityLine],
         foodLines: [RewardMenuLine]
     ) -> RewardComputationResult {
-        let eligible = templates.filter {
-            $0.isActive &&
-            $0.triggerMode == .automatic &&
-            $0.scope.matchesAdventure() &&
-            $0.isEligible(for: wallet.currentLevel)
+        let eligible = templates.filter { template in
+            template.isActive &&
+            template.triggerMode == .automatic &&
+            template.isEligible(for: wallet.currentLevel) &&
+            templateAppliesInAdventureContext(template)
         }
 
         let stackableTemplates = eligible.filter(\.canStack).sorted { lhs, rhs in
@@ -10999,6 +11332,33 @@ enum LoyaltyRewardEngine {
             totalDiscount: winner.totalDiscount,
             walletSnapshot: wallet
         )
+    }
+
+    private static func templateAppliesInAdventureContext(
+        _ template: LoyaltyRewardTemplate
+    ) -> Bool {
+        switch template.rule.type {
+        case .activityPercentage:
+            return template.scope.matchesAdventure()
+
+        case .mostExpensiveMenuItemPercentage,
+             .specificMenuItemPercentage,
+             .freeMenuItem,
+             .buyXGetYFree:
+            switch template.scope {
+            case .restaurant, .adventure, .both:
+                return true
+            }
+        }
+    }
+
+    private static func templateCanApplyToAdventureFood(
+        _ template: LoyaltyRewardTemplate
+    ) -> Bool {
+        switch template.scope {
+        case .restaurant, .adventure, .both:
+            return true
+        }
     }
 
     private struct InternalRewardResult {
@@ -11793,7 +12153,84 @@ enum RewardPresentationFactory {
         for item: MenuItem,
         wallet: RewardWalletSnapshot
     ) -> RewardPresentation? {
-        for template in wallet.availableTemplates where template.scope.matchesRestaurant() && !template.isExpired {
+        buildMenuPresentation(
+            for: item,
+            wallet: wallet,
+            includeAdventureScopedTemplates: false
+        )
+    }
+
+    static func adventureMenuPresentation(
+        for item: MenuItem,
+        wallet: RewardWalletSnapshot
+    ) -> RewardPresentation? {
+        buildMenuPresentation(
+            for: item,
+            wallet: wallet,
+            includeAdventureScopedTemplates: true
+        )
+    }
+
+    static func activityPresentation(
+        for activity: AdventureActivityCatalogItem,
+        wallet: RewardWalletSnapshot
+    ) -> RewardPresentation? {
+        for template in wallet.availableTemplates where template.scope.matchesAdventure() && !template.isExpired {
+            switch template.rule.type {
+            case .activityPercentage:
+                guard template.targetActivityId == activity.id else { continue }
+
+                let percentage = Int((template.rule.percentage ?? 0).rounded())
+                guard percentage > 0 else { continue }
+
+                return RewardPresentation(
+                    id: template.id,
+                    badge: "\(percentage)% OFF",
+                    title: template.title,
+                    message: "\(activity.title) tiene \(percentage)% de descuento automático por tu nivel \(wallet.currentLevel.title)."
+                )
+
+            default:
+                continue
+            }
+        }
+
+        return nil
+    }
+
+    static func packagePresentation(
+        for package: AdventureFeaturedPackage,
+        catalog: AdventureCatalogSnapshot,
+        menuItemsById: [String: MenuItem],
+        wallet: RewardWalletSnapshot
+    ) -> RewardPresentation? {
+        for item in package.items {
+            guard let activity = catalog.activity(for: item.activity) else { continue }
+            if let presentation = activityPresentation(for: activity, wallet: wallet) {
+                return presentation
+            }
+        }
+
+        for item in package.foodItems {
+            guard let menuItem = menuItemsById[item.menuItemId] else { continue }
+            if let presentation = adventureMenuPresentation(for: menuItem, wallet: wallet) {
+                return presentation
+            }
+        }
+
+        return nil
+    }
+
+    private static func buildMenuPresentation(
+        for item: MenuItem,
+        wallet: RewardWalletSnapshot,
+        includeAdventureScopedTemplates: Bool
+    ) -> RewardPresentation? {
+        for template in wallet.availableTemplates
+        where templateMatchesMenuContext(
+            template,
+            includeAdventureScopedTemplates: includeAdventureScopedTemplates
+        ) && !template.isExpired {
             switch template.rule.type {
             case .freeMenuItem:
                 guard template.targetMenuItemId == item.id else { continue }
@@ -11850,54 +12287,27 @@ enum RewardPresentationFactory {
         return nil
     }
 
-    static func activityPresentation(
-        for activity: AdventureActivityCatalogItem,
-        wallet: RewardWalletSnapshot
-    ) -> RewardPresentation? {
-        for template in wallet.availableTemplates where template.scope.matchesAdventure() && !template.isExpired {
-            switch template.rule.type {
-            case .activityPercentage:
-                guard template.targetActivityId == activity.id else { continue }
+    private static func templateMatchesMenuContext(
+        _ template: LoyaltyRewardTemplate,
+        includeAdventureScopedTemplates: Bool
+    ) -> Bool {
+        switch template.rule.type {
+        case .activityPercentage:
+            return false
 
-                let percentage = Int((template.rule.percentage ?? 0).rounded())
-                guard percentage > 0 else { continue }
-
-                return RewardPresentation(
-                    id: template.id,
-                    badge: "\(percentage)% OFF",
-                    title: template.title,
-                    message: "\(activity.title) tiene \(percentage)% de descuento automático por tu nivel \(wallet.currentLevel.title)."
-                )
-
-            default:
-                continue
+        case .mostExpensiveMenuItemPercentage,
+             .specificMenuItemPercentage,
+             .freeMenuItem,
+             .buyXGetYFree:
+            if includeAdventureScopedTemplates {
+                switch template.scope {
+                case .restaurant, .adventure, .both:
+                    return true
+                }
+            } else {
+                return template.scope.matchesRestaurant()
             }
         }
-
-        return nil
-    }
-
-    static func packagePresentation(
-        for package: AdventureFeaturedPackage,
-        catalog: AdventureCatalogSnapshot,
-        menuItemsById: [String: MenuItem],
-        wallet: RewardWalletSnapshot
-    ) -> RewardPresentation? {
-        for item in package.items {
-            guard let activity = catalog.activity(for: item.activity) else { continue }
-            if let presentation = activityPresentation(for: activity, wallet: wallet) {
-                return presentation
-            }
-        }
-
-        for item in package.foodItems {
-            guard let menuItem = menuItemsById[item.menuItemId] else { continue }
-            if let presentation = menuPresentation(for: menuItem, wallet: wallet) {
-                return presentation
-            }
-        }
-
-        return nil
     }
 }
 
@@ -16258,8 +16668,8 @@ struct CartView: View {
     @EnvironmentObject private var cartManager: CartManager
     @State private var showClearCartAlert = false
 
-    private var rewardDiscountByMenuItemId: [String: Double] {
-        viewModel.allocatedDiscountByMenuItemId()
+    private var rowDiscounts: [UUID: Double] {
+        viewModel.allocatedDiscountByCartItemId(for: cartManager.items)
     }
 
     private var effectiveTotal: Double {
@@ -16280,7 +16690,7 @@ struct CartView: View {
                         ForEach(cartManager.items) { cartItem in
                             RewardAwareCartItemRow(
                                 cartItem: cartItem,
-                                allocatedDiscount: allocatedDiscount(for: cartItem)
+                                allocatedDiscount: rowDiscounts[cartItem.id, default: 0]
                             )
                         }
                         .onDelete(perform: deleteItems)
@@ -16289,7 +16699,9 @@ struct CartView: View {
                     Section("Resumen") {
                         summaryRow("Subtotal", cartManager.subtotal.priceText, emphasized: true)
 
-                        if viewModel.state.rewardPreview.discountAmount > 0 {
+                        if viewModel.state.isLoadingRewards {
+                            summaryRow("Murco Loyalty", "Calculando...", secondary: true)
+                        } else if viewModel.state.rewardPreview.discountAmount > 0 {
                             summaryRow(
                                 "Murco Loyalty",
                                 "-\(viewModel.state.rewardPreview.discountAmount.priceText)",
@@ -16361,7 +16773,11 @@ struct CartView: View {
                                 .font(.subheadline)
                                 .foregroundStyle(.secondary)
 
-                            if viewModel.state.rewardPreview.discountAmount > 0 {
+                            if viewModel.state.isLoadingRewards {
+                                Text("Calculando Murco Loyalty...")
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(.secondary)
+                            } else if viewModel.state.rewardPreview.discountAmount > 0 {
                                 Text("Incluye Murco Loyalty")
                                     .font(.caption.weight(.semibold))
                                     .foregroundStyle(.green)
@@ -16399,22 +16815,6 @@ struct CartView: View {
             let itemId = cartManager.items[index].menuItem.id
             cartManager.remove(itemId: itemId)
         }
-    }
-
-    private func allocatedDiscount(for cartItem: CartItem) -> Double {
-        let totalDiscount = rewardDiscountByMenuItemId[cartItem.menuItem.id, default: 0]
-        guard totalDiscount > 0 else { return 0 }
-
-        let siblingRows = cartManager.items.filter { $0.menuItem.id == cartItem.menuItem.id }
-        let totalSiblingSubtotal = siblingRows.reduce(0) { $0 + $1.totalPrice }
-        guard totalSiblingSubtotal > 0 else { return 0 }
-
-        if siblingRows.count == 1 {
-            return totalDiscount
-        }
-
-        let share = cartItem.totalPrice / totalSiblingSubtotal
-        return ((totalDiscount * share) * 100).rounded() / 100
     }
 
     private func summaryRow(
@@ -17958,6 +18358,10 @@ struct CheckoutView: View {
         viewModel.effectiveTotal(for: cartManager.subtotal)
     }
 
+    private var rowDiscounts: [UUID: Double] {
+        viewModel.allocatedDiscountByCartItemId(for: cartManager.items)
+    }
+
     var body: some View {
         ScrollView {
             VStack(spacing: 20) {
@@ -17974,7 +18378,14 @@ struct CheckoutView: View {
         .appScreenStyle(.restaurant)
         .alert(
             "Error",
-            isPresented: .constant(viewModel.state.errorMessage != nil),
+            isPresented: Binding(
+                get: { viewModel.state.errorMessage != nil },
+                set: { isPresented in
+                    if !isPresented {
+                        viewModel.clearError()
+                    }
+                }
+            ),
             actions: {
                 Button("Aceptar") {
                     viewModel.clearError()
@@ -17988,6 +18399,14 @@ struct CheckoutView: View {
             syncProfileFieldsFromSession()
             let nationalId = authenticatedProfile?.nationalId ?? cartManager.clientId ?? ""
             viewModel.onAppear(nationalId: nationalId)
+        }
+        .onChange(of: authenticatedProfile?.nationalId) { _, _ in
+            syncProfileFieldsFromSession()
+            let nationalId = authenticatedProfile?.nationalId ?? cartManager.clientId ?? ""
+            viewModel.onAppear(nationalId: nationalId)
+        }
+        .onChange(of: authenticatedProfile?.fullName) { _, _ in
+            syncProfileFieldsFromSession()
         }
         .onChange(of: viewModel.state.createdOrder) { _, order in
             guard let order else { return }
@@ -18049,6 +18468,9 @@ struct CheckoutView: View {
 
             VStack(spacing: 12) {
                 ForEach(cartManager.items) { cartItem in
+                    let lineDiscount = rowDiscounts[cartItem.id, default: 0]
+                    let discountedLine = max(0, cartItem.totalPrice - lineDiscount)
+
                     HStack(alignment: .top, spacing: 12) {
                         VStack(alignment: .leading, spacing: 4) {
                             Text("\(cartItem.quantity)x \(cartItem.menuItem.name)")
@@ -18065,9 +18487,6 @@ struct CheckoutView: View {
                         Spacer()
 
                         VStack(alignment: .trailing, spacing: 4) {
-                            let lineDiscount = viewModel.allocatedDiscountByMenuItemId()[cartItem.menuItem.id, default: 0]
-                            let discountedLine = max(0, cartItem.totalPrice - lineDiscount)
-
                             if lineDiscount > 0 {
                                 Text(cartItem.totalPrice.priceText)
                                     .font(.caption)
@@ -18095,7 +18514,9 @@ struct CheckoutView: View {
 
             detailLine(title: "Subtotal", value: cartManager.subtotal.priceText)
 
-            if viewModel.state.rewardPreview.discountAmount > 0 {
+            if viewModel.state.isLoadingRewards {
+                detailLine(title: "Murco Loyalty", value: "Calculando...", secondary: true)
+            } else if viewModel.state.rewardPreview.discountAmount > 0 {
                 detailLine(
                     title: "Murco Loyalty",
                     value: "-\(viewModel.state.rewardPreview.discountAmount.priceText)",
@@ -18111,7 +18532,7 @@ struct CheckoutView: View {
                 emphasized: true
             )
         }
-        .appCardStyle(.restaurant, emphasized: false)
+        .appCardStyle(.restaurant)
     }
 
     private var rewardsSection: some View {
@@ -18161,7 +18582,21 @@ struct CheckoutView: View {
     }
 
     private var confirmSection: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: 14) {
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Total a pagar")
+                        .font(.subheadline)
+                        .foregroundStyle(palette.textSecondary)
+
+                    Text(effectiveTotal.priceText)
+                        .font(.title2.bold())
+                        .foregroundStyle(palette.textPrimary)
+                }
+
+                Spacer()
+            }
+
             Button {
                 viewModel.onEvent(.confirmTapped)
             } label: {
@@ -18174,25 +18609,31 @@ struct CheckoutView: View {
                 }
             }
             .buttonStyle(BrandPrimaryButtonStyle(theme: .restaurant))
-            .disabled(viewModel.state.isSubmitting || cartManager.isEmpty || cartManager.tableNumber.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            .disabled(cartManager.isEmpty || viewModel.state.isSubmitting)
         }
+        .appCardStyle(.restaurant, emphasized: false)
     }
 
     private func syncProfileFieldsFromSession() {
         guard let profile = authenticatedProfile else { return }
 
-        cartManager.updateClientId(profile.nationalId)
-        cartManager.updateClientName(profile.fullName)
+        if cartManager.clientId != profile.nationalId {
+            cartManager.clientId = profile.nationalId
+        }
+
+        if cartManager.clientName != profile.fullName {
+            cartManager.clientName = profile.fullName
+        }
     }
 
     private func themedField(title: String, text: Binding<String>) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(title)
-                .font(.subheadline.weight(.semibold))
+                .font(.caption.weight(.semibold))
                 .foregroundStyle(palette.textSecondary)
 
-            TextField("", text: text)
-                .appTextFieldStyle(.restaurant)
+            TextField(title, text: text)
+                .textFieldStyle(.roundedBorder)
         }
     }
 
@@ -18200,18 +18641,27 @@ struct CheckoutView: View {
         title: String,
         value: String,
         emphasized: Bool = false,
+        secondary: Bool = false,
         accent: Bool = false
     ) -> some View {
-        HStack(spacing: 12) {
+        HStack {
             Text(title)
                 .font(emphasized ? .headline : .subheadline)
-                .foregroundStyle(accent ? palette.success : palette.textSecondary)
+                .foregroundStyle(
+                    accent
+                    ? palette.success
+                    : (secondary ? palette.textSecondary : palette.textPrimary)
+                )
 
             Spacer()
 
             Text(value)
-                .font(emphasized ? .headline : .subheadline.weight(.semibold))
-                .foregroundStyle(accent ? palette.success : (emphasized ? palette.primary : palette.textPrimary))
+                .font(emphasized ? .headline.bold() : .subheadline.weight(.semibold))
+                .foregroundStyle(
+                    accent
+                    ? palette.success
+                    : (secondary ? palette.textSecondary : palette.textPrimary)
+                )
         }
     }
 }
@@ -19622,6 +20072,7 @@ final class CheckoutViewModel: ObservableObject {
 
     private var cancellables = Set<AnyCancellable>()
     private var currentNationalId: String = ""
+    private var walletListenerToken: LoyaltyRewardsListenerToken?
 
     init(
         submitOrderUseCase: SubmitOrderUseCase,
@@ -19645,8 +20096,14 @@ final class CheckoutViewModel: ObservableObject {
 
     func onAppear(nationalId: String) {
         let cleanNationalId = nationalId.trimmingCharacters(in: .whitespacesAndNewlines)
+        let shouldRestartObservation =
+            cleanNationalId != currentNationalId || walletListenerToken == nil
+
         currentNationalId = cleanNationalId
-        Task { await refreshRewardPreview(nationalId: cleanNationalId) }
+
+        if shouldRestartObservation {
+            startWalletObservation()
+        }
     }
 
     func refreshRewardPreviewIfPossible() async {
@@ -19656,32 +20113,15 @@ final class CheckoutViewModel: ObservableObject {
     func refreshRewardPreview(nationalId: String) async {
         let cleanNationalId = nationalId.trimmingCharacters(in: .whitespacesAndNewlines)
         currentNationalId = cleanNationalId
-
-        guard !cleanNationalId.isEmpty else {
-            state.rewardPreview = .empty(nationalId: "")
-            return
-        }
-
-        guard let draftOrder = cartManager.createOrder() else {
-            state.rewardPreview = .empty(nationalId: cleanNationalId)
-            return
-        }
-
-        state.isLoadingRewards = true
-        defer { state.isLoadingRewards = false }
+        state.errorMessage = nil
 
         do {
-            let result = try await loyaltyRewardsService.previewRestaurantRewards(
-                for: cleanNationalId,
-                items: draftOrder.items
-            )
-
-            state.rewardPreview = CheckoutRewardPreview(
-                appliedRewards: result.appliedRewards,
-                discountAmount: result.totalDiscount,
-                walletSnapshot: result.walletSnapshot
-            )
+            state.isLoadingRewards = true
+            let preview = try await buildRewardPreview(for: cleanNationalId)
+            state.rewardPreview = preview
+            state.isLoadingRewards = false
         } catch {
+            state.isLoadingRewards = false
             state.errorMessage = error.localizedDescription
             state.rewardPreview = .empty(nationalId: cleanNationalId)
         }
@@ -19716,26 +20156,115 @@ final class CheckoutViewModel: ObservableObject {
         }
     }
 
-    private func submitOrder() {
-        guard let baseOrder = cartManager.createOrder() else {
-            state.errorMessage = "Please complete client name, table number, and cart items."
+    func allocatedDiscountByCartItemId(for cartItems: [CartItem]) -> [UUID: Double] {
+        let menuDiscounts = allocatedDiscountByMenuItemId()
+        guard !menuDiscounts.isEmpty, !cartItems.isEmpty else { return [:] }
+
+        let grouped = Dictionary(grouping: Array(cartItems.enumerated()), by: { $0.element.menuItem.id })
+        var result: [UUID: Double] = [:]
+
+        for (menuItemId, entries) in grouped {
+            let totalDiscount = roundMoney(menuDiscounts[menuItemId, default: 0])
+            guard totalDiscount > 0 else { continue }
+
+            let subtotal = entries.reduce(0) { $0 + $1.element.totalPrice }
+            guard subtotal > 0 else { continue }
+
+            var remainingDiscount = totalDiscount
+
+            for offset in entries.indices {
+                let cartItem = entries[offset].element
+                let allocation: Double
+
+                if offset == entries.count - 1 {
+                    allocation = min(cartItem.totalPrice, max(0, roundMoney(remainingDiscount)))
+                } else {
+                    let share = cartItem.totalPrice / subtotal
+                    allocation = min(
+                        cartItem.totalPrice,
+                        max(0, roundMoney(totalDiscount * share))
+                    )
+                    remainingDiscount = roundMoney(remainingDiscount - allocation)
+                }
+
+                result[cartItem.id] = allocation
+            }
+        }
+
+        return result
+    }
+
+    func allocatedDiscount(for cartItem: CartItem, in cartItems: [CartItem]) -> Double {
+        allocatedDiscountByCartItemId(for: cartItems)[cartItem.id, default: 0]
+    }
+
+    func clearError() {
+        state.errorMessage = nil
+    }
+
+    private func startWalletObservation() {
+        walletListenerToken?.remove()
+        walletListenerToken = nil
+
+        let cleanNationalId = currentNationalId.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard !cleanNationalId.isEmpty else {
+            state.isLoadingRewards = false
+            state.rewardPreview = .empty(nationalId: "")
             return
         }
 
-        let finalOrder = baseOrder.withLoyalty(
-            appliedRewards: state.rewardPreview.appliedRewards,
-            discount: state.rewardPreview.discountAmount
-        )
+        state.isLoadingRewards = true
 
-        state.isSubmitting = true
-        state.errorMessage = nil
+        walletListenerToken = loyaltyRewardsService.observeWalletSnapshot(
+            for: cleanNationalId
+        ) { [weak self] result in
+            Task { @MainActor in
+                guard let self else { return }
 
-        Task {
+                switch result {
+                case .success:
+                    await self.refreshRewardPreview(nationalId: cleanNationalId)
+
+                case .failure(let error):
+                    self.state.isLoadingRewards = false
+                    self.state.errorMessage = error.localizedDescription
+                    self.state.rewardPreview = .empty(nationalId: cleanNationalId)
+                }
+            }
+        }
+    }
+
+    private func submitOrder() {
+        Task { @MainActor in
+            guard let baseOrder = cartManager.createOrder() else {
+                state.errorMessage = "Please complete client name, table number, and cart items."
+                return
+            }
+
+            state.isSubmitting = true
+            state.errorMessage = nil
+
             do {
+                let previewNationalId = (
+                    baseOrder.nationalId?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+                    ? baseOrder.nationalId!
+                    : currentNationalId
+                )
+
+                let latestPreview = try await buildRewardPreview(for: previewNationalId)
+                state.rewardPreview = latestPreview
+
+                let finalOrder = baseOrder.withLoyalty(
+                    appliedRewards: latestPreview.appliedRewards,
+                    discount: latestPreview.discountAmount
+                )
+
                 try await submitOrderUseCase.execute(order: finalOrder)
+
                 cartManager.clear()
                 state.createdOrder = finalOrder
-                state.rewardPreview = .empty(nationalId: currentNationalId)
+                state.rewardPreview = .empty(nationalId: previewNationalId)
                 state.isSubmitting = false
             } catch {
                 state.isSubmitting = false
@@ -19744,8 +20273,41 @@ final class CheckoutViewModel: ObservableObject {
         }
     }
 
-    func clearError() {
-        state.errorMessage = nil
+    private func buildRewardPreview(for nationalId: String) async throws -> CheckoutRewardPreview {
+        let cleanNationalId = nationalId.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard !cleanNationalId.isEmpty else {
+            return .empty(nationalId: "")
+        }
+
+        let previewItems = cartManager.items.map {
+            OrderItem(
+                menuItemId: $0.menuItem.id,
+                name: $0.menuItem.name,
+                unitPrice: $0.unitPrice,
+                quantity: $0.quantity,
+                notes: $0.notes
+            )
+        }
+
+        guard !previewItems.isEmpty else {
+            return .empty(nationalId: cleanNationalId)
+        }
+
+        let result = try await loyaltyRewardsService.previewRestaurantRewards(
+            for: cleanNationalId,
+            items: previewItems
+        )
+
+        return CheckoutRewardPreview(
+            appliedRewards: result.appliedRewards,
+            discountAmount: result.totalDiscount,
+            walletSnapshot: result.walletSnapshot
+        )
+    }
+
+    private func roundMoney(_ value: Double) -> Double {
+        (value * 100).rounded() / 100
     }
 }
 

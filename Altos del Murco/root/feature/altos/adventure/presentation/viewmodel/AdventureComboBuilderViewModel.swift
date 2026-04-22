@@ -57,6 +57,7 @@ final class AdventureComboBuilderViewModel: ObservableObject {
 
     private var hasLoadedCatalog = false
     private var catalogListenerToken: AdventureListenerToken?
+    private var rewardsListenerToken: LoyaltyRewardsListenerToken?
     
     var rewardPreview: RewardComputationResult = .empty(wallet: .empty(nationalId: ""))
     var isLoadingRewards = false
@@ -87,11 +88,20 @@ final class AdventureComboBuilderViewModel: ObservableObject {
 
     func onAppear() {
         startCatalogObservationIfNeeded()
+        startRewardsObservation()
 
         Task {
             await loadCatalogIfNeeded()
             await loadAvailability()
         }
+    }
+    
+    func onDisappear() {
+        catalogListenerToken?.remove()
+        catalogListenerToken = nil
+
+        rewardsListenerToken?.remove()
+        rewardsListenerToken = nil
     }
 
     private func startCatalogObservationIfNeeded() {
@@ -109,6 +119,43 @@ final class AdventureComboBuilderViewModel: ObservableObject {
                 case .failure(let error):
                     self.state.errorMessage = error.localizedDescription
                     self.state.isLoadingCatalog = false
+                }
+            }
+        }
+    }
+    
+    private func startRewardsObservation() {
+        rewardsListenerToken?.remove()
+        rewardsListenerToken = nil
+
+        let cleanNationalId = state.nationalId.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard !cleanNationalId.isEmpty else {
+            state.rewardPreview = RewardComputationResult.empty(
+                wallet: RewardWalletSnapshot.empty(nationalId: "")
+            )
+            state.isLoadingRewards = false
+            return
+        }
+
+        state.isLoadingRewards = true
+
+        rewardsListenerToken = loyaltyRewardsService.observeWalletSnapshot(
+            for: cleanNationalId
+        ) { [weak self] result in
+            Task { @MainActor in
+                guard let self else { return }
+
+                switch result {
+                case .success:
+                    await self.refreshRewardPreview()
+
+                case .failure(let error):
+                    self.state.isLoadingRewards = false
+                    self.state.errorMessage = error.localizedDescription
+                    self.state.rewardPreview = RewardComputationResult.empty(
+                        wallet: RewardWalletSnapshot.empty(nationalId: cleanNationalId)
+                    )
                 }
             }
         }
@@ -164,11 +211,6 @@ final class AdventureComboBuilderViewModel: ObservableObject {
         refreshPackageDiscount()
         state.isLoadingCatalog = false
         Task { await refreshRewardPreview() }
-    }
-
-    func onDisappear() {
-        catalogListenerToken?.remove()
-        catalogListenerToken = nil
     }
 
     var activeActivityConfigs: [AdventureActivityCatalogItem] {
@@ -361,8 +403,15 @@ final class AdventureComboBuilderViewModel: ObservableObject {
     func setWhatsapp(_ value: String) { state.whatsappNumber = value }
     
     func setNationalId(_ value: String) {
-        state.nationalId = value
-        Task { await refreshRewardPreview() }
+        let cleanNationalId = value.filter(\.isNumber)
+        let shouldRestartObservation =
+            cleanNationalId != state.nationalId || rewardsListenerToken == nil
+
+        state.nationalId = cleanNationalId
+
+        if shouldRestartObservation {
+            startRewardsObservation()
+        }
     }
     
     func setNotes(_ value: String) { state.notes = value }
@@ -1040,5 +1089,86 @@ final class AdventureComboBuilderViewModel: ObservableObject {
             second: 0,
             of: state.selectedDate
         )
+    }
+    
+    func effectiveTotal(for slot: AdventureAvailabilitySlot) -> Double {
+        max(0, slot.totalAmount - state.rewardPreview.totalDiscount)
+    }
+
+    func baseAdventureSubtotal(for item: AdventureReservationItemDraft) -> Double {
+        AdventurePricingEngine.subtotal(for: item, catalog: state.catalog)
+    }
+
+    func rewardAmount(for item: AdventureReservationItemDraft) -> Double {
+        let activityId = config(for: item.activity)?.id ?? item.activity.rawValue
+
+        return roundMoney(
+            state.rewardPreview.appliedRewards
+                .filter { $0.affectedActivityIds.contains(activityId) }
+                .reduce(0) { $0 + $1.amount }
+        )
+    }
+
+    func displayedAdventureSubtotal(for item: AdventureReservationItemDraft) -> Double {
+        max(0, baseAdventureSubtotal(for: item) - rewardAmount(for: item))
+    }
+
+    func rewardAmount(for foodItem: ReservationFoodItemDraft) -> Double {
+        allocatedFoodDiscountByDraftId()[foodItem.id, default: 0]
+    }
+
+    func displayedFoodSubtotal(for foodItem: ReservationFoodItemDraft) -> Double {
+        max(0, foodItem.subtotal - rewardAmount(for: foodItem))
+    }
+
+    private func allocatedFoodDiscountByDraftId() -> [String: Double] {
+        let menuDiscounts = state.rewardPreview.appliedRewards.reduce(into: [String: Double]()) { partial, reward in
+            for menuItemId in reward.affectedMenuItemIds {
+                partial[menuItemId, default: 0] += reward.amount
+            }
+        }
+
+        guard !menuDiscounts.isEmpty, !state.foodItems.isEmpty else { return [:] }
+
+        let grouped = Dictionary(
+            grouping: Array(state.foodItems.enumerated()),
+            by: { $0.element.menuItemId }
+        )
+
+        var result: [String: Double] = [:]
+
+        for (menuItemId, entries) in grouped {
+            let totalDiscount = roundMoney(menuDiscounts[menuItemId, default: 0])
+            guard totalDiscount > 0 else { continue }
+
+            let subtotal = entries.reduce(0.0) { $0 + $1.element.subtotal }
+            guard subtotal > 0 else { continue }
+
+            var remainingDiscount = totalDiscount
+
+            for offset in entries.indices {
+                let item = entries[offset].element
+                let allocation: Double
+
+                if offset == entries.count - 1 {
+                    allocation = min(item.subtotal, max(0, roundMoney(remainingDiscount)))
+                } else {
+                    let share = item.subtotal / subtotal
+                    allocation = min(
+                        item.subtotal,
+                        max(0, roundMoney(totalDiscount * share))
+                    )
+                    remainingDiscount = roundMoney(remainingDiscount - allocation)
+                }
+
+                result[item.id] = allocation
+            }
+        }
+
+        return result
+    }
+
+    private func roundMoney(_ value: Double) -> Double {
+        (value * 100).rounded() / 100
     }
 }

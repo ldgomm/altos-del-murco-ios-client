@@ -40,6 +40,7 @@ final class CheckoutViewModel: ObservableObject {
 
     private var cancellables = Set<AnyCancellable>()
     private var currentNationalId: String = ""
+    private var walletListenerToken: LoyaltyRewardsListenerToken?
 
     init(
         submitOrderUseCase: SubmitOrderUseCase,
@@ -63,10 +64,13 @@ final class CheckoutViewModel: ObservableObject {
 
     func onAppear(nationalId: String) {
         let cleanNationalId = nationalId.trimmingCharacters(in: .whitespacesAndNewlines)
+        let shouldRestartObservation =
+            cleanNationalId != currentNationalId || walletListenerToken == nil
+
         currentNationalId = cleanNationalId
 
-        Task { @MainActor in
-            await refreshRewardPreview(nationalId: cleanNationalId)
+        if shouldRestartObservation {
+            startWalletObservation()
         }
     }
 
@@ -164,6 +168,39 @@ final class CheckoutViewModel: ObservableObject {
 
     func clearError() {
         state.errorMessage = nil
+    }
+
+    private func startWalletObservation() {
+        walletListenerToken?.remove()
+        walletListenerToken = nil
+
+        let cleanNationalId = currentNationalId.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard !cleanNationalId.isEmpty else {
+            state.isLoadingRewards = false
+            state.rewardPreview = .empty(nationalId: "")
+            return
+        }
+
+        state.isLoadingRewards = true
+
+        walletListenerToken = loyaltyRewardsService.observeWalletSnapshot(
+            for: cleanNationalId
+        ) { [weak self] result in
+            Task { @MainActor in
+                guard let self else { return }
+
+                switch result {
+                case .success:
+                    await self.refreshRewardPreview(nationalId: cleanNationalId)
+
+                case .failure(let error):
+                    self.state.isLoadingRewards = false
+                    self.state.errorMessage = error.localizedDescription
+                    self.state.rewardPreview = .empty(nationalId: cleanNationalId)
+                }
+            }
+        }
     }
 
     private func submitOrder() {

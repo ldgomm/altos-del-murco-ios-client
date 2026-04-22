@@ -25,6 +25,72 @@ final class FirestoreLoyaltyWalletListenerToken: LoyaltyRewardsListenerToken {
     }
 }
 
+private final class CompositeLoyaltyRewardsListenerToken: LoyaltyRewardsListenerToken {
+    private var registrations: [ListenerRegistration]
+
+    init(registrations: [ListenerRegistration]) {
+        self.registrations = registrations
+    }
+
+    func remove() {
+        registrations.forEach { $0.remove() }
+        registrations.removeAll()
+    }
+}
+
+@MainActor
+private final class LoyaltyWalletObservationCoordinator {
+    private let emit: () -> Void
+    private let onFailure: (Error) -> Void
+
+    private var hasWalletSnapshot = false
+    private var hasTemplatesSnapshot = false
+    private var hasOrdersSnapshot = false
+    private var hasBookingsSnapshot = false
+
+    init(
+        emit: @escaping () -> Void,
+        onFailure: @escaping (Error) -> Void
+    ) {
+        self.emit = emit
+        self.onFailure = onFailure
+    }
+
+    func receiveWallet(error: Error?) {
+        receive(error: error, mark: \.hasWalletSnapshot)
+    }
+
+    func receiveTemplates(error: Error?) {
+        receive(error: error, mark: \.hasTemplatesSnapshot)
+    }
+
+    func receiveOrders(error: Error?) {
+        receive(error: error, mark: \.hasOrdersSnapshot)
+    }
+
+    func receiveBookings(error: Error?) {
+        receive(error: error, mark: \.hasBookingsSnapshot)
+    }
+
+    private func receive(
+        error: Error?,
+        mark keyPath: ReferenceWritableKeyPath<LoyaltyWalletObservationCoordinator, Bool>
+    ) {
+        if let error {
+            onFailure(error)
+            return
+        }
+
+        self[keyPath: keyPath] = true
+
+        guard hasWalletSnapshot, hasTemplatesSnapshot, hasOrdersSnapshot, hasBookingsSnapshot else {
+            return
+        }
+
+        emit()
+    }
+}
+
 protocol LoyaltyRewardsServiceable {
     func loadWalletSnapshot(for nationalId: String) async throws -> RewardWalletSnapshot
 
@@ -126,31 +192,74 @@ final class LoyaltyRewardsService: LoyaltyRewardsServiceable {
             return FirestoreLoyaltyWalletListenerToken(registration: nil)
         }
 
-        let walletRef = db.collection(FirestoreConstants.client_loyalty_wallets).document(cleanNationalId)
+        let walletRef = db
+            .collection(FirestoreConstants.client_loyalty_wallets)
+            .document(cleanNationalId)
 
-        let registration = walletRef.addSnapshotListener { [weak self] _, error in
-            guard let self else { return }
+        let templatesRef = db.collection(FirestoreConstants.loyalty_reward_templates)
 
-            if let error {
-                onChange(.failure(error))
-                return
-            }
+        let ordersQuery = db
+            .collection(FirestoreConstants.restaurant_orders)
+            .whereField("nationalId", isEqualTo: cleanNationalId)
 
-            Task {
-                do {
-                    let snapshot = try await self.loadWalletSnapshot(for: cleanNationalId)
-                    await MainActor.run {
-                        onChange(.success(snapshot))
-                    }
-                } catch {
-                    await MainActor.run {
-                        onChange(.failure(error))
+        let bookingsQuery = db
+            .collection(FirestoreConstants.adventure_bookings)
+            .whereField("nationalId", isEqualTo: cleanNationalId)
+
+        let coordinator = LoyaltyWalletObservationCoordinator(
+            emit: { [weak self] in
+                guard let self else { return }
+
+                Task {
+                    do {
+                        let snapshot = try await self.loadWalletSnapshot(for: cleanNationalId)
+                        await MainActor.run {
+                            onChange(.success(snapshot))
+                        }
+                    } catch {
+                        await MainActor.run {
+                            onChange(.failure(error))
+                        }
                     }
                 }
+            },
+            onFailure: { error in
+                onChange(.failure(error))
+            }
+        )
+
+        let walletRegistration = walletRef.addSnapshotListener { _, error in
+            Task { @MainActor in
+                coordinator.receiveWallet(error: error)
             }
         }
 
-        return FirestoreLoyaltyWalletListenerToken(registration: registration)
+        let templatesRegistration = templatesRef.addSnapshotListener { _, error in
+            Task { @MainActor in
+                coordinator.receiveTemplates(error: error)
+            }
+        }
+
+        let ordersRegistration = ordersQuery.addSnapshotListener { _, error in
+            Task { @MainActor in
+                coordinator.receiveOrders(error: error)
+            }
+        }
+
+        let bookingsRegistration = bookingsQuery.addSnapshotListener { _, error in
+            Task { @MainActor in
+                coordinator.receiveBookings(error: error)
+            }
+        }
+
+        return CompositeLoyaltyRewardsListenerToken(
+            registrations: [
+                walletRegistration,
+                templatesRegistration,
+                ordersRegistration,
+                bookingsRegistration
+            ]
+        )
     }
 
     func previewRestaurantRewards(

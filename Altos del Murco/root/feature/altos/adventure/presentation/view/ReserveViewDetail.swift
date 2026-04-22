@@ -356,7 +356,7 @@ struct ReserveViewDetail: View {
 
             amountRow(
                 "Total",
-                max(0, booking.totalAmount - booking.loyaltyDiscountAmount),
+                booking.totalAmount,
                 isPrimary: true
             )
 

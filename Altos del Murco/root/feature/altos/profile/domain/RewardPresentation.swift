@@ -55,7 +55,84 @@ enum RewardPresentationFactory {
         for item: MenuItem,
         wallet: RewardWalletSnapshot
     ) -> RewardPresentation? {
-        for template in wallet.availableTemplates where template.scope.matchesRestaurant() && !template.isExpired {
+        buildMenuPresentation(
+            for: item,
+            wallet: wallet,
+            includeAdventureScopedTemplates: false
+        )
+    }
+
+    static func adventureMenuPresentation(
+        for item: MenuItem,
+        wallet: RewardWalletSnapshot
+    ) -> RewardPresentation? {
+        buildMenuPresentation(
+            for: item,
+            wallet: wallet,
+            includeAdventureScopedTemplates: true
+        )
+    }
+
+    static func activityPresentation(
+        for activity: AdventureActivityCatalogItem,
+        wallet: RewardWalletSnapshot
+    ) -> RewardPresentation? {
+        for template in wallet.availableTemplates where template.scope.matchesAdventure() && !template.isExpired {
+            switch template.rule.type {
+            case .activityPercentage:
+                guard template.targetActivityId == activity.id else { continue }
+
+                let percentage = Int((template.rule.percentage ?? 0).rounded())
+                guard percentage > 0 else { continue }
+
+                return RewardPresentation(
+                    id: template.id,
+                    badge: "\(percentage)% OFF",
+                    title: template.title,
+                    message: "\(activity.title) tiene \(percentage)% de descuento automático por tu nivel \(wallet.currentLevel.title)."
+                )
+
+            default:
+                continue
+            }
+        }
+
+        return nil
+    }
+
+    static func packagePresentation(
+        for package: AdventureFeaturedPackage,
+        catalog: AdventureCatalogSnapshot,
+        menuItemsById: [String: MenuItem],
+        wallet: RewardWalletSnapshot
+    ) -> RewardPresentation? {
+        for item in package.items {
+            guard let activity = catalog.activity(for: item.activity) else { continue }
+            if let presentation = activityPresentation(for: activity, wallet: wallet) {
+                return presentation
+            }
+        }
+
+        for item in package.foodItems {
+            guard let menuItem = menuItemsById[item.menuItemId] else { continue }
+            if let presentation = adventureMenuPresentation(for: menuItem, wallet: wallet) {
+                return presentation
+            }
+        }
+
+        return nil
+    }
+
+    private static func buildMenuPresentation(
+        for item: MenuItem,
+        wallet: RewardWalletSnapshot,
+        includeAdventureScopedTemplates: Bool
+    ) -> RewardPresentation? {
+        for template in wallet.availableTemplates
+        where templateMatchesMenuContext(
+            template,
+            includeAdventureScopedTemplates: includeAdventureScopedTemplates
+        ) && !template.isExpired {
             switch template.rule.type {
             case .freeMenuItem:
                 guard template.targetMenuItemId == item.id else { continue }
@@ -112,53 +189,26 @@ enum RewardPresentationFactory {
         return nil
     }
 
-    static func activityPresentation(
-        for activity: AdventureActivityCatalogItem,
-        wallet: RewardWalletSnapshot
-    ) -> RewardPresentation? {
-        for template in wallet.availableTemplates where template.scope.matchesAdventure() && !template.isExpired {
-            switch template.rule.type {
-            case .activityPercentage:
-                guard template.targetActivityId == activity.id else { continue }
+    private static func templateMatchesMenuContext(
+        _ template: LoyaltyRewardTemplate,
+        includeAdventureScopedTemplates: Bool
+    ) -> Bool {
+        switch template.rule.type {
+        case .activityPercentage:
+            return false
 
-                let percentage = Int((template.rule.percentage ?? 0).rounded())
-                guard percentage > 0 else { continue }
-
-                return RewardPresentation(
-                    id: template.id,
-                    badge: "\(percentage)% OFF",
-                    title: template.title,
-                    message: "\(activity.title) tiene \(percentage)% de descuento automático por tu nivel \(wallet.currentLevel.title)."
-                )
-
-            default:
-                continue
+        case .mostExpensiveMenuItemPercentage,
+             .specificMenuItemPercentage,
+             .freeMenuItem,
+             .buyXGetYFree:
+            if includeAdventureScopedTemplates {
+                switch template.scope {
+                case .restaurant, .adventure, .both:
+                    return true
+                }
+            } else {
+                return template.scope.matchesRestaurant()
             }
         }
-
-        return nil
-    }
-
-    static func packagePresentation(
-        for package: AdventureFeaturedPackage,
-        catalog: AdventureCatalogSnapshot,
-        menuItemsById: [String: MenuItem],
-        wallet: RewardWalletSnapshot
-    ) -> RewardPresentation? {
-        for item in package.items {
-            guard let activity = catalog.activity(for: item.activity) else { continue }
-            if let presentation = activityPresentation(for: activity, wallet: wallet) {
-                return presentation
-            }
-        }
-
-        for item in package.foodItems {
-            guard let menuItem = menuItemsById[item.menuItemId] else { continue }
-            if let presentation = menuPresentation(for: menuItem, wallet: wallet) {
-                return presentation
-            }
-        }
-
-        return nil
     }
 }

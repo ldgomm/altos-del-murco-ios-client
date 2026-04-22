@@ -52,11 +52,11 @@ enum LoyaltyRewardEngine {
         activityLines: [RewardActivityLine],
         foodLines: [RewardMenuLine]
     ) -> RewardComputationResult {
-        let eligible = templates.filter {
-            $0.isActive &&
-            $0.triggerMode == .automatic &&
-            $0.scope.matchesAdventure() &&
-            $0.isEligible(for: wallet.currentLevel)
+        let eligible = templates.filter { template in
+            template.isActive &&
+            template.triggerMode == .automatic &&
+            template.isEligible(for: wallet.currentLevel) &&
+            templateAppliesInAdventureContext(template)
         }
 
         let stackableTemplates = eligible.filter(\.canStack).sorted { lhs, rhs in
@@ -88,6 +88,33 @@ enum LoyaltyRewardEngine {
             totalDiscount: winner.totalDiscount,
             walletSnapshot: wallet
         )
+    }
+
+    private static func templateAppliesInAdventureContext(
+        _ template: LoyaltyRewardTemplate
+    ) -> Bool {
+        switch template.rule.type {
+        case .activityPercentage:
+            return template.scope.matchesAdventure()
+
+        case .mostExpensiveMenuItemPercentage,
+             .specificMenuItemPercentage,
+             .freeMenuItem,
+             .buyXGetYFree:
+            switch template.scope {
+            case .restaurant, .adventure, .both:
+                return true
+            }
+        }
+    }
+
+    private static func templateCanApplyToAdventureFood(
+        _ template: LoyaltyRewardTemplate
+    ) -> Bool {
+        switch template.scope {
+        case .restaurant, .adventure, .both:
+            return true
+        }
     }
 
     private struct InternalRewardResult {
