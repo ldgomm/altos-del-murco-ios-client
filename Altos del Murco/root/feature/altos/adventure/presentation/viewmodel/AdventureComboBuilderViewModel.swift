@@ -36,13 +36,12 @@ struct AdventureComboBuilderState {
     var isLoadingCatalog = false
     var isLoadingAvailability = false
     var isSubmitting = false
+    var isLoadingRewards = false
     var errorMessage: String?
     var successMessage: String?
-    var isLoadingRewards = false
+
     var rewardPreview: RewardComputationResult =
-        RewardComputationResult.empty(
-            wallet: RewardWalletSnapshot.empty(nationalId: "")
-        )
+        .empty(wallet: .empty(nationalId: ""))
 }
 
 @MainActor
@@ -58,9 +57,6 @@ final class AdventureComboBuilderViewModel: ObservableObject {
     private var hasLoadedCatalog = false
     private var catalogListenerToken: AdventureListenerToken?
     private var rewardsListenerToken: LoyaltyRewardsListenerToken?
-    
-    var rewardPreview: RewardComputationResult = .empty(wallet: .empty(nationalId: ""))
-    var isLoadingRewards = false
 
     init(
         prefilledItems: [AdventureReservationItemDraft],
@@ -82,7 +78,7 @@ final class AdventureComboBuilderViewModel: ObservableObject {
         self.fetchAdventureCatalogUseCase = fetchAdventureCatalogUseCase
         self.observeAdventureCatalogUseCase = observeAdventureCatalogUseCase
         self.loyaltyRewardsService = loyaltyRewardsService
-        
+
         keepCampingAtEnd()
     }
 
@@ -95,7 +91,7 @@ final class AdventureComboBuilderViewModel: ObservableObject {
             await loadAvailability()
         }
     }
-    
+
     func onDisappear() {
         catalogListenerToken?.remove()
         catalogListenerToken = nil
@@ -114,7 +110,7 @@ final class AdventureComboBuilderViewModel: ObservableObject {
                 switch result {
                 case .success(let catalog):
                     self.applyCatalog(catalog)
-                    Task { await self.loadAvailability() }
+                    await self.loadAvailability()
 
                 case .failure(let error):
                     self.state.errorMessage = error.localizedDescription
@@ -123,17 +119,14 @@ final class AdventureComboBuilderViewModel: ObservableObject {
             }
         }
     }
-    
+
     private func startRewardsObservation() {
         rewardsListenerToken?.remove()
         rewardsListenerToken = nil
 
         let cleanNationalId = state.nationalId.trimmingCharacters(in: .whitespacesAndNewlines)
-
         guard !cleanNationalId.isEmpty else {
-            state.rewardPreview = RewardComputationResult.empty(
-                wallet: RewardWalletSnapshot.empty(nationalId: "")
-            )
+            state.rewardPreview = .empty(wallet: .empty(nationalId: ""))
             state.isLoadingRewards = false
             return
         }
@@ -147,27 +140,24 @@ final class AdventureComboBuilderViewModel: ObservableObject {
                 guard let self else { return }
 
                 switch result {
-                case .success:
+                case .success(let wallet):
                     await self.refreshRewardPreview()
-
                 case .failure(let error):
                     self.state.isLoadingRewards = false
                     self.state.errorMessage = error.localizedDescription
-                    self.state.rewardPreview = RewardComputationResult.empty(
-                        wallet: RewardWalletSnapshot.empty(nationalId: cleanNationalId)
+                    self.state.rewardPreview = .empty(
+                        wallet: .empty(nationalId: cleanNationalId)
                     )
                 }
             }
         }
     }
-    
+
     func refreshRewardPreview() async {
         let cleanNationalId = state.nationalId.trimmingCharacters(in: .whitespacesAndNewlines)
-
         guard !cleanNationalId.isEmpty else {
-            state.rewardPreview = RewardComputationResult.empty(
-                wallet: RewardWalletSnapshot.empty(nationalId: "")
-            )
+            state.rewardPreview = .empty(wallet: .empty(nationalId: ""))
+            state.isLoadingRewards = false
             return
         }
 
@@ -175,16 +165,21 @@ final class AdventureComboBuilderViewModel: ObservableObject {
         defer { state.isLoadingRewards = false }
 
         do {
-            state.rewardPreview = try await loyaltyRewardsService.previewAdventureRewards(
+
+            let result = try await loyaltyRewardsService.previewAdventureRewards(
                 for: cleanNationalId,
                 activityItems: state.items,
                 foodItems: state.foodItems,
                 catalog: state.catalog
             )
+
+            state.rewardPreview = result
+            state.errorMessage = nil
+
         } catch {
             state.errorMessage = error.localizedDescription
-            state.rewardPreview = RewardComputationResult.empty(
-                wallet: RewardWalletSnapshot.empty(nationalId: cleanNationalId)
+            state.rewardPreview = .empty(
+                wallet: .empty(nationalId: cleanNationalId)
             )
         }
     }
@@ -193,23 +188,25 @@ final class AdventureComboBuilderViewModel: ObservableObject {
         state.catalog = catalog
 
         state.items = state.items.map { current in
-            if let config = catalog.activity(for: current.activity) {
-                return AdventureReservationItemDraft(
-                    id: current.id,
-                    activity: current.activity,
-                    durationMinutes: normalizeDuration(current.durationMinutes, for: config),
-                    peopleCount: max(current.peopleCount, config.defaults.peopleCount),
-                    vehicleCount: max(current.vehicleCount, config.defaults.vehicleCount),
-                    offRoadRiderCount: max(current.offRoadRiderCount, config.defaults.offRoadRiderCount),
-                    nights: max(current.nights, config.defaults.nights)
-                )
+            guard let config = catalog.activity(for: current.activity) else {
+                return current
             }
-            return current
+
+            return AdventureReservationItemDraft(
+                id: current.id,
+                activity: current.activity,
+                durationMinutes: normalizeDuration(current.durationMinutes, for: config),
+                peopleCount: max(current.peopleCount, config.defaults.peopleCount),
+                vehicleCount: max(current.vehicleCount, config.defaults.vehicleCount),
+                offRoadRiderCount: max(current.offRoadRiderCount, config.defaults.offRoadRiderCount),
+                nights: max(current.nights, config.defaults.nights)
+            )
         }
 
         keepCampingAtEnd()
         refreshPackageDiscount()
         state.isLoadingCatalog = false
+
         Task { await refreshRewardPreview() }
     }
 
@@ -305,6 +302,7 @@ final class AdventureComboBuilderViewModel: ObservableObject {
 
     func increaseFoodQuantity(_ id: String) {
         guard let index = state.foodItems.firstIndex(where: { $0.id == id }) else { return }
+
         let current = state.foodItems[index]
         state.foodItems[index] = ReservationFoodItemDraft(
             id: current.id,
@@ -314,6 +312,7 @@ final class AdventureComboBuilderViewModel: ObservableObject {
             quantity: current.quantity + 1,
             notes: current.notes
         )
+
         refreshAfterFoodChanged()
     }
 
@@ -369,7 +368,6 @@ final class AdventureComboBuilderViewModel: ObservableObject {
         state.selectedDate = date
         state.selectedSlot = nil
         Task { await loadAvailability() }
-        Task { await refreshRewardPreview() }
     }
 
     func setGuestCount(_ value: Int) {
@@ -383,8 +381,13 @@ final class AdventureComboBuilderViewModel: ObservableObject {
         }
     }
 
-    func setCustomEventTitle(_ value: String) { state.customEventTitle = value }
-    func setEventNotes(_ value: String) { state.eventNotes = value }
+    func setCustomEventTitle(_ value: String) {
+        state.customEventTitle = value
+    }
+
+    func setEventNotes(_ value: String) {
+        state.eventNotes = value
+    }
 
     func setFoodServingMoment(_ value: ReservationServingMoment) {
         state.foodServingMoment = value
@@ -398,14 +401,26 @@ final class AdventureComboBuilderViewModel: ObservableObject {
         Task { await loadAvailability() }
     }
 
-    func setFoodNotes(_ value: String) { state.foodNotes = value }
-    func setClientName(_ value: String) { state.clientName = value }
-    func setWhatsapp(_ value: String) { state.whatsappNumber = value }
-    
+    func setFoodNotes(_ value: String) {
+        state.foodNotes = value
+    }
+
+    func setClientName(_ value: String) {
+        state.clientName = value
+    }
+
+    func setWhatsapp(_ value: String) {
+        state.whatsappNumber = value
+    }
+
     func setNationalId(_ value: String) {
         let cleanNationalId = value.filter(\.isNumber)
         let shouldRestartObservation =
             cleanNationalId != state.nationalId || rewardsListenerToken == nil
+
+        RewardDebugLog.info(
+            "setNationalId old=\(state.nationalId) new=\(cleanNationalId) restart=\(shouldRestartObservation)"
+        )
 
         state.nationalId = cleanNationalId
 
@@ -413,8 +428,10 @@ final class AdventureComboBuilderViewModel: ObservableObject {
             startRewardsObservation()
         }
     }
-    
-    func setNotes(_ value: String) { state.notes = value }
+
+    func setNotes(_ value: String) {
+        state.notes = value
+    }
 
     func selectSlot(_ slot: AdventureAvailabilitySlot) {
         state.selectedSlot = slot
@@ -462,6 +479,8 @@ final class AdventureComboBuilderViewModel: ObservableObject {
     func appliedRewardPresentation(for item: AdventureReservationItemDraft) -> RewardPresentation? {
         let activityId = config(for: item.activity)?.id ?? item.activity.rawValue
 
+        guard rewardAmount(for: item) > 0 else { return nil }
+
         guard let reward = state.rewardPreview.appliedRewards.first(where: {
             $0.affectedActivityIds.contains(activityId)
         }) else {
@@ -472,6 +491,8 @@ final class AdventureComboBuilderViewModel: ObservableObject {
     }
 
     func appliedRewardPresentation(for foodItem: ReservationFoodItemDraft) -> RewardPresentation? {
+        guard rewardAmount(for: foodItem) > 0 else { return nil }
+
         guard let reward = state.rewardPreview.appliedRewards.first(where: {
             $0.affectedMenuItemIds.contains(foodItem.menuItemId)
         }) else {
@@ -479,6 +500,62 @@ final class AdventureComboBuilderViewModel: ObservableObject {
         }
 
         return RewardPresentation.from(appliedReward: reward)
+    }
+
+    func foodPickerRewardPresentation(for menuItem: MenuItem, quantity: Int = 1) -> RewardPresentation? {
+        let projected = projectedRewardResult(adding: menuItem, quantity: quantity)
+
+        let matchingRewards = projected.appliedRewards.filter {
+            $0.affectedMenuItemIds.contains(menuItem.id)
+        }
+
+        RewardDebugLog.info(
+            """
+            foodPickerRewardPresentation menuItemId=\(menuItem.id) \
+            name=\(menuItem.name) \
+            quantity=\(quantity) \
+            projectedTotalDiscount=\(RewardDebugLog.formatMoney(projected.totalDiscount)) \
+            currentTotalDiscount=\(RewardDebugLog.formatMoney(state.rewardPreview.totalDiscount)) \
+            matchingRewardsCount=\(matchingRewards.count)
+            """
+        )
+        RewardDebugLog.dumpAppliedRewards(projected.appliedRewards, prefix: "foodPickerRewardPresentation")
+
+        guard let reward = matchingRewards.first else {
+            RewardDebugLog.info("foodPickerRewardPresentation no applied reward for menuItemId=\(menuItem.id)")
+            return nil
+        }
+
+        RewardDebugLog.info(
+            "foodPickerRewardPresentation matched reward templateId=\(reward.templateId) title=\(reward.title) amount=\(RewardDebugLog.formatMoney(reward.amount))"
+        )
+
+        return RewardPresentation.from(appliedReward: reward)
+    }
+
+    func foodPickerIncrementalDiscount(for menuItem: MenuItem, quantity: Int = 1) -> Double {
+        let projected = projectedRewardResult(adding: menuItem, quantity: quantity)
+        let value = max(
+            0,
+            roundMoney(projected.totalDiscount - state.rewardPreview.totalDiscount)
+        )
+
+        RewardDebugLog.info(
+            """
+            foodPickerIncrementalDiscount menuItemId=\(menuItem.id) \
+            quantity=\(quantity) \
+            current=\(RewardDebugLog.formatMoney(state.rewardPreview.totalDiscount)) \
+            projected=\(RewardDebugLog.formatMoney(projected.totalDiscount)) \
+            incremental=\(RewardDebugLog.formatMoney(value))
+            """
+        )
+
+        return value
+    }
+
+    func foodPickerDisplayedPrice(for menuItem: MenuItem, quantity: Int = 1) -> Double {
+        let subtotal = roundMoney(menuItem.finalPrice * Double(max(1, quantity)))
+        return max(0, subtotal - foodPickerIncrementalDiscount(for: menuItem, quantity: quantity))
     }
 
     func submit(clientId: String?) {
@@ -513,24 +590,43 @@ final class AdventureComboBuilderViewModel: ObservableObject {
     }
 
     func reset() {
-        state = AdventureComboBuilderState(
-            items: [AdventureActivityType.defaultDraft(for: .offRoad, catalog: state.catalog)],
-            packageDiscountAmount: 0,
+        let defaultItem = AdventureActivityType.defaultDraft(
+            for: .offRoad,
             catalog: state.catalog
         )
+
+        RewardDebugLog.info(
+            "reset preserving nationalId=\(state.nationalId) clientName=\(state.clientName)"
+        )
+
+        state = makeFreshBuilderState(
+            items: [defaultItem],
+            packageDiscountAmount: 0
+        )
+
         keepCampingAtEnd()
-        Task { await loadAvailability() }
+        startRewardsObservation()
+
         Task { await refreshRewardPreview() }
+        Task { await loadAvailability() }
     }
 
     func resetForFoodOnly() {
-        state = AdventureComboBuilderState(
-            items: [],
-            packageDiscountAmount: 0,
-            catalog: state.catalog
+        RewardDebugLog.info(
+            "resetForFoodOnly preserving nationalId=\(state.nationalId) clientName=\(state.clientName)"
         )
-        Task { await loadAvailability() }
+
+        state = makeFreshBuilderState(
+            items: [],
+            foodItems: [],
+            foodServingMoment: .afterActivities,
+            packageDiscountAmount: 0
+        )
+
+        startRewardsObservation()
+
         Task { await refreshRewardPreview() }
+        Task { await loadAvailability() }
     }
 
     func replaceItems(with items: [AdventureReservationItemDraft], packageDiscountAmount: Double = 0) {
@@ -550,6 +646,7 @@ final class AdventureComboBuilderViewModel: ObservableObject {
         state.selectedSlot = nil
         state.errorMessage = nil
         state.successMessage = nil
+
         Task { await loadAvailability() }
         Task { await refreshRewardPreview() }
     }
@@ -571,6 +668,7 @@ final class AdventureComboBuilderViewModel: ObservableObject {
         state.selectedSlot = nil
         state.errorMessage = nil
         state.successMessage = nil
+
         Task { await loadAvailability() }
         Task { await refreshRewardPreview() }
     }
@@ -611,6 +709,7 @@ final class AdventureComboBuilderViewModel: ObservableObject {
         hasLoadedCatalog = true
 
         state.isLoadingCatalog = true
+
         do {
             let catalog = try await fetchAdventureCatalogUseCase.execute()
             applyCatalog(catalog)
@@ -649,6 +748,7 @@ final class AdventureComboBuilderViewModel: ObservableObject {
                 packageDiscountAmount: state.packageDiscountAmount
             )
             state.availableSlots = slots
+
             if let selected = state.selectedSlot {
                 state.selectedSlot = slots.first(where: {
                     $0.startAt == selected.startAt && $0.endAt == selected.endAt
@@ -687,6 +787,47 @@ final class AdventureComboBuilderViewModel: ObservableObject {
         let matchedItemIDs: Set<String>
         let consumedFoodQuantities: [String: Int]
         let discountAmount: Double
+    }
+
+    private struct PreservedBuilderContext {
+        let clientName: String
+        let whatsappNumber: String
+        let nationalId: String
+        let catalog: AdventureCatalogSnapshot
+        let rewardPreview: RewardComputationResult
+    }
+
+    private func preservedBuilderContext() -> PreservedBuilderContext {
+        PreservedBuilderContext(
+            clientName: state.clientName,
+            whatsappNumber: state.whatsappNumber,
+            nationalId: state.nationalId,
+            catalog: state.catalog,
+            rewardPreview: state.rewardPreview
+        )
+    }
+
+    private func makeFreshBuilderState(
+        items: [AdventureReservationItemDraft],
+        foodItems: [ReservationFoodItemDraft] = [],
+        foodServingMoment: ReservationServingMoment = .afterActivities,
+        packageDiscountAmount: Double = 0
+    ) -> AdventureComboBuilderState {
+        let preserved = preservedBuilderContext()
+
+        return AdventureComboBuilderState(
+            selectedDate: state.selectedDate,
+            items: items,
+            foodItems: foodItems,
+            foodServingMoment: foodServingMoment,
+            foodServingTime: state.selectedDate,
+            clientName: preserved.clientName,
+            whatsappNumber: preserved.whatsappNumber,
+            nationalId: preserved.nationalId,
+            packageDiscountAmount: max(0, packageDiscountAmount),
+            catalog: preserved.catalog,
+            rewardPreview: preserved.rewardPreview
+        )
     }
 
     private func signature(for item: AdventureReservationItemDraft) -> PackageSignature {
@@ -759,6 +900,7 @@ final class AdventureComboBuilderViewModel: ObservableObject {
         for (menuItemId, quantityToConsume) in candidate.consumedFoodQuantities {
             let alreadyUsed = usedFoodQuantities[menuItemId, default: 0]
             let available = availableFoodQuantities[menuItemId, default: 0]
+
             guard alreadyUsed + quantityToConsume <= available else {
                 return false
             }
@@ -772,9 +914,11 @@ final class AdventureComboBuilderViewModel: ObservableObject {
         to usedFoodQuantities: [String: Int]
     ) -> [String: Int] {
         var next = usedFoodQuantities
+
         for (menuItemId, quantityToConsume) in candidate.consumedFoodQuantities {
             next[menuItemId, default: 0] += quantityToConsume
         }
+
         return next
     }
 
@@ -819,6 +963,7 @@ final class AdventureComboBuilderViewModel: ObservableObject {
         keepCampingAtEnd()
         refreshPackageDiscount()
         state.selectedSlot = nil
+
         Task { await loadAvailability() }
         Task { await refreshRewardPreview() }
     }
@@ -826,6 +971,7 @@ final class AdventureComboBuilderViewModel: ObservableObject {
     private func refreshAfterFoodChanged() {
         refreshPackageDiscount()
         state.selectedSlot = nil
+
         Task { await loadAvailability() }
         Task { await refreshRewardPreview() }
     }
@@ -1083,6 +1229,7 @@ final class AdventureComboBuilderViewModel: ObservableObject {
 
         let calendar = AdventureDateHelper.calendar
         let timeComponents = calendar.dateComponents([.hour, .minute], from: state.foodServingTime)
+
         return calendar.date(
             bySettingHour: timeComponents.hour ?? 12,
             minute: timeComponents.minute ?? 0,
@@ -1090,7 +1237,91 @@ final class AdventureComboBuilderViewModel: ObservableObject {
             of: state.selectedDate
         )
     }
-    
+
+    private func projectedFoodItems(
+        adding menuItem: MenuItem,
+        quantity: Int
+    ) -> [ReservationFoodItemDraft] {
+        var projected = state.foodItems
+        let safeQuantity = max(1, quantity)
+
+        projected.append(
+            ReservationFoodItemDraft(
+                menuItemId: menuItem.id,
+                name: menuItem.name,
+                unitPrice: menuItem.finalPrice,
+                quantity: safeQuantity,
+                notes: nil
+            )
+        )
+
+        return projected
+    }
+
+    private func rewardResult(
+        activityItems: [AdventureReservationItemDraft],
+        foodItems: [ReservationFoodItemDraft]
+    ) -> RewardComputationResult {
+        let wallet = state.rewardPreview.walletSnapshot
+
+        let activityLines = activityItems.compactMap { item -> RewardActivityLine? in
+            guard let activity = state.catalog.activity(for: item.activity) else {
+                RewardDebugLog.info("rewardResult missing catalog activity for \(item.activity.rawValue)")
+                return nil
+            }
+
+            return RewardActivityLine(
+                activityId: activity.id,
+                title: activity.title,
+                linePrice: AdventurePricingEngine.subtotal(
+                    for: item,
+                    catalog: state.catalog
+                )
+            )
+        }
+
+        let foodLines = foodItems.map {
+            RewardMenuLine(
+                menuItemId: $0.menuItemId,
+                name: $0.name,
+                unitPrice: $0.unitPrice,
+                quantity: $0.quantity
+            )
+        }
+
+        RewardDebugLog.info(
+            """
+            rewardResult local-eval templates=\(wallet.availableTemplates.count) \
+            activityLines=\(activityLines.map { "\($0.activityId):\(RewardDebugLog.formatMoney($0.linePrice))" }.joined(separator: " | ")) \
+            foodLines=\(foodLines.map { "\($0.menuItemId):qty=\($0.quantity):unit=\(RewardDebugLog.formatMoney($0.unitPrice))" }.joined(separator: " | "))
+            """
+        )
+
+        let result = LoyaltyRewardEngine.evaluateAdventure(
+            templates: wallet.availableTemplates,
+            wallet: wallet,
+            activityLines: activityLines,
+            foodLines: foodLines
+        )
+
+        RewardDebugLog.info(
+            "rewardResult local-eval totalDiscount=\(RewardDebugLog.formatMoney(result.totalDiscount)) appliedRewardsCount=\(result.appliedRewards.count)"
+        )
+        RewardDebugLog.dumpAppliedRewards(result.appliedRewards, prefix: "rewardResult")
+
+        return result
+    }
+
+    private func projectedRewardResult(
+        adding menuItem: MenuItem,
+        quantity: Int
+    ) -> RewardComputationResult {
+        rewardResult(
+            activityItems: state.items,
+            foodItems: projectedFoodItems(adding: menuItem, quantity: quantity)
+        )
+    }
+
     func effectiveTotal(for slot: AdventureAvailabilitySlot) -> Double {
         max(0, slot.totalAmount - state.rewardPreview.totalDiscount)
     }
@@ -1128,7 +1359,12 @@ final class AdventureComboBuilderViewModel: ObservableObject {
             }
         }
 
-        guard !menuDiscounts.isEmpty, !state.foodItems.isEmpty else { return [:] }
+        RewardDebugLog.info("allocatedFoodDiscountByDraftId rawMenuDiscounts=\(menuDiscounts)")
+
+        guard !menuDiscounts.isEmpty, !state.foodItems.isEmpty else {
+            RewardDebugLog.info("allocatedFoodDiscountByDraftId empty result because menuDiscounts or foodItems is empty")
+            return [:]
+        }
 
         let grouped = Dictionary(
             grouping: Array(state.foodItems.enumerated()),
@@ -1139,12 +1375,22 @@ final class AdventureComboBuilderViewModel: ObservableObject {
 
         for (menuItemId, entries) in grouped {
             let totalDiscount = roundMoney(menuDiscounts[menuItemId, default: 0])
-            guard totalDiscount > 0 else { continue }
+            guard totalDiscount > 0 else {
+                RewardDebugLog.info("allocatedFoodDiscountByDraftId skip menuItemId=\(menuItemId) because totalDiscount=0")
+                continue
+            }
 
             let subtotal = entries.reduce(0.0) { $0 + $1.element.subtotal }
-            guard subtotal > 0 else { continue }
+            guard subtotal > 0 else {
+                RewardDebugLog.info("allocatedFoodDiscountByDraftId skip menuItemId=\(menuItemId) because subtotal=0")
+                continue
+            }
 
             var remainingDiscount = totalDiscount
+
+            RewardDebugLog.info(
+                "allocatedFoodDiscountByDraftId menuItemId=\(menuItemId) totalDiscount=\(RewardDebugLog.formatMoney(totalDiscount)) subtotal=\(RewardDebugLog.formatMoney(subtotal)) rows=\(entries.count)"
+            )
 
             for offset in entries.indices {
                 let item = entries[offset].element
@@ -1162,9 +1408,21 @@ final class AdventureComboBuilderViewModel: ObservableObject {
                 }
 
                 result[item.id] = allocation
+
+                RewardDebugLog.info(
+                    """
+                    allocatedFoodDiscountByDraftId row \
+                    draftId=\(item.id) \
+                    menuItemId=\(item.menuItemId) \
+                    quantity=\(item.quantity) \
+                    subtotal=\(RewardDebugLog.formatMoney(item.subtotal)) \
+                    allocation=\(RewardDebugLog.formatMoney(allocation))
+                    """
+                )
             }
         }
 
+        RewardDebugLog.info("allocatedFoodDiscountByDraftId final=\(result)")
         return result
     }
 

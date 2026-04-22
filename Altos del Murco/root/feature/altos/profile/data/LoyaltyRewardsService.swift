@@ -312,12 +312,19 @@ final class LoyaltyRewardsService: LoyaltyRewardsServiceable {
             )
         }
 
-        return LoyaltyRewardEngine.evaluateAdventure(
+        let result = LoyaltyRewardEngine.evaluateAdventure(
             templates: wallet.availableTemplates,
             wallet: wallet,
             activityLines: activityLines,
             foodLines: foodLines
         )
+
+        RewardDebugLog.info(
+            "previewAdventureRewards result totalDiscount=\(RewardDebugLog.formatMoney(result.totalDiscount)) appliedRewardsCount=\(result.appliedRewards.count)"
+        )
+        RewardDebugLog.dumpAppliedRewards(result.appliedRewards, prefix: "previewAdventureRewards")
+
+        return result
     }
 
     func reserveRewards(
