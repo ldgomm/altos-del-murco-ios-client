@@ -104,6 +104,60 @@ final class MenuViewModel: ObservableObject {
             }
         }
     }
+    
+    func rewardPresentation(for item: MenuItem, quantity: Int = 1) -> RewardPresentation? {
+        let projected = projectedRewardResult(for: item, quantity: quantity)
+
+        if let appliedReward = projected.appliedRewards.first(where: {
+            $0.affectedMenuItemIds.contains(item.id)
+        }) {
+            return RewardPresentation.from(appliedReward: appliedReward)
+        }
+
+        return RewardPresentationFactory.menuPresentation(
+            for: item,
+            wallet: state.rewardWalletSnapshot
+        )
+    }
+
+    func incrementalDiscount(for item: MenuItem, quantity: Int = 1) -> Double {
+        let projected = projectedRewardResult(for: item, quantity: quantity)
+        return max(0, roundMoney(projected.totalDiscount))
+    }
+
+    func displayedPrice(for item: MenuItem, quantity: Int = 1) -> Double {
+        let subtotal = roundMoney(item.finalPrice * Double(max(1, quantity)))
+        return max(0, subtotal - incrementalDiscount(for: item, quantity: quantity))
+    }
+
+    private func projectedRewardResult(
+        for item: MenuItem,
+        quantity: Int
+    ) -> RewardComputationResult {
+        let safeQuantity = max(1, quantity)
+        let wallet = state.rewardWalletSnapshot
+
+        guard !wallet.availableTemplates.isEmpty else {
+            return .empty(wallet: wallet)
+        }
+
+        return LoyaltyRewardEngine.evaluateRestaurant(
+            templates: wallet.availableTemplates,
+            wallet: wallet,
+            menuLines: [
+                RewardMenuLine(
+                    menuItemId: item.id,
+                    name: item.name,
+                    unitPrice: item.finalPrice,
+                    quantity: safeQuantity
+                )
+            ]
+        )
+    }
+
+    private func roundMoney(_ value: Double) -> Double {
+        (value * 100).rounded() / 100
+    }
 
     var restaurantRewardTemplates: [LoyaltyRewardTemplate] {
         state.rewardWalletSnapshot.availableTemplates

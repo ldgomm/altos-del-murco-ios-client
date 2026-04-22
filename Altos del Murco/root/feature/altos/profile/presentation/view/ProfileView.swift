@@ -78,6 +78,7 @@ struct ProfileView: View {
             ZStack(alignment: .bottomTrailing) {
                 avatarView
 
+                /*
                 HStack(spacing: 10) {
                     if viewModel.hasProfileImage {
                         Button {
@@ -107,6 +108,7 @@ struct ProfileView: View {
                     }
                 }
                 .offset(x: 4, y: 4)
+                 */
             }
 
             VStack(spacing: 6) {

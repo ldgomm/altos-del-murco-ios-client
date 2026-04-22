@@ -108,7 +108,7 @@ struct AdventureCatalogView: View {
                         menuViewModel: menuViewModel
                     )
                     .onAppear {
-                        adventureComboBuilderViewModel.reset()
+                        adventureComboBuilderViewModel.prepareCustomDraftIfNeeded()
                     }
                 } label: {
                     HStack(spacing: 10) {
@@ -217,7 +217,7 @@ struct AdventureCatalogView: View {
                         menuViewModel: menuViewModel
                     )
                     .onAppear {
-                        adventureComboBuilderViewModel.reset()
+                        adventureComboBuilderViewModel.prepareCustomDraftIfNeeded()
                     }
                 } label: {
                     HStack(spacing: 10) {

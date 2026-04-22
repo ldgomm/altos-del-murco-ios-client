@@ -14,7 +14,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         _ application: UIApplication,
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
     ) -> Bool {
-        return true
+        true
     }
 }
 
@@ -32,6 +32,8 @@ struct AltosDelMurcoApp: App {
     @StateObject private var checkoutViewModel: CheckoutViewModel
     @StateObject private var sessionViewModel: AppSessionViewModel
     @StateObject private var menuViewModel: MenuViewModel
+    @StateObject private var adventureComboBuilderViewModel: AdventureComboBuilderViewModel
+
     private let adventureModuleFactory: AdventureModuleFactory
 
     init() {
@@ -85,10 +87,15 @@ struct AltosDelMurcoApp: App {
                 loyaltyRewardsService: loyaltyRewardsService
             )
 
-            adventureModuleFactory = AdventureModuleFactory(
+            let factory = AdventureModuleFactory(
                 bookingsService: adventureBookingsService,
                 catalogService: adventureCatalogService,
                 loyaltyRewardsService: loyaltyRewardsService
+            )
+            self.adventureModuleFactory = factory
+
+            _adventureComboBuilderViewModel = StateObject(
+                wrappedValue: factory.makeBuilderViewModel()
             )
 
             let authRepository: AuthenticationRepositoriable = AuthenticationRepository()
@@ -138,7 +145,8 @@ struct AltosDelMurcoApp: App {
                     ordersViewModel: ordersViewModel,
                     checkoutViewModel: checkoutViewModel,
                     menuViewModel: menuViewModel,
-                    adventureModuleFactory: adventureModuleFactory
+                    adventureModuleFactory: adventureModuleFactory,
+                    adventureComboBuilderViewModel: adventureComboBuilderViewModel
                 )
             }
             .environmentObject(cartManager)

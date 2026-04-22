@@ -10,7 +10,9 @@ import SwiftUI
 struct MenuItemDetailView: View {
     var item: MenuItem
     let categoryTitle: String
-    let rewardPresentation: RewardPresentation?
+    let rewardPresentationProvider: (MenuItem, Int) -> RewardPresentation?
+    let displayedPriceProvider: (MenuItem, Int) -> Double
+    let incrementalDiscountProvider: (MenuItem, Int) -> Double
 
     @EnvironmentObject private var cartManager: CartManager
     @Environment(\.dismiss) private var dismiss
@@ -26,14 +28,34 @@ struct MenuItemDetailView: View {
         AppTheme.palette(for: theme, scheme: colorScheme)
     }
 
+    private var rewardPresentation: RewardPresentation? {
+        rewardPresentationProvider(item, quantity)
+    }
+
+    private var displayedPrice: Double {
+        displayedPriceProvider(item, quantity)
+    }
+
+    private var incrementalDiscount: Double {
+        incrementalDiscountProvider(item, quantity)
+    }
+
+    private var baseSubtotal: Double {
+        item.finalPrice * Double(quantity)
+    }
+
     init(
         item: MenuItem,
         categoryTitle: String,
-        rewardPresentation: RewardPresentation? = nil
+        rewardPresentationProvider: @escaping (MenuItem, Int) -> RewardPresentation?,
+        displayedPriceProvider: @escaping (MenuItem, Int) -> Double,
+        incrementalDiscountProvider: @escaping (MenuItem, Int) -> Double
     ) {
         self.item = item
         self.categoryTitle = categoryTitle
-        self.rewardPresentation = rewardPresentation
+        self.rewardPresentationProvider = rewardPresentationProvider
+        self.displayedPriceProvider = displayedPriceProvider
+        self.incrementalDiscountProvider = incrementalDiscountProvider
     }
 
     var body: some View {
@@ -100,8 +122,8 @@ struct MenuItemDetailView: View {
                         .padding(.vertical, 6)
                         .background(
                             item.canBeOrdered
-                            ? .white.opacity(0.18)
-                            : .white.opacity(0.92)
+                                ? .white.opacity(0.18)
+                                : .white.opacity(0.92)
                         )
                         .clipShape(Capsule())
                 }
@@ -135,7 +157,7 @@ struct MenuItemDetailView: View {
             BrandSectionHeader(
                 theme: .restaurant,
                 title: "Premio disponible",
-                subtitle: "Este beneficio se aplica automáticamente cuando se cumpla la regla."
+                subtitle: "Este beneficio se refleja automáticamente en el valor mostrado."
             )
 
             HStack(alignment: .top, spacing: 12) {
@@ -152,6 +174,12 @@ struct MenuItemDetailView: View {
                 }
 
                 Spacer()
+
+                if let amountText = reward.amountText {
+                    Text("-\(amountText)")
+                        .font(.caption.bold())
+                        .foregroundStyle(palette.success)
+                }
             }
         }
         .appCardStyle(.restaurant)
@@ -206,17 +234,26 @@ struct MenuItemDetailView: View {
             )
 
             HStack(alignment: .lastTextBaseline, spacing: 10) {
-                if item.hasOffer, let offerPrice = item.offerPrice {
-                    Text(item.price.priceText)
+                if incrementalDiscount > 0 {
+                    Text(baseSubtotal.priceText)
                         .font(.title3.weight(.medium))
                         .foregroundStyle(palette.textTertiary)
                         .strikethrough()
 
-                    Text(offerPrice.priceText)
+                    Text(displayedPrice.priceText)
+                        .font(.system(size: 28, weight: .bold, design: .rounded))
+                        .foregroundStyle(palette.success)
+                } else if item.hasOffer, let offerPrice = item.offerPrice {
+                    Text((item.price * Double(quantity)).priceText)
+                        .font(.title3.weight(.medium))
+                        .foregroundStyle(palette.textTertiary)
+                        .strikethrough()
+
+                    Text((offerPrice * Double(quantity)).priceText)
                         .font(.system(size: 28, weight: .bold, design: .rounded))
                         .foregroundStyle(palette.textPrimary)
                 } else {
-                    Text(item.price.priceText)
+                    Text(baseSubtotal.priceText)
                         .font(.system(size: 28, weight: .bold, design: .rounded))
                         .foregroundStyle(palette.textPrimary)
                 }
@@ -284,7 +321,20 @@ struct MenuItemDetailView: View {
                             .font(.subheadline.weight(.medium))
                             .foregroundStyle(palette.textSecondary)
 
-                        Text((Double(quantity) * item.finalPrice).priceText)
+                        if incrementalDiscount > 0 {
+                            Text("Incluye premio")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(palette.success)
+                        }
+
+                        if incrementalDiscount > 0 {
+                            Text(baseSubtotal.priceText)
+                                .font(.caption)
+                                .foregroundStyle(palette.textTertiary)
+                                .strikethrough()
+                        }
+
+                        Text((incrementalDiscount > 0 ? displayedPrice : baseSubtotal).priceText)
                             .font(.title3.bold())
                             .foregroundStyle(palette.textPrimary)
                     }
@@ -292,52 +342,37 @@ struct MenuItemDetailView: View {
                     Spacer()
                 }
 
-                if !item.canBeOrdered {
-                    Text("No quedan platos disponibles por ahora.")
-                        .font(.footnote)
-                        .foregroundStyle(palette.destructive)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
-
                 Button {
-                    cartManager.add(item: item, quantity: quantity, notes: notesText)
+                    let trimmedNotes = notesText.trimmingCharacters(in: .whitespacesAndNewlines)
+                    let finalNotes = trimmedNotes.isEmpty ? nil : trimmedNotes
+
+                    cartManager.add(
+                        item: item,
+                        quantity: quantity,
+                        notes: finalNotes
+                    )
 
                     withAnimation(.easeInOut(duration: 0.25)) {
                         showAddedMessage = true
                     }
 
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
                         withAnimation(.easeInOut(duration: 0.25)) {
                             showAddedMessage = false
                         }
-
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
-                            dismiss()
-                        }
+                        dismiss()
                     }
                 } label: {
-                    Text(item.canBeOrdered ? "Añadir a la orden" : "Agotado")
+                    Label("Agregar al carrito", systemImage: "cart.badge.plus")
+                        .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(BrandPrimaryButtonStyle(theme: .restaurant))
                 .disabled(!item.canBeOrdered)
             }
-            .padding(16)
-            .background(
-                RoundedRectangle(cornerRadius: 24, style: .continuous)
-                    .fill(palette.elevatedCard.opacity(colorScheme == .dark ? 0.96 : 0.92))
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 24, style: .continuous)
-                    .stroke(palette.stroke, lineWidth: 1)
-            )
             .padding(.horizontal, 16)
-            .padding(.top, 8)
+            .padding(.top, 10)
             .padding(.bottom, 12)
+            .background(.ultraThinMaterial)
         }
-        .background(
-            Rectangle()
-                .fill(palette.background.opacity(colorScheme == .dark ? 0.92 : 0.85))
-                .ignoresSafeArea()
-        )
     }
 }

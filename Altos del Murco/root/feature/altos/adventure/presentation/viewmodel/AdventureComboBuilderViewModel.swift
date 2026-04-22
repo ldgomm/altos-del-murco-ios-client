@@ -152,6 +152,59 @@ final class AdventureComboBuilderViewModel: ObservableObject {
             }
         }
     }
+    
+    func prepareCustomDraftIfNeeded() {
+        guard !hasMeaningfulDraft else { return }
+
+        if state.items.isEmpty {
+            state.items = [
+                AdventureActivityType.defaultDraft(for: .offRoad, catalog: state.catalog)
+            ]
+        }
+
+        keepCampingAtEnd()
+        state.selectedSlot = nil
+
+        Task { await refreshRewardPreview() }
+        Task { await loadAvailability() }
+    }
+
+    func prepareFoodOnlyDraftIfNeeded() {
+        guard !hasMeaningfulDraft else { return }
+        resetForFoodOnly()
+    }
+
+    private var hasMeaningfulDraft: Bool {
+        if !state.foodItems.isEmpty { return true }
+        if state.selectedSlot != nil { return true }
+        if state.packageDiscountAmount > 0 { return true }
+
+        if state.guestCount != 2 { return true }
+        if state.eventType != .regularVisit { return true }
+
+        if !normalizedText(state.customEventTitle).isEmpty { return true }
+        if !normalizedText(state.eventNotes).isEmpty { return true }
+        if !normalizedText(state.foodNotes).isEmpty { return true }
+        if !normalizedText(state.notes).isEmpty { return true }
+
+        if !Calendar.current.isDateInToday(state.selectedDate) { return true }
+
+        guard !state.items.isEmpty else { return false }
+        guard state.items.count == 1 else { return true }
+
+        let defaultItem = AdventureActivityType.defaultDraft(
+            for: .offRoad,
+            catalog: state.catalog
+        )
+        let currentItem = state.items[0]
+
+        return currentItem.activity != defaultItem.activity
+            || currentItem.durationMinutes != defaultItem.durationMinutes
+            || currentItem.peopleCount != defaultItem.peopleCount
+            || currentItem.vehicleCount != defaultItem.vehicleCount
+            || currentItem.offRoadRiderCount != defaultItem.offRoadRiderCount
+            || currentItem.nights != defaultItem.nights
+    }
 
     func refreshRewardPreview() async {
         let cleanNationalId = state.nationalId.trimmingCharacters(in: .whitespacesAndNewlines)

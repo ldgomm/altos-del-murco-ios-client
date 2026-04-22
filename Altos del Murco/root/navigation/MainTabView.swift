@@ -5,50 +5,50 @@
 //  Created by José Ruiz on 31/3/26.
 //
 
+//
+//  MainTabView.swift
+//  Altos del Murco
+//
+
 import SwiftUI
 
 struct MainTabView: View {
     @Environment(\.colorScheme) private var colorScheme
     @State private var selectedTab: MainTab = .home
-    
+
     @ObservedObject var ordersViewModel: OrdersViewModel
     @ObservedObject var checkoutViewModel: CheckoutViewModel
     @ObservedObject var menuViewModel: MenuViewModel
-    
+    @ObservedObject var adventureComboBuilderViewModel: AdventureComboBuilderViewModel
+
     private let adventureModuleFactory: AdventureModuleFactory
-    @StateObject private var adventureComboBuilderViewModel: AdventureComboBuilderViewModel
 
     init(
         ordersViewModel: OrdersViewModel,
         checkoutViewModel: CheckoutViewModel,
         menuViewModel: MenuViewModel,
-        adventureModuleFactory: AdventureModuleFactory
+        adventureModuleFactory: AdventureModuleFactory,
+        adventureComboBuilderViewModel: AdventureComboBuilderViewModel
     ) {
         self.ordersViewModel = ordersViewModel
         self.checkoutViewModel = checkoutViewModel
         self.menuViewModel = menuViewModel
         self.adventureModuleFactory = adventureModuleFactory
-        
-        _adventureComboBuilderViewModel = StateObject(
-            wrappedValue: adventureModuleFactory.makeBuilderViewModel()
-        )
+        self.adventureComboBuilderViewModel = adventureComboBuilderViewModel
     }
-    
-    
+
     private var selectedPalette: ThemePalette {
         AppTheme.palette(for: selectedTab.theme, scheme: colorScheme)
     }
 
     var body: some View {
         TabView(selection: $selectedTab) {
-            HomeView(
-                selectedTab: $selectedTab,
-            )
-            .tabItem {
-                Label(MainTab.home.title, systemImage: MainTab.home.systemImage)
-            }
-            .tag(MainTab.home)
-            
+            HomeView(selectedTab: $selectedTab)
+                .tabItem {
+                    Label(MainTab.home.title, systemImage: MainTab.home.systemImage)
+                }
+                .tag(MainTab.home)
+
             RestaurantRootView(
                 ordersViewModel: ordersViewModel,
                 checkoutViewModel: checkoutViewModel,
@@ -59,9 +59,10 @@ struct MainTabView: View {
                 Label(MainTab.restaurant.title, systemImage: MainTab.restaurant.systemImage)
             }
             .tag(MainTab.restaurant)
-            
+
             ExperiencesView(
-                adventureComboBuilderViewModel: adventureComboBuilderViewModel, menuViewModel: menuViewModel
+                adventureComboBuilderViewModel: adventureComboBuilderViewModel,
+                menuViewModel: menuViewModel
             )
             .tabItem {
                 Label(MainTab.experiences.title, systemImage: MainTab.experiences.systemImage)
@@ -76,20 +77,16 @@ struct MainTabView: View {
                 Label(MainTab.bookings.title, systemImage: MainTab.bookings.systemImage)
             }
             .tag(MainTab.bookings)
-            
+
             ProfileContainerView()
                 .tabItem {
                     Label(MainTab.profile.title, systemImage: MainTab.profile.systemImage)
                 }
                 .tag(MainTab.profile)
         }
-        .onAppear { menuViewModel.onAppear() }
-        .onDisappear { menuViewModel.onDisappear() }
         .tint(selectedPalette.primary)
-        .animation(.easeInOut(duration: 0.22), value: selectedTab)
     }
 }
-
 enum MainTab: Hashable {
     case home
     case restaurant

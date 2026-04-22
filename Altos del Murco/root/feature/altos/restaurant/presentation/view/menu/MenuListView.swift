@@ -162,9 +162,16 @@ struct MenuListView: View {
                 MenuItemDetailView(
                     item: item,
                     categoryTitle: categoryTitle,
-                    rewardPresentation: menuViewModel.rewardPresentation(for: item)
+                    rewardPresentationProvider: { menuItem, quantity in
+                        menuViewModel.rewardPresentation(for: menuItem, quantity: quantity)
+                    },
+                    displayedPriceProvider: { menuItem, quantity in
+                        menuViewModel.displayedPrice(for: menuItem, quantity: quantity)
+                    },
+                    incrementalDiscountProvider: { menuItem, quantity in
+                        menuViewModel.incrementalDiscount(for: menuItem, quantity: quantity)
+                    }
                 )
-
             case .cart:
                 CartView(
                     viewModel: checkoutViewModel,
@@ -180,7 +187,7 @@ struct MenuListView: View {
                     menuViewModel: menuViewModel
                 )
                 .onAppear {
-                    adventureComboBuilderViewModel.resetForFoodOnly()
+                    adventureComboBuilderViewModel.prepareFoodOnlyDraftIfNeeded()
                 }
 
             case let .orderSuccess(order):
