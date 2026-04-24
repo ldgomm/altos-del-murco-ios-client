@@ -9,7 +9,6 @@ import Foundation
 
 protocol AdventureBookingsServiceable {
     func observeBookings(
-        for day: Date,
         nationalId: String,
         onChange: @escaping (Result<[AdventureBooking], Error>) -> Void
     ) -> AdventureListenerToken

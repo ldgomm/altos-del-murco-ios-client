@@ -27,7 +27,7 @@ struct GetAdventureAvailabilityUseCase {
 
 struct CreateAdventureBookingUseCase {
     let service: AdventureBookingsServiceable
-    
+
     func execute(_ request: AdventureBookingRequest) async throws -> AdventureBooking {
         try await service.createBooking(request)
     }
@@ -35,19 +35,21 @@ struct CreateAdventureBookingUseCase {
 
 struct ObserveAdventureBookingsUseCase {
     let service: AdventureBookingsServiceable
-    
+
     func execute(
-        day: Date,
         nationalId: String,
         onChange: @escaping (Result<[AdventureBooking], Error>) -> Void
     ) -> AdventureListenerToken {
-        service.observeBookings(for: day, nationalId: nationalId, onChange: onChange)
+        service.observeBookings(
+            nationalId: nationalId,
+            onChange: onChange
+        )
     }
 }
 
 struct CancelAdventureBookingUseCase {
     let service: AdventureBookingsServiceable
-    
+
     func execute(
         id: String,
         nationalId: String

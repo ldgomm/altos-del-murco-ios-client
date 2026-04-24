@@ -81,8 +81,6 @@ struct MenuListView: View {
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 24) {
-                rewardsSection
-
                 if !featuredItems.isEmpty {
                     featuredCarousel
                 }
@@ -92,6 +90,7 @@ struct MenuListView: View {
                 ForEach(filteredSections) { section in
                     sectionContent(section)
                 }
+                rewardsSection
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 20)

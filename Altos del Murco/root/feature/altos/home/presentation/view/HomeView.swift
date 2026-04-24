@@ -15,7 +15,7 @@ struct HomeView: View {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 24) {
                     heroSection
-                    quickAccessSection
+//                    quickAccessSection
                     featuredSection
                 }
                 .padding()
@@ -38,6 +38,7 @@ struct HomeView: View {
         .appCardStyle(.neutral, emphasized: false)
     }
 
+    /*
     private var quickAccessSection: some View {
         VStack(alignment: .leading, spacing: 16) {
             BrandSectionHeader(
@@ -79,6 +80,7 @@ struct HomeView: View {
             }
         }
     }
+     */
 
     private func quickAccessCard(
         title: String,

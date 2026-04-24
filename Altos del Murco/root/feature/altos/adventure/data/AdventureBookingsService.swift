@@ -8,6 +8,10 @@
 import Foundation
 import FirebaseFirestore
 
+private final class EmptyAdventureListenerToken: AdventureListenerToken {
+    func remove() { }
+}
+
 final class AdventureBookingsService: AdventureBookingsServiceable {
     private let db: Firestore
     private let bookingsCollection = "adventure_bookings"
@@ -25,17 +29,19 @@ final class AdventureBookingsService: AdventureBookingsServiceable {
     }
 
     func observeBookings(
-        for day: Date,
         nationalId: String,
         onChange: @escaping (Result<[AdventureBooking], Error>) -> Void
     ) -> AdventureListenerToken {
-        let dayKey = AdventureDateHelper.dayKey(from: day)
-        let nationalId = nationalId.trimmingCharacters(in: .whitespacesAndNewlines)
+        let cleanNationalId = nationalId.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard !cleanNationalId.isEmpty else {
+            onChange(.success([]))
+            return EmptyAdventureListenerToken()
+        }
 
         let registration = db.collection(bookingsCollection)
-            .whereField("nationalId", isEqualTo: nationalId)
-            .whereField("startDayKey", isEqualTo: dayKey)
-            .order(by: "startAt")
+            .whereField("nationalId", isEqualTo: cleanNationalId)
+            .order(by: "startAt", descending: false)
             .addSnapshotListener { snapshot, error in
                 if let error {
                     onChange(.failure(error))
@@ -52,6 +58,7 @@ final class AdventureBookingsService: AdventureBookingsServiceable {
                         let dto = try document.data(as: AdventureBookingDto.self)
                         return dto.toDomain(documentId: document.documentID)
                     }
+
                     onChange(.success(bookings))
                 } catch {
                     onChange(.failure(error))
@@ -135,6 +142,7 @@ final class AdventureBookingsService: AdventureBookingsServiceable {
 
         let createdAt = Date()
         let bookingRef = db.collection(bookingsCollection).document()
+
         let dto = AdventureBookingDto.from(
             bookingId: bookingRef.documentID,
             request: normalizedRequest,
@@ -143,6 +151,7 @@ final class AdventureBookingsService: AdventureBookingsServiceable {
         )
 
         let encodedBooking = try Firestore.Encoder().encode(dto)
+
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             bookingRef.setData(encodedBooking) { error in
                 if let error {
@@ -172,6 +181,7 @@ final class AdventureBookingsService: AdventureBookingsServiceable {
         }
 
         let dto = try snapshot.data(as: AdventureBookingDto.self)
+
         guard dto.nationalId == nationalId else {
             throw makeError("You are not allowed to cancel this booking.")
         }
