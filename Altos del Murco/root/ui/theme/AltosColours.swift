@@ -15,8 +15,6 @@ enum AppSectionTheme: String, Hashable, CaseIterable {
     case adventure
     case restaurant
     
-    /// Optional watermark asset names.
-    /// Add your uploaded illustrations to Assets using these names if you want them as subtle background marks.
     var watermarkAssetName: String? {
         switch self {
         case .neutral:

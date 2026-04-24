@@ -90,8 +90,7 @@ struct AuthenticationView: View {
         VStack(alignment: .leading, spacing: 18) {
             BrandSectionHeader(
                 theme: .neutral,
-                title: "Todo en un solo lugar",
-                subtitle: "Tu cuenta conecta pedidos, reservas, recompensas y ofertas personalizadas."
+                title: "Todo en un solo lugar"
             )
             
             VStack(spacing: 14) {
@@ -120,22 +119,11 @@ struct AuthenticationView: View {
                 )
             }
         }
-        .appCardStyle(.neutral, emphasized: true)
+        .appCardStyle(.neutral, emphasized: false)
     }
     
     private var signInCard: some View {
         VStack(spacing: 18) {
-            VStack(spacing: 8) {
-                Text("Inicia sesión para continuar")
-                    .font(.title3.bold())
-                    .foregroundStyle(palette.textPrimary)
-                
-                Text("Tu perfil nos ayuda a personalizar tus reservas, descuentos y datos de contacto.")
-                    .font(.footnote)
-                    .multilineTextAlignment(.center)
-                    .foregroundStyle(palette.textSecondary)
-            }
-            
             SignInWithAppleButton(
                 onRequest: viewModel.onRequestSignIn,
                 onCompletion: viewModel.onCompletionSignIn
