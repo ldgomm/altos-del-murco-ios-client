@@ -494,6 +494,10 @@ struct AdventureBookingDto: Codable {
 import Foundation
 import FirebaseFirestore
 
+private final class EmptyAdventureListenerToken: AdventureListenerToken {
+    func remove() { }
+}
+
 final class AdventureBookingsService: AdventureBookingsServiceable {
     private let db: Firestore
     private let bookingsCollection = "adventure_bookings"
@@ -511,17 +515,19 @@ final class AdventureBookingsService: AdventureBookingsServiceable {
     }
 
     func observeBookings(
-        for day: Date,
         nationalId: String,
         onChange: @escaping (Result<[AdventureBooking], Error>) -> Void
     ) -> AdventureListenerToken {
-        let dayKey = AdventureDateHelper.dayKey(from: day)
-        let nationalId = nationalId.trimmingCharacters(in: .whitespacesAndNewlines)
+        let cleanNationalId = nationalId.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard !cleanNationalId.isEmpty else {
+            onChange(.success([]))
+            return EmptyAdventureListenerToken()
+        }
 
         let registration = db.collection(bookingsCollection)
-            .whereField("nationalId", isEqualTo: nationalId)
-            .whereField("startDayKey", isEqualTo: dayKey)
-            .order(by: "startAt")
+            .whereField("nationalId", isEqualTo: cleanNationalId)
+            .order(by: "startAt", descending: false)
             .addSnapshotListener { snapshot, error in
                 if let error {
                     onChange(.failure(error))
@@ -538,6 +544,7 @@ final class AdventureBookingsService: AdventureBookingsServiceable {
                         let dto = try document.data(as: AdventureBookingDto.self)
                         return dto.toDomain(documentId: document.documentID)
                     }
+
                     onChange(.success(bookings))
                 } catch {
                     onChange(.failure(error))
@@ -621,6 +628,7 @@ final class AdventureBookingsService: AdventureBookingsServiceable {
 
         let createdAt = Date()
         let bookingRef = db.collection(bookingsCollection).document()
+
         let dto = AdventureBookingDto.from(
             bookingId: bookingRef.documentID,
             request: normalizedRequest,
@@ -629,6 +637,7 @@ final class AdventureBookingsService: AdventureBookingsServiceable {
         )
 
         let encodedBooking = try Firestore.Encoder().encode(dto)
+
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             bookingRef.setData(encodedBooking) { error in
                 if let error {
@@ -658,6 +667,7 @@ final class AdventureBookingsService: AdventureBookingsServiceable {
         }
 
         let dto = try snapshot.data(as: AdventureBookingDto.self)
+
         guard dto.nationalId == nationalId else {
             throw makeError("You are not allowed to cancel this booking.")
         }
@@ -1116,7 +1126,6 @@ import Foundation
 
 protocol AdventureBookingsServiceable {
     func observeBookings(
-        for day: Date,
         nationalId: String,
         onChange: @escaping (Result<[AdventureBooking], Error>) -> Void
     ) -> AdventureListenerToken
@@ -2380,7 +2389,7 @@ struct GetAdventureAvailabilityUseCase {
 
 struct CreateAdventureBookingUseCase {
     let service: AdventureBookingsServiceable
-    
+
     func execute(_ request: AdventureBookingRequest) async throws -> AdventureBooking {
         try await service.createBooking(request)
     }
@@ -2388,19 +2397,21 @@ struct CreateAdventureBookingUseCase {
 
 struct ObserveAdventureBookingsUseCase {
     let service: AdventureBookingsServiceable
-    
+
     func execute(
-        day: Date,
         nationalId: String,
         onChange: @escaping (Result<[AdventureBooking], Error>) -> Void
     ) -> AdventureListenerToken {
-        service.observeBookings(for: day, nationalId: nationalId, onChange: onChange)
+        service.observeBookings(
+            nationalId: nationalId,
+            onChange: onChange
+        )
     }
 }
 
 struct CancelAdventureBookingUseCase {
     let service: AdventureBookingsServiceable
-    
+
     func execute(
         id: String,
         nationalId: String
@@ -4573,13 +4584,15 @@ import SwiftUI
 struct AdventureReservationsView: View {
     @EnvironmentObject private var sessionViewModel: AppSessionViewModel
     @Environment(\.colorScheme) private var colorScheme
+
     @StateObject private var viewModel: AdventureBookingsViewModel
     @State private var selectedBooking: AdventureBooking?
+    @State private var bookingToCancel: AdventureBooking?
 
     init(viewModelFactory: @escaping () -> AdventureBookingsViewModel) {
         _viewModel = StateObject(wrappedValue: viewModelFactory())
     }
-    
+
     private var palette: ThemePalette {
         AppTheme.palette(for: .adventure, scheme: colorScheme)
     }
@@ -4587,44 +4600,81 @@ struct AdventureReservationsView: View {
     private var authenticatedProfile: ClientProfile? {
         sessionViewModel.authenticatedProfile
     }
-    
+
     var body: some View {
         Group {
-            if viewModel.state.isLoading && viewModel.state.bookings.isEmpty {
-                VStack(spacing: 16) {
-                    ProgressView()
-                        .controlSize(.large)
-                        .tint(palette.primary)
-                    
-                    Text("Cargando reservas...")
-                        .font(.headline)
-                        .foregroundStyle(palette.textSecondary)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .appScreenStyle(.adventure)
+            if viewModel.state.isLoading && viewModel.state.allBookings.isEmpty {
+                loadingView
             } else {
-                List {
-                    headerSection
-                    dateSection
-                    contentSection
-                }
-                .listStyle(.plain)
-                .scrollContentBackground(.hidden)
-                .background(Color.clear)
-                .appScreenStyle(.adventure)
-                .navigationDestination(item: $selectedBooking) { booking in
-                    ReserveViewDetail(
-                        booking: booking,
-                        onCancel: booking.status != .canceled
-                            ? { viewModel.cancelBooking(booking.id) }
-                            : nil
-                    )
-                }
+                contentView
             }
         }
         .navigationTitle("Reservas y eventos")
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(.hidden, for: .navigationBar)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                sortMenu
+            }
+        }
+        .navigationDestination(item: $selectedBooking) { booking in
+            ReserveViewDetail(
+                booking: booking,
+                onCancel: booking.status != .canceled
+                    ? { viewModel.cancelBooking(booking.id) }
+                    : nil
+            )
+        }
+        .alert(
+            "Mensaje",
+            isPresented: Binding(
+                get: {
+                    viewModel.state.errorMessage != nil
+                    || viewModel.state.successMessage != nil
+                },
+                set: { isPresented in
+                    if !isPresented {
+                        viewModel.dismissMessage()
+                    }
+                }
+            )
+        ) {
+            Button("OK") {
+                viewModel.dismissMessage()
+            }
+        } message: {
+            Text(
+                viewModel.state.errorMessage
+                ?? viewModel.state.successMessage
+                ?? ""
+            )
+        }
+        .confirmationDialog(
+            "Cancelar reserva",
+            isPresented: Binding(
+                get: { bookingToCancel != nil },
+                set: { isPresented in
+                    if !isPresented {
+                        bookingToCancel = nil
+                    }
+                }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("Sí, cancelar", role: .destructive) {
+                if let bookingToCancel {
+                    viewModel.cancelBooking(bookingToCancel.id)
+                }
+
+                bookingToCancel = nil
+            }
+
+            Button("No", role: .cancel) {
+                bookingToCancel = nil
+            }
+        } message: {
+            Text("Esta acción marcará la reserva como cancelada.")
+        }
         .onAppear {
             syncNationalIdFromSession()
             viewModel.onAppear()
@@ -4632,28 +4682,106 @@ struct AdventureReservationsView: View {
         .onDisappear {
             viewModel.onDisappear()
         }
-        
+        .onChange(of: authenticatedProfile?.nationalId) { _, _ in
+            syncNationalIdFromSession()
+        }
     }
+
+    private var loadingView: some View {
+        VStack(spacing: 16) {
+            ProgressView()
+                .controlSize(.large)
+                .tint(palette.primary)
+
+            Text("Cargando reservas...")
+                .font(.headline)
+                .foregroundStyle(palette.textSecondary)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .appScreenStyle(.adventure)
+    }
+
+    private var contentView: some View {
+        List {
+            headerSection
+            filtersSection
+            reservationsSection
+        }
+        .listStyle(.plain)
+        .scrollContentBackground(.hidden)
+        .background(Color.clear)
+        .appScreenStyle(.adventure)
+        .refreshable {
+            syncNationalIdFromSession()
+            viewModel.onAppear()
+        }
+    }
+
     private func syncNationalIdFromSession() {
-        guard let nationalId = authenticatedProfile?.nationalId else { return }
+        guard let nationalId = authenticatedProfile?.nationalId else {
+            return
+        }
+
         viewModel.setNationalId(nationalId)
     }
-    
+
+    private var sortMenu: some View {
+        Menu {
+            ForEach(AdventureReservationSortOrder.allCases) { order in
+                Button {
+                    viewModel.setSortOrder(order)
+                } label: {
+                    Label(order.title, systemImage: order.systemImage)
+                }
+            }
+        } label: {
+            Image(systemName: "arrow.up.arrow.down.circle.fill")
+                .font(.title3)
+                .foregroundStyle(palette.primary)
+        }
+    }
+
     private var headerSection: some View {
         Section {
-            VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: 16) {
                 HStack(spacing: 12) {
-                    BrandIconBubble(theme: .adventure, systemImage: "calendar.badge.clock", size: 52)
-                    
+                    BrandIconBubble(
+                        theme: .adventure,
+                        systemImage: "calendar.badge.clock",
+                        size: 54
+                    )
+
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("Gestiona tus reservas")
+                        Text("Tus reservas")
                             .font(.title3.bold())
                             .foregroundStyle(palette.textPrimary)
-                        
-                        Text("Consulta reservas de aventura, comida, cumpleaños y otros eventos.")
+
+                        Text("Consulta reservas actuales, futuras y pasadas de aventura, comida, cumpleaños y eventos.")
                             .font(.subheadline)
                             .foregroundStyle(palette.textSecondary)
                     }
+
+                    Spacer()
+                }
+
+                HStack(spacing: 10) {
+                    summaryPill(
+                        title: "Total",
+                        value: viewModel.totalCount,
+                        systemImage: "tray.full"
+                    )
+
+                    summaryPill(
+                        title: "Ahora",
+                        value: viewModel.currentCount,
+                        systemImage: "clock.badge.checkmark"
+                    )
+
+                    summaryPill(
+                        title: "Futuras",
+                        value: viewModel.futureCount,
+                        systemImage: "calendar.badge.plus"
+                    )
                 }
             }
             .appCardStyle(.adventure, emphasized: false)
@@ -4662,80 +4790,199 @@ struct AdventureReservationsView: View {
             .listRowSeparator(.hidden)
         }
     }
-    
-    private var dateSection: some View {
+
+    private func summaryPill(
+        title: String,
+        value: Int,
+        systemImage: String
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Image(systemName: systemImage)
+                .font(.caption.weight(.bold))
+                .foregroundStyle(palette.primary)
+
+            Text("\(value)")
+                .font(.headline.bold())
+                .foregroundStyle(palette.textPrimary)
+
+            Text(title)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(palette.textSecondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(palette.elevatedCard)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(palette.stroke, lineWidth: 1)
+        )
+    }
+
+    private var filtersSection: some View {
         Section {
-            VStack(alignment: .leading, spacing: 14) {
-                Text("Fecha")
-                    .font(.headline)
-                    .foregroundStyle(palette.textPrimary)
-                
-                DatePicker(
-                    "Fecha seleccionada",
-                    selection: Binding(
-                        get: { viewModel.state.selectedDate },
-                        set: { viewModel.setDate($0) }
-                    ),
-                    in: Date()...,
-                    displayedComponents: .date
+            VStack(alignment: .leading, spacing: 16) {
+                BrandSectionHeader(
+                    theme: .adventure,
+                    title: "Filtros",
+                    subtitle: "\(viewModel.displayedCount) de \(viewModel.totalCount) reserva(s) visibles."
                 )
-                .datePickerStyle(.graphical)
-                .tint(palette.primary)
+
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Tiempo")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(palette.textSecondary)
+
+                    horizontalTimelineFilters
+                }
+
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Estado")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(palette.textSecondary)
+
+                    horizontalStatusFilters
+                }
+
+                HStack {
+                    Label(viewModel.state.sortOrder.title, systemImage: viewModel.state.sortOrder.systemImage)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(palette.textSecondary)
+
+                    Spacer()
+
+                    sortMenu
+                }
+                .padding(12)
+                .background(
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .fill(palette.elevatedCard)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .stroke(palette.stroke, lineWidth: 1)
+                )
             }
-            .padding(.vertical, 4)
             .appCardStyle(.adventure)
             .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
             .listRowBackground(Color.clear)
             .listRowSeparator(.hidden)
         }
     }
-    
+
+    private var horizontalTimelineFilters: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 10) {
+                ForEach(AdventureReservationTimelineFilter.allCases) { filter in
+                    filterChip(
+                        title: filter.title,
+                        systemImage: filter.systemImage,
+                        isSelected: viewModel.state.selectedTimelineFilter == filter
+                    ) {
+                        viewModel.setTimelineFilter(filter)
+                    }
+                }
+            }
+        }
+    }
+
+    private var horizontalStatusFilters: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 10) {
+                ForEach(AdventureReservationStatusFilter.allCases) { filter in
+                    filterChip(
+                        title: filter.title,
+                        systemImage: nil,
+                        isSelected: viewModel.state.selectedStatusFilter == filter
+                    ) {
+                        viewModel.setStatusFilter(filter)
+                    }
+                }
+            }
+        }
+    }
+
+    private func filterChip(
+        title: String,
+        systemImage: String?,
+        isSelected: Bool,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            HStack(spacing: 7) {
+                if let systemImage {
+                    Image(systemName: systemImage)
+                        .font(.caption.weight(.bold))
+                }
+
+                Text(title)
+                    .font(.caption.weight(.bold))
+            }
+            .foregroundStyle(isSelected ? palette.primary : palette.textSecondary)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 9)
+            .background(
+                Capsule()
+                    .fill(isSelected ? palette.primary.opacity(0.16) : palette.elevatedCard)
+            )
+            .overlay(
+                Capsule()
+                    .stroke(isSelected ? palette.primary.opacity(0.65) : palette.stroke, lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
+    }
+
     @ViewBuilder
-    private var contentSection: some View {
-        if viewModel.state.bookings.isEmpty {
+    private var reservationsSection: some View {
+        if viewModel.groupedBookings.isEmpty {
             Section {
                 ContentUnavailableView(
                     "Sin reservas",
                     systemImage: "calendar",
-                    description: Text("Las reservas para la fecha seleccionada aparecerán aquí.")
+                    description: Text("No hay reservas que coincidan con los filtros seleccionados.")
                 )
                 .foregroundStyle(palette.textSecondary)
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 12)
+                .padding(.vertical, 14)
                 .appCardStyle(.adventure)
                 .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
                 .listRowBackground(Color.clear)
                 .listRowSeparator(.hidden)
             }
         } else {
-            Section {
-                ForEach(viewModel.state.bookings) { booking in
-                    Button {
-                        selectedBooking = booking
-                    } label: {
-                        AdventureReservationRow(booking: booking)
-                    }
-                    .buttonStyle(.plain)
-                    .contentShape(Rectangle())
-                    .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
-                    .listRowBackground(Color.clear)
-                    .listRowSeparator(.hidden)
-                    .swipeActions(edge: .trailing) {
-                        if booking.status != .canceled {
-                            Button(role: .destructive) {
-                                viewModel.cancelBooking(booking.id)
-                            } label: {
-                                Label("Cancelar", systemImage: "xmark")
+            ForEach(viewModel.groupedBookings) { group in
+                Section {
+                    ForEach(group.bookings) { booking in
+                        Button {
+                            selectedBooking = booking
+                        } label: {
+                            AdventureReservationRow(booking: booking)
+                        }
+                        .buttonStyle(.plain)
+                        .contentShape(Rectangle())
+                        .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+                        .listRowBackground(Color.clear)
+                        .listRowSeparator(.hidden)
+                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                            if booking.status != .canceled {
+                                Button(role: .destructive) {
+                                    bookingToCancel = booking
+                                } label: {
+                                    Label("Cancelar", systemImage: "xmark")
+                                }
                             }
                         }
                     }
+                } header: {
+                    Text(group.title.capitalized)
+                        .font(.headline)
+                        .foregroundStyle(palette.textSecondary)
+                        .textCase(nil)
+                        .padding(.horizontal, 20)
                 }
-            } header: {
-                Text("Reservas")
-                    .font(.headline)
-                    .foregroundStyle(palette.textSecondary)
-                    .textCase(nil)
-                    .padding(.horizontal, 20)
             }
         }
     }
@@ -4743,142 +4990,267 @@ struct AdventureReservationsView: View {
 
 private struct AdventureReservationRow: View {
     let booking: AdventureBooking
-    
+
     @Environment(\.colorScheme) private var colorScheme
-    
+
     private var palette: ThemePalette {
         AppTheme.palette(for: .adventure, scheme: colorScheme)
     }
-    
+
+    private var iconName: String {
+        if booking.hasActivities {
+            return "figure.hiking"
+        }
+
+        if booking.hasFoodReservation {
+            return "fork.knife"
+        }
+
+        return "calendar"
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            HStack(alignment: .top, spacing: 12) {
-                BrandIconBubble(theme: .adventure, systemImage: "figure.hiking", size: 46)
-                
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(booking.clientName)
-                        .font(.headline)
-                        .foregroundStyle(palette.textPrimary)
-                    
-                    Text("\(AdventureDateHelper.timeText(booking.startAt)) • \(booking.whatsappNumber)")
-                        .font(.subheadline)
-                        .foregroundStyle(palette.textSecondary)
-                    
-                    Text("Cédula \(booking.nationalId)")
-                        .font(.caption)
-                        .foregroundStyle(palette.textTertiary)
-                }
-                
-                Spacer()
-                
-                statusBadge
-            }
-            
-            HStack(spacing: 8) {
-                BrandBadge(theme: .adventure, title: booking.visitTypeTitle)
-                BrandBadge(theme: .adventure, title: booking.eventDisplayTitle, selected: booking.eventType != .regularVisit)
-            }
-            
-            Text("Invitados: \(booking.guestCount)")
-                .font(.subheadline)
-                .foregroundStyle(palette.textSecondary)
-            
+            topBlock
+
+            chipsBlock
+
+            guestBlock
+
             if booking.hasActivities {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Actividades")
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(palette.textPrimary)
-                    
-                    ForEach(booking.items, id: \.id) { item in
-                        HStack(alignment: .top, spacing: 8) {
-                            Circle()
-                                .fill(palette.primary)
-                                .frame(width: 6, height: 6)
-                                .padding(.top, 6)
-                            
-                            Text("\(item.title) — \(item.summaryText)")
-                                .font(.caption)
-                                .foregroundStyle(palette.textSecondary)
-                        }
-                    }
-                }
+                activitiesBlock
             }
-            
+
             if let food = booking.foodReservation, !food.items.isEmpty {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Comida reservada")
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(palette.textPrimary)
-                    
-                    ForEach(food.items, id: \.id) { item in
-                        HStack(alignment: .top, spacing: 8) {
-                            Circle()
-                                .fill(palette.accent)
-                                .frame(width: 6, height: 6)
-                                .padding(.top, 6)
-                            
-                            Text("\(item.quantity)x \(item.name)")
-                                .font(.caption)
-                                .foregroundStyle(palette.textSecondary)
-                        }
-                    }
-                }
+                foodBlock(food)
             }
-            
+
+            if !booking.appliedRewards.isEmpty {
+                rewardsBlock
+            }
+
             Divider()
                 .overlay(palette.stroke)
-            
-            VStack(spacing: 10) {
-                amountRow("Aventura", booking.adventureSubtotal)
-                amountRow("Comida", booking.foodSubtotal)
-                amountRow("Descuento", -booking.discountAmount)
 
-                if booking.loyaltyDiscountAmount > 0 {
-                    amountRow("Murco Loyalty", -booking.loyaltyDiscountAmount)
+            totalsBlock
+        }
+        .appCardStyle(.adventure)
+    }
+
+    private var topBlock: some View {
+        HStack(alignment: .top, spacing: 12) {
+            BrandIconBubble(
+                theme: .adventure,
+                systemImage: iconName,
+                size: 48
+            )
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text(booking.eventDisplayTitle)
+                    .font(.headline)
+                    .foregroundStyle(palette.textPrimary)
+
+                Text(booking.clientName)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(palette.textSecondary)
+
+                Text(dateTimeText)
+                    .font(.caption)
+                    .foregroundStyle(palette.textTertiary)
+
+                Text("WhatsApp \(booking.whatsappNumber)")
+                    .font(.caption)
+                    .foregroundStyle(palette.textTertiary)
+            }
+
+            Spacer()
+
+            statusBadge
+        }
+    }
+
+    private var chipsBlock: some View {
+        HStack(spacing: 8) {
+            BrandBadge(theme: .adventure, title: booking.visitTypeTitle)
+
+            BrandBadge(
+                theme: .adventure,
+                title: booking.eventType == .regularVisit ? "Visita" : "Evento",
+                selected: booking.eventType != .regularVisit
+            )
+        }
+    }
+
+    private var guestBlock: some View {
+        HStack(spacing: 8) {
+            Label("\(booking.guestCount) invitado(s)", systemImage: "person.2.fill")
+            Label("Cédula \(booking.nationalId)", systemImage: "person.text.rectangle")
+        }
+        .font(.caption.weight(.semibold))
+        .foregroundStyle(palette.textSecondary)
+    }
+
+    private var activitiesBlock: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Actividades")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(palette.textPrimary)
+
+            ForEach(booking.items, id: \.id) { item in
+                HStack(alignment: .top, spacing: 8) {
+                    Circle()
+                        .fill(palette.primary)
+                        .frame(width: 6, height: 6)
+                        .padding(.top, 6)
+
+                    Text("\(item.title) — \(item.summaryText)")
+                        .font(.caption)
+                        .foregroundStyle(palette.textSecondary)
                 }
+            }
+        }
+    }
 
-                amountRow(
-                    "Total",
-                    booking.totalAmount,
-                    isPrimary: true
-                )
+    private func foodBlock(_ food: ReservationFoodDraft) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Comida reservada")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(palette.textPrimary)
 
-                if let reward = booking.appliedRewards.first {
-                    HStack(alignment: .top, spacing: 8) {
-                        BrandBadge(theme: .adventure, title: "Premio", selected: true)
+            ForEach(food.items, id: \.id) { item in
+                HStack(alignment: .top, spacing: 8) {
+                    Circle()
+                        .fill(palette.accent)
+                        .frame(width: 6, height: 6)
+                        .padding(.top, 6)
+
+                    Text("\(item.quantity)x \(item.name)")
+                        .font(.caption)
+                        .foregroundStyle(palette.textSecondary)
+                }
+            }
+
+            Text("Servicio: \(servingMomentText(food))")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(palette.textTertiary)
+        }
+    }
+
+    private var rewardsBlock: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Premios aplicados")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(palette.textPrimary)
+
+            ForEach(booking.appliedRewards.prefix(2)) { reward in
+                HStack(alignment: .top, spacing: 8) {
+                    BrandBadge(theme: .adventure, title: "Premio", selected: true)
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(reward.title)
+                            .font(.caption.bold())
+                            .foregroundStyle(palette.textPrimary)
 
                         Text(reward.note)
                             .font(.caption)
                             .foregroundStyle(palette.textSecondary)
-
-                        Spacer()
+                            .lineLimit(2)
                     }
-                }
 
-                HStack {
                     Spacer()
 
-                    Label("Ver detalle", systemImage: "chevron.right")
+                    Text("-\(reward.amount.priceText)")
                         .font(.caption.bold())
-                        .foregroundStyle(palette.textTertiary)
+                        .foregroundStyle(palette.success)
                 }
             }
+
+            if booking.appliedRewards.count > 2 {
+                Text("+\(booking.appliedRewards.count - 2) premio(s) más")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(palette.textTertiary)
+            }
         }
-        .appCardStyle(.adventure)
     }
-    
-    private func amountRow(_ title: String, _ amount: Double, isPrimary: Bool = false) -> some View {
+
+    private var totalsBlock: some View {
+        VStack(spacing: 10) {
+            amountRow("Aventura", booking.adventureSubtotal)
+            amountRow("Comida", booking.foodSubtotal)
+
+            if booking.discountAmount > 0 {
+                amountRow("Descuento", -booking.discountAmount)
+            }
+
+            if booking.loyaltyDiscountAmount > 0 {
+                amountRow("Murco Loyalty", -booking.loyaltyDiscountAmount)
+            }
+
+            amountRow(
+                "Total",
+                booking.totalAmount,
+                isPrimary: true
+            )
+
+            HStack {
+                Spacer()
+
+                Label("Ver detalle", systemImage: "chevron.right")
+                    .font(.caption.bold())
+                    .foregroundStyle(palette.textTertiary)
+            }
+        }
+    }
+
+    private var dateTimeText: String {
+        let dateText = booking.startAt.formatted(
+            .dateTime
+                .day()
+                .month(.abbreviated)
+                .year()
+        )
+
+        let startText = booking.startAt.formatted(date: .omitted, time: .shortened)
+        let endText = booking.endAt.formatted(date: .omitted, time: .shortened)
+
+        return "\(dateText) • \(startText) - \(endText)"
+    }
+
+    private func servingMomentText(_ food: ReservationFoodDraft) -> String {
+        switch food.servingMoment {
+        case .onArrival:
+            return "Al llegar"
+
+        case .afterActivities:
+            return "Después de actividades"
+
+        case .specificTime:
+            if let servingTime = food.servingTime {
+                return "Hora específica • \(servingTime.formatted(date: .omitted, time: .shortened))"
+            }
+
+            return "Hora específica"
+        }
+    }
+
+    private func amountRow(
+        _ title: String,
+        _ amount: Double,
+        isPrimary: Bool = false
+    ) -> some View {
         HStack {
             Text(title)
                 .font(isPrimary ? .headline : .subheadline)
                 .foregroundStyle(isPrimary ? palette.textPrimary : palette.textSecondary)
+
             Spacer()
+
             Text(amount.priceText)
                 .font(isPrimary ? .headline.bold() : .subheadline.weight(.semibold))
                 .foregroundStyle(isPrimary ? palette.primary : palette.textPrimary)
         }
     }
-    
+
     private var statusBadge: some View {
         Text(booking.status.title)
             .font(.caption.bold())
@@ -4894,7 +5266,7 @@ private struct AdventureReservationRow: View {
                     .stroke(statusBorderColor, lineWidth: 1)
             )
     }
-    
+
     private var statusBackgroundColor: Color {
         switch booking.status {
         case .pending:
@@ -4902,12 +5274,12 @@ private struct AdventureReservationRow: View {
         case .confirmed:
             return palette.success.opacity(colorScheme == .dark ? 0.22 : 0.14)
         case .completed:
-            return palette.success.opacity(colorScheme == .dark ? 0.22 : 0.14)
+            return Color.blue.opacity(colorScheme == .dark ? 0.22 : 0.14)
         case .canceled:
             return palette.destructive.opacity(colorScheme == .dark ? 0.22 : 0.14)
         }
     }
-    
+
     private var statusBorderColor: Color {
         switch booking.status {
         case .pending:
@@ -4915,12 +5287,12 @@ private struct AdventureReservationRow: View {
         case .confirmed:
             return palette.success.opacity(0.45)
         case .completed:
-            return palette.success.opacity(colorScheme == .dark ? 0.22 : 0.14)
+            return Color.blue.opacity(0.45)
         case .canceled:
             return palette.destructive.opacity(0.45)
         }
     }
-    
+
     private var statusTextColor: Color {
         switch booking.status {
         case .pending:
@@ -4928,7 +5300,7 @@ private struct AdventureReservationRow: View {
         case .confirmed:
             return palette.success
         case .completed:
-            return palette.success
+            return .blue
         case .canceled:
             return palette.destructive
         }
@@ -5995,24 +6367,143 @@ struct ServiceDetailView: View {
 //
 
 import Combine
+import Foundation
 import SwiftUI
 
+enum AdventureReservationTimelineFilter: String, CaseIterable, Identifiable {
+    case all
+    case current
+    case future
+    case past
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .all: return "Todas"
+        case .current: return "Actuales"
+        case .future: return "Futuras"
+        case .past: return "Pasadas"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .all: return "calendar"
+        case .current: return "clock.badge.checkmark"
+        case .future: return "calendar.badge.plus"
+        case .past: return "clock.arrow.circlepath"
+        }
+    }
+}
+
+enum AdventureReservationStatusFilter: String, CaseIterable, Identifiable {
+    case all
+    case pending
+    case confirmed
+    case completed
+    case canceled
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .all: return "Todo"
+        case .pending: return "Pendiente"
+        case .confirmed: return "Confirmada"
+        case .completed: return "Completada"
+        case .canceled: return "Cancelada"
+        }
+    }
+
+    var bookingStatus: AdventureBookingStatus? {
+        switch self {
+        case .all: return nil
+        case .pending: return .pending
+        case .confirmed: return .confirmed
+        case .completed: return .completed
+        case .canceled: return .canceled
+        }
+    }
+}
+
+enum AdventureReservationSortOrder: String, CaseIterable, Identifiable {
+    case nearestFirst
+    case newestFirst
+    case oldestFirst
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .nearestFirst: return "Próximas primero"
+        case .newestFirst: return "Más recientes"
+        case .oldestFirst: return "Más antiguas"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .nearestFirst: return "sparkles"
+        case .newestFirst: return "arrow.down"
+        case .oldestFirst: return "arrow.up"
+        }
+    }
+}
+
+struct AdventureBookingsDateGroup: Identifiable {
+    let id: String
+    let date: Date
+    let bookings: [AdventureBooking]
+
+    var title: String {
+        if Calendar.current.isDateInToday(date) {
+            return "Hoy"
+        }
+
+        if Calendar.current.isDateInTomorrow(date) {
+            return "Mañana"
+        }
+
+        if Calendar.current.isDateInYesterday(date) {
+            return "Ayer"
+        }
+
+        return date.formatted(
+            .dateTime
+                .weekday(.wide)
+                .day()
+                .month(.wide)
+                .year()
+        )
+    }
+}
+
 struct AdventureBookingsState {
-    var selectedDate: Date = Date()
     var nationalId: String = ""
-    var bookings: [AdventureBooking] = []
+
+    var allBookings: [AdventureBooking] = []
+
+    var selectedTimelineFilter: AdventureReservationTimelineFilter = .all
+    var selectedStatusFilter: AdventureReservationStatusFilter = .all
+    var sortOrder: AdventureReservationSortOrder = .nearestFirst
+
+    var now: Date = Date()
+
     var isLoading = false
     var errorMessage: String?
+    var successMessage: String?
 }
 
 @MainActor
 final class AdventureBookingsViewModel: ObservableObject {
     @Published private(set) var state = AdventureBookingsState()
-    
+
     private let observeBookingsUseCase: ObserveAdventureBookingsUseCase
     private let cancelBookingUseCase: CancelAdventureBookingUseCase
+
     private var listenerToken: AdventureListenerToken?
-    
+
     init(
         observeBookingsUseCase: ObserveAdventureBookingsUseCase,
         cancelBookingUseCase: CancelAdventureBookingUseCase
@@ -6020,84 +6511,257 @@ final class AdventureBookingsViewModel: ObservableObject {
         self.observeBookingsUseCase = observeBookingsUseCase
         self.cancelBookingUseCase = cancelBookingUseCase
     }
-    
-    func setNationalId(_ nationalId: String) {
-        let cleanNationalId = nationalId.filter(\.isNumber)
-        guard state.nationalId != cleanNationalId else { return }
-        
-        state.nationalId = cleanNationalId
-        
-        if listenerToken != nil {
-            startListening()
-        }
-    }
-    
+
     func onAppear() {
+        state.now = Date()
         startListening()
     }
-    
+
     func onDisappear() {
         listenerToken?.remove()
         listenerToken = nil
     }
-    
-    func setDate(_ date: Date) {
-        state.selectedDate = date
-        startListening()
+
+    func setNationalId(_ nationalId: String) {
+        let cleanNationalId = nationalId.filter(\.isNumber)
+
+        guard state.nationalId != cleanNationalId else {
+            return
+        }
+
+        state.nationalId = cleanNationalId
+
+        if listenerToken != nil {
+            startListening()
+        }
     }
-    
+
+    func setTimelineFilter(_ filter: AdventureReservationTimelineFilter) {
+        state.now = Date()
+        state.selectedTimelineFilter = filter
+    }
+
+    func setStatusFilter(_ filter: AdventureReservationStatusFilter) {
+        state.selectedStatusFilter = filter
+    }
+
+    func setSortOrder(_ sortOrder: AdventureReservationSortOrder) {
+        state.sortOrder = sortOrder
+    }
+
+    func dismissMessage() {
+        state.errorMessage = nil
+        state.successMessage = nil
+    }
+
     func cancelBooking(_ id: String) {
-        let nationalId = state.nationalId
-        
+        let nationalId = state.nationalId.trimmingCharacters(in: .whitespacesAndNewlines)
+
         guard !nationalId.isEmpty else {
             state.errorMessage = "No se encontró una cédula asociada a esta cuenta."
             return
         }
-        
+
         Task {
             do {
-                try await cancelBookingUseCase.execute(id: id, nationalId: nationalId)
+                try await cancelBookingUseCase.execute(
+                    id: id,
+                    nationalId: nationalId
+                )
+
+                state.successMessage = "Reserva cancelada correctamente."
             } catch {
                 state.errorMessage = error.localizedDescription
             }
         }
     }
-    
+
+    var displayedBookings: [AdventureBooking] {
+        let filtered = state.allBookings.filter { booking in
+            matchesTimelineFilter(booking)
+            && matchesStatusFilter(booking)
+        }
+
+        return sorted(filtered)
+    }
+
+    var groupedBookings: [AdventureBookingsDateGroup] {
+        let sortedBookings = displayedBookings
+
+        var groups: [(id: String, date: Date, bookings: [AdventureBooking])] = []
+        var indexByDayKey: [String: Int] = [:]
+
+        for booking in sortedBookings {
+            let day = Calendar.current.startOfDay(for: booking.startAt)
+            let key = AdventureDateHelper.dayKey(from: day)
+
+            if let index = indexByDayKey[key] {
+                groups[index].bookings.append(booking)
+            } else {
+                indexByDayKey[key] = groups.count
+                groups.append(
+                    (
+                        id: key,
+                        date: day,
+                        bookings: [booking]
+                    )
+                )
+            }
+        }
+
+        return groups.map {
+            AdventureBookingsDateGroup(
+                id: $0.id,
+                date: $0.date,
+                bookings: $0.bookings
+            )
+        }
+    }
+
+    var totalCount: Int {
+        state.allBookings.count
+    }
+
+    var displayedCount: Int {
+        displayedBookings.count
+    }
+
+    var currentCount: Int {
+        state.allBookings.filter { isCurrent($0, now: state.now) }.count
+    }
+
+    var futureCount: Int {
+        state.allBookings.filter { isFuture($0, now: state.now) }.count
+    }
+
+    var pastCount: Int {
+        state.allBookings.filter { isPast($0, now: state.now) }.count
+    }
+
     private func startListening() {
         let nationalId = state.nationalId.trimmingCharacters(in: .whitespacesAndNewlines)
-        
+
         guard !nationalId.isEmpty else {
             listenerToken?.remove()
             listenerToken = nil
-            state.bookings = []
+            state.allBookings = []
             state.isLoading = false
             state.errorMessage = nil
             return
         }
-        
+
         state.isLoading = true
         state.errorMessage = nil
-        
+        state.now = Date()
+
         listenerToken?.remove()
+
         listenerToken = observeBookingsUseCase.execute(
-            day: state.selectedDate,
             nationalId: nationalId
         ) { [weak self] result in
             Task { @MainActor in
                 guard let self else { return }
-                
+
                 switch result {
                 case let .success(bookings):
-                    self.state.bookings = bookings
+                    self.state.allBookings = bookings
                     self.state.isLoading = false
-                    
+                    self.state.errorMessage = nil
+                    self.state.now = Date()
+
                 case let .failure(error):
-                    self.state.bookings = []
+                    self.state.allBookings = []
                     self.state.errorMessage = error.localizedDescription
                     self.state.isLoading = false
                 }
             }
         }
+    }
+
+    private func matchesTimelineFilter(_ booking: AdventureBooking) -> Bool {
+        switch state.selectedTimelineFilter {
+        case .all:
+            return true
+
+        case .current:
+            return isCurrent(booking, now: state.now)
+
+        case .future:
+            return isFuture(booking, now: state.now)
+
+        case .past:
+            return isPast(booking, now: state.now)
+        }
+    }
+
+    private func matchesStatusFilter(_ booking: AdventureBooking) -> Bool {
+        guard let selectedStatus = state.selectedStatusFilter.bookingStatus else {
+            return true
+        }
+
+        return booking.status == selectedStatus
+    }
+
+    private func sorted(_ bookings: [AdventureBooking]) -> [AdventureBooking] {
+        switch state.sortOrder {
+        case .nearestFirst:
+            return bookings.sorted { lhs, rhs in
+                let lhsRank = timelineRank(lhs, now: state.now)
+                let rhsRank = timelineRank(rhs, now: state.now)
+
+                if lhsRank != rhsRank {
+                    return lhsRank < rhsRank
+                }
+
+                if lhsRank == 2 {
+                    return lhs.startAt > rhs.startAt
+                }
+
+                return lhs.startAt < rhs.startAt
+            }
+
+        case .newestFirst:
+            return bookings.sorted {
+                if $0.startAt != $1.startAt {
+                    return $0.startAt > $1.startAt
+                }
+
+                return $0.createdAt > $1.createdAt
+            }
+
+        case .oldestFirst:
+            return bookings.sorted {
+                if $0.startAt != $1.startAt {
+                    return $0.startAt < $1.startAt
+                }
+
+                return $0.createdAt < $1.createdAt
+            }
+        }
+    }
+
+    private func timelineRank(_ booking: AdventureBooking, now: Date) -> Int {
+        if isCurrent(booking, now: now) {
+            return 0
+        }
+
+        if isFuture(booking, now: now) {
+            return 1
+        }
+
+        return 2
+    }
+
+    private func isCurrent(_ booking: AdventureBooking, now: Date) -> Bool {
+        booking.startAt <= now && booking.endAt >= now
+    }
+
+    private func isFuture(_ booking: AdventureBooking, now: Date) -> Bool {
+        booking.startAt > now
+    }
+
+    private func isPast(_ booking: AdventureBooking, now: Date) -> Bool {
+        booking.endAt < now
     }
 }
 
@@ -9781,7 +10445,7 @@ struct HomeView: View {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 24) {
                     heroSection
-                    quickAccessSection
+//                    quickAccessSection
                     featuredSection
                 }
                 .padding()
@@ -9804,6 +10468,7 @@ struct HomeView: View {
         .appCardStyle(.neutral, emphasized: false)
     }
 
+    /*
     private var quickAccessSection: some View {
         VStack(alignment: .leading, spacing: 16) {
             BrandSectionHeader(
@@ -9845,6 +10510,7 @@ struct HomeView: View {
             }
         }
     }
+     */
 
     private func quickAccessCard(
         title: String,
