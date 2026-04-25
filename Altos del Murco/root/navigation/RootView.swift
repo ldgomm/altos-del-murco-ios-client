@@ -60,35 +60,30 @@ private struct SessionLoadingView: View {
         
         ZStack {
             BrandScreenBackground(theme: .restaurant)
+            LinearGradient(
+                colors: [
+                    Color(.systemBackground),
+                    Color.accentColor.opacity(0.12)
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+            .ignoresSafeArea()
 
-            VStack(spacing: 24) {
-                VStack(spacing: 18) {
-                    BrandIconBubble(
-                        theme: .restaurant,
-                        systemImage: "flame.fill",
-                        size: 72
-                    )
-                    
-                    VStack(spacing: 8) {
-                        Text("Altos del Murco")
-                            .font(.title.bold())
-                            .foregroundStyle(palette.textPrimary)
-                        
-                        Text("Loading your experience...")
-                            .font(.subheadline)
-                            .foregroundStyle(palette.textSecondary)
-                    }
-                }
-                
-                VStack(spacing: 14) {
-                    ProgressView()
-                        .progressViewStyle(.circular)
-                        .tint(palette.primary)
-                    
-                    Text("Please wait a moment")
-                        .font(.footnote)
-                        .foregroundStyle(palette.textTertiary)
-                }
+            VStack(spacing: 18) {
+                Image(systemName: "lock.shield.fill")
+                    .font(.system(size: 46, weight: .semibold))
+                    .foregroundStyle(Color.accentColor)
+
+                ProgressView()
+
+                Text("Altos del Murco")
+                    .font(.headline)
+                    .foregroundStyle(palette.textPrimary)
+
+                Text("Validando sesión segura...")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(palette.textSecondary)
             }
             .frame(maxWidth: 360)
             .appCardStyle(.restaurant, emphasized: false)
@@ -130,6 +125,10 @@ private struct SessionErrorView: View {
                         .font(.body)
                         .multilineTextAlignment(.center)
                         .foregroundStyle(palette.textSecondary)
+                    
+                    Text("Please contact administrator")
+                        .font(.caption)
+                        .foregroundStyle(palette.warning)
                 }
 
                 VStack(spacing: 12) {
@@ -145,7 +144,7 @@ private struct SessionErrorView: View {
                 }
             }
             .frame(maxWidth: 420)
-            .appCardStyle(.neutral, emphasized: true)
+            .appCardStyle(.neutral)
             .padding(24)
         }
     }

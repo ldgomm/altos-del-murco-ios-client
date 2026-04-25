@@ -24,4 +24,5 @@ protocol AuthenticationRepositoriable {
 
     func deleteCurrentUser() async throws
     func signOut() throws
+    func verifyCurrentUserIsStillValid() async throws
 }

@@ -112,7 +112,7 @@ struct PremiumHero<Primary: View, Secondary: View>: View {
             }
 
             Text(title)
-                .font(.system(size: 34, weight: .black, design: .rounded))
+                .font(.system(size: 34, weight: .black))
                 .foregroundStyle(.white)
                 .lineLimit(3)
                 .minimumScaleFactor(0.82)

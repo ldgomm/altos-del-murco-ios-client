@@ -24,6 +24,8 @@ struct AltosDelMurcoApp: App {
 
     private let sharedModelContainer: ModelContainer
 
+    @Environment(\.scenePhase) private var scenePhase
+    
     @StateObject private var cartManager: CartManager
     @StateObject private var router = AppRouter()
     @StateObject private var appPreferences = AppPreferences()
@@ -114,6 +116,7 @@ struct AltosDelMurcoApp: App {
                 clientProfileRepository: clientProfileRepository
             )
             let signOutUseCase = SignOutUseCase(repository: authRepository)
+            let verifyCurrentUserSessionUseCase = VerifyCurrentUserSessionUseCase(repository: authRepository)
 
             _sessionViewModel = StateObject(
                 wrappedValue: AppSessionViewModel(
@@ -122,6 +125,7 @@ struct AltosDelMurcoApp: App {
                     completeClientProfileUseCase: completeClientProfileUseCase,
                     deleteCurrentAccountUseCase: deleteCurrentAccountUseCase,
                     signOutUseCase: signOutUseCase,
+                    verifyCurrentUserSessionUseCase: verifyCurrentUserSessionUseCase,
                     loyaltyRewardsService: loyaltyRewardsService
                 )
             )
@@ -154,6 +158,11 @@ struct AltosDelMurcoApp: App {
             .environmentObject(sessionViewModel)
             .environmentObject(appPreferences)
             .preferredColorScheme(appPreferences.preferredColorScheme)
+            .onChange(of: scenePhase) { _, newPhase in
+                if newPhase == .active {
+                    sessionViewModel.verifySessionStillValidFromSceneActivation()
+                }
+            }
         }
         .modelContainer(sharedModelContainer)
     }

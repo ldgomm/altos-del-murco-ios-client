@@ -372,18 +372,20 @@ struct MenuListView: View {
 
             LazyVStack(spacing: 12) {
                 ForEach(section.items) { item in
-                    NavigationLink(value: Route.menuDetail(item, section.category.title)) {
-                        VStack(alignment: .leading, spacing: 10) {
-                            MenuItemRowView(item: item)
-
-                            if let appliedReward = checkoutViewModel.appliedRewardPresentation(forMenuItemId: item.id) {
-                                appliedRewardCard(appliedReward)
-                            } else if let availableReward = menuViewModel.rewardPresentation(for: item) {
-                                availableRewardCard(availableReward)
+                    if item.isAvailable {
+                        NavigationLink(value: Route.menuDetail(item, section.category.title)) {
+                            VStack(alignment: .leading, spacing: 10) {
+                                MenuItemRowView(item: item)
+                                
+                                if let appliedReward = checkoutViewModel.appliedRewardPresentation(forMenuItemId: item.id) {
+                                    appliedRewardCard(appliedReward)
+                                } else if let availableReward = menuViewModel.rewardPresentation(for: item) {
+                                    availableRewardCard(availableReward)
+                                }
                             }
                         }
+                        .buttonStyle(.plain)
                     }
-                    .buttonStyle(.plain)
                 }
             }
         }

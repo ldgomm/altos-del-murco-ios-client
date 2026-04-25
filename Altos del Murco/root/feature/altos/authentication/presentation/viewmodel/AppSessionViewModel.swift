@@ -18,6 +18,8 @@ final class AppSessionViewModel: ObservableObject {
     private let completeClientProfileUseCase: CompleteClientProfileUseCase
     private let deleteCurrentAccountUseCase: DeleteCurrentAccountUseCase
     private let signOutUseCase: SignOutUseCase
+    private let verifyCurrentUserSessionUseCase: VerifyCurrentUserSessionUseCase
+    private var sessionGuardTask: Task<Void, Never>?
     private let loyaltyRewardsService: LoyaltyRewardsServiceable
 
     private var currentNonce: String?
@@ -28,6 +30,7 @@ final class AppSessionViewModel: ObservableObject {
         completeClientProfileUseCase: CompleteClientProfileUseCase,
         deleteCurrentAccountUseCase: DeleteCurrentAccountUseCase,
         signOutUseCase: SignOutUseCase,
+        verifyCurrentUserSessionUseCase: VerifyCurrentUserSessionUseCase,
         loyaltyRewardsService: LoyaltyRewardsServiceable
     ) {
         self.signInWithAppleUseCase = signInWithAppleUseCase
@@ -35,6 +38,7 @@ final class AppSessionViewModel: ObservableObject {
         self.completeClientProfileUseCase = completeClientProfileUseCase
         self.deleteCurrentAccountUseCase = deleteCurrentAccountUseCase
         self.signOutUseCase = signOutUseCase
+        self.verifyCurrentUserSessionUseCase = verifyCurrentUserSessionUseCase
         self.loyaltyRewardsService = loyaltyRewardsService
 
         Task { await bootstrap() }
@@ -66,8 +70,19 @@ final class AppSessionViewModel: ObservableObject {
         do {
             let destination = try await resolveSessionUseCase.execute()
             state = map(destination)
+
+            if case .authenticated = state {
+                await verifySessionStillValid()
+                startSessionGuardIfNeeded()
+            } else {
+                stopSessionGuard()
+            }
         } catch {
-            state = .error(error.localizedDescription)
+            if error.isFirebaseSessionInvalidOrDisabled {
+                await forceCloseSession()
+            } else {
+                state = .error(error.localizedDescription)
+            }
         }
     }
 
@@ -99,7 +114,9 @@ final class AppSessionViewModel: ObservableObject {
     func signOut() {
         Task {
             do {
+                stopSessionGuard()
                 try signOutUseCase.execute()
+                rewardWalletSnapshot = .empty(nationalId: "")
                 state = .signedOut
             } catch {
                 state = .error(error.localizedDescription)
@@ -117,6 +134,7 @@ final class AppSessionViewModel: ObservableObject {
             completeClientProfileUseCase: completeClientProfileUseCase,
             onCompleted: { [weak self] profile in
                 self?.state = .authenticated(profile)
+                self?.startSessionGuardIfNeeded()
             }
         )
     }
@@ -185,6 +203,9 @@ final class AppSessionViewModel: ObservableObject {
 
             let destination = try await resolveSessionUseCase.execute(for: user)
             state = map(destination)
+            if case .authenticated = state {
+                startSessionGuardIfNeeded()
+            }
         } catch {
             state = .error(error.localizedDescription)
         }
@@ -199,6 +220,67 @@ final class AppSessionViewModel: ObservableObject {
         case .authenticated(let profile):
             return .authenticated(profile)
         }
+    }
+    
+    func verifySessionStillValidFromSceneActivation() {
+        Task {
+            await verifySessionStillValid()
+        }
+    }
+
+    func handleFirebaseSessionErrorIfNeeded(_ error: Error) {
+        guard error.isFirebaseSessionInvalidOrDisabled else { return }
+
+        Task {
+            await forceCloseSession()
+        }
+    }
+
+    private func verifySessionStillValid() async {
+        guard case .authenticated = state else { return }
+
+        do {
+            try await verifyCurrentUserSessionUseCase.execute()
+        } catch {
+            if error.isFirebaseSessionInvalidOrDisabled {
+                await forceCloseSession()
+            }
+        }
+    }
+
+    private func startSessionGuardIfNeeded() {
+        guard sessionGuardTask == nil else { return }
+
+        sessionGuardTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 60_000_000_000)
+
+                await MainActor.run {
+                    guard let self else { return }
+
+                    Task {
+                        await self.verifySessionStillValid()
+                    }
+                }
+            }
+        }
+    }
+
+    private func stopSessionGuard() {
+        sessionGuardTask?.cancel()
+        sessionGuardTask = nil
+    }
+
+    private func forceCloseSession() async {
+        stopSessionGuard()
+
+        do {
+            try signOutUseCase.execute()
+        } catch { }
+
+        currentNonce = nil
+        rewardWalletSnapshot = .empty(nationalId: "")
+        state = .signedOut
     }
 }
 

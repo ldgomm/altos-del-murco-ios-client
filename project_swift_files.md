@@ -27,6 +27,8 @@ struct AltosDelMurcoApp: App {
 
     private let sharedModelContainer: ModelContainer
 
+    @Environment(\.scenePhase) private var scenePhase
+    
     @StateObject private var cartManager: CartManager
     @StateObject private var router = AppRouter()
     @StateObject private var appPreferences = AppPreferences()
@@ -117,6 +119,7 @@ struct AltosDelMurcoApp: App {
                 clientProfileRepository: clientProfileRepository
             )
             let signOutUseCase = SignOutUseCase(repository: authRepository)
+            let verifyCurrentUserSessionUseCase = VerifyCurrentUserSessionUseCase(repository: authRepository)
 
             _sessionViewModel = StateObject(
                 wrappedValue: AppSessionViewModel(
@@ -125,6 +128,7 @@ struct AltosDelMurcoApp: App {
                     completeClientProfileUseCase: completeClientProfileUseCase,
                     deleteCurrentAccountUseCase: deleteCurrentAccountUseCase,
                     signOutUseCase: signOutUseCase,
+                    verifyCurrentUserSessionUseCase: verifyCurrentUserSessionUseCase,
                     loyaltyRewardsService: loyaltyRewardsService
                 )
             )
@@ -157,6 +161,11 @@ struct AltosDelMurcoApp: App {
             .environmentObject(sessionViewModel)
             .environmentObject(appPreferences)
             .preferredColorScheme(appPreferences.preferredColorScheme)
+            .onChange(of: scenePhase) { _, newPhase in
+                if newPhase == .active {
+                    sessionViewModel.verifySessionStillValidFromSceneActivation()
+                }
+            }
         }
         .modelContainer(sharedModelContainer)
     }
@@ -5323,108 +5332,483 @@ private struct AdventureReservationRow: View {
 
 import SwiftUI
 
+private enum PremiumReservationFilter: String, CaseIterable, Identifiable {
+    case upcoming
+    case past
+    case cancelled
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .upcoming: return "Próximas"
+        case .past: return "Pasadas"
+        case .cancelled: return "Canceladas"
+        }
+    }
+}
+
+private enum UnifiedReservation: Identifiable, Hashable {
+    case restaurant(Order)
+    case experience(AdventureBooking)
+
+    var id: String {
+        switch self {
+        case .restaurant(let order): return "restaurant-\(order.id)"
+        case .experience(let booking): return "experience-\(booking.id)"
+        }
+    }
+
+    var title: String {
+        switch self {
+        case .restaurant: return "Pedido restaurante"
+        case .experience(let booking): return booking.visitTypeTitle
+        }
+    }
+
+    var subtitle: String {
+        switch self {
+        case .restaurant(let order): return "\(order.totalItems) item(s) • Mesa \(order.tableNumber)"
+        case .experience(let booking): return "\(booking.eventDisplayTitle) • \(booking.guestCount) invitado(s)"
+        }
+    }
+
+    var date: Date {
+        switch self {
+        case .restaurant(let order): return order.createdAt
+        case .experience(let booking): return booking.startAt
+        }
+    }
+
+    var total: Double {
+        switch self {
+        case .restaurant(let order): return order.totalAmount
+        case .experience(let booking): return booking.totalAmount
+        }
+    }
+
+    var statusText: String {
+        switch self {
+        case .restaurant(let order): return order.status.title
+        case .experience(let booking): return booking.status.title
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .restaurant: return "fork.knife"
+        case .experience: return "mountain.2.fill"
+        }
+    }
+
+    var isCancelled: Bool {
+        switch self {
+        case .restaurant(let order): return order.status == .canceled
+        case .experience(let booking): return booking.status == .canceled
+        }
+    }
+
+    var isCompleted: Bool {
+        switch self {
+        case .restaurant(let order): return order.status == .completed
+        case .experience(let booking): return booking.status == .completed
+        }
+    }
+}
+
 struct BookingsView: View {
     @ObservedObject var ordersViewModel: OrdersViewModel
-    let adventureModuleFactory: AdventureModuleFactory
-    @Environment(\.colorScheme) private var colorScheme
+    @StateObject private var adventureBookingsViewModel: AdventureBookingsViewModel
+    @EnvironmentObject private var sessionViewModel: AppSessionViewModel
 
-    private var neutralPalette: ThemePalette {
-        AppTheme.palette(for: .neutral, scheme: colorScheme)
+    @State private var selectedFilter: PremiumReservationFilter = .upcoming
+
+    init(
+        ordersViewModel: OrdersViewModel,
+        adventureModuleFactory: AdventureModuleFactory
+    ) {
+        self.ordersViewModel = ordersViewModel
+        _adventureBookingsViewModel = StateObject(wrappedValue: adventureModuleFactory.makeBookingsViewModel())
+    }
+
+    private var profile: ClientProfile? { sessionViewModel.authenticatedProfile }
+
+    private var allReservations: [UnifiedReservation] {
+        ordersViewModel.state.orders.map(UnifiedReservation.restaurant) +
+        adventureBookingsViewModel.state.allBookings.map(UnifiedReservation.experience)
+    }
+
+    private var filteredReservations: [UnifiedReservation] {
+        let now = Date()
+        return allReservations
+            .filter { item in
+                switch selectedFilter {
+                case .upcoming:
+                    return !item.isCancelled && !item.isCompleted && item.date >= now
+                case .past:
+                    return !item.isCancelled && (item.isCompleted || item.date < now)
+                case .cancelled:
+                    return item.isCancelled
+                }
+            }
+            .sorted { lhs, rhs in
+                switch selectedFilter {
+                case .upcoming: return lhs.date < rhs.date
+                case .past, .cancelled: return lhs.date > rhs.date
+                }
+            }
+    }
+
+    private var groupedReservations: [(date: Date, reservations: [UnifiedReservation])] {
+        let grouped = Dictionary(grouping: filteredReservations) { Calendar.current.startOfDay(for: $0.date) }
+        return grouped
+            .map { (date: $0.key, reservations: $0.value) }
+            .sorted { lhs, rhs in
+                switch selectedFilter {
+                case .upcoming: return lhs.date < rhs.date
+                case .past, .cancelled: return lhs.date > rhs.date
+                }
+            }
     }
 
     var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
-                    headerSection
+            ScrollView(showsIndicators: false) {
+                LazyVStack(alignment: .leading, spacing: 20) {
+                    PremiumSectionHeader(
+                        title: "Reservas",
+                        subtitle: "Tu agenda completa: pedidos del restaurante y experiencias en un solo lugar.",
+                        systemImage: "calendar"
+                    )
 
-                    NavigationLink {
-                        OrdersView(viewModel: ordersViewModel)
-                    } label: {
-                        bookingCard(
-                            theme: .restaurant,
-                            badge: "Restaurante",
-                            title: "Pedidos del restaurante",
-                            subtitle: "Revisa tus pedidos actuales y anteriores de comida.",
-                            systemImage: "fork.knife"
-                        )
-                    }
-                    .buttonStyle(.plain)
-
-                    NavigationLink {
-                        AdventureReservationsView(
-                            viewModelFactory: adventureModuleFactory.makeBookingsViewModel
-                        )
-                    } label: {
-                        bookingCard(
-                            theme: .adventure,
-                            badge: "Aventura",
-                            title: "Reservas de aventura",
-                            subtitle: "Mira combos, actividades individuales, camping y reservas nocturnas.",
-                            systemImage: "calendar.badge.clock"
-                        )
-                    }
-                    .buttonStyle(.plain)
+                    metricsSection
+                    filterSection
+                    contentSection
                 }
                 .padding(.horizontal, 20)
                 .padding(.vertical, 16)
             }
-            .appScreenStyle(.neutral)
             .navigationTitle("Reservas")
+            .appScreenStyle(.neutral)
+        }
+        .onAppear {
+            if let nationalId = profile?.nationalId {
+                ordersViewModel.setNationalId(nationalId)
+                ordersViewModel.onEvent(.onAppear)
+                adventureBookingsViewModel.setNationalId(nationalId)
+            }
+            adventureBookingsViewModel.onAppear()
+        }
+        .onDisappear {
+            adventureBookingsViewModel.onDisappear()
         }
     }
 
-    private var headerSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            BrandSectionHeader(
-                theme: .neutral,
-                title: "Gestiona tus reservas",
-                subtitle: "Accede rápidamente a tus pedidos del restaurante y a tus reservas de aventura."
+    private var metricsSection: some View {
+        let now = Date()
+        return HStack(spacing: 12) {
+            PremiumMetricTile(
+                title: "Próximas",
+                value: "\(allReservations.filter { !$0.isCancelled && !$0.isCompleted && $0.date >= now }.count)",
+                systemImage: "clock.badge.checkmark"
             )
-
-            Text("Todo en un solo lugar, con acceso claro para cada experiencia.")
-                .font(.subheadline)
-                .foregroundStyle(neutralPalette.textSecondary)
+            PremiumMetricTile(
+                title: "Pasadas",
+                value: "\(allReservations.filter { !$0.isCancelled && ($0.isCompleted || $0.date < now) }.count)",
+                systemImage: "checkmark.circle.fill"
+            )
+            PremiumMetricTile(
+                title: "Canceladas",
+                value: "\(allReservations.filter(\.isCancelled).count)",
+                systemImage: "xmark.circle.fill"
+            )
         }
-        .appCardStyle(.neutral, emphasized: false)
     }
 
-    private func bookingCard(
-        theme: AppSectionTheme,
-        badge: String,
-        title: String,
-        subtitle: String,
-        systemImage: String
-    ) -> some View {
-        let palette = AppTheme.palette(for: theme, scheme: colorScheme)
+    private var filterSection: some View {
+        Picker("Filtro", selection: $selectedFilter) {
+            ForEach(PremiumReservationFilter.allCases) { filter in
+                Text(filter.title).tag(filter)
+            }
+        }
+        .pickerStyle(.segmented)
+    }
 
-        return HStack(spacing: 16) {
-            BrandIconBubble(
-                theme: theme,
-                systemImage: systemImage,
-                size: 54
-            )
-
-            VStack(alignment: .leading, spacing: 8) {
-                BrandBadge(theme: theme, title: badge)
-
-                Text(title)
+    @ViewBuilder
+    private var contentSection: some View {
+        if filteredReservations.isEmpty {
+            PremiumCard {
+                PremiumIconBubble(systemImage: "calendar.badge.exclamationmark", selected: true)
+                Text("No hay reservas en \(selectedFilter.title.lowercased())")
                     .font(.headline)
-                    .foregroundStyle(palette.textPrimary)
-
-                Text(subtitle)
+                Text("Cuando hagas pedidos o reserves experiencias, aparecerán aquí agrupadas por fecha.")
                     .font(.subheadline)
-                    .foregroundStyle(palette.textSecondary)
-                    .multilineTextAlignment(.leading)
+                    .foregroundStyle(.secondary)
+            }
+        } else {
+            ForEach(groupedReservations, id: \.date) { group in
+                VStack(alignment: .leading, spacing: 12) {
+                    PremiumSectionHeader(
+                        title: group.date.longReservationDate,
+                        subtitle: "\(group.reservations.count) movimiento(s)",
+                        systemImage: "calendar"
+                    )
+
+                    ForEach(group.reservations) { reservation in
+                        UnifiedReservationCard(reservation: reservation)
+                    }
+                }
+            }
+        }
+    }
+}
+
+private struct UnifiedReservationCard: View {
+    let reservation: UnifiedReservation
+
+    var body: some View {
+        PremiumCard {
+            HStack(alignment: .top, spacing: 12) {
+                PremiumIconBubble(systemImage: reservation.systemImage, selected: reservation.systemImage.contains("mountain"))
+
+                VStack(alignment: .leading, spacing: 5) {
+                    Text(reservation.title)
+                        .font(.headline)
+                    Text(reservation.subtitle)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                    HStack(spacing: 8) {
+                        Text(reservation.statusText)
+                            .font(.caption.bold())
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 6)
+                            .background(Color.accentColor.opacity(0.12), in: Capsule())
+                        Text(reservation.date.shortTime)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                Spacer()
+
+                Text(reservation.total.priceText)
+                    .font(.headline.bold())
+                    .foregroundStyle(.green)
+            }
+        }
+    }
+}
+
+private extension Date {
+    var longReservationDate: String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "es_EC")
+        formatter.dateFormat = "EEEE d 'de' MMMM"
+        let text = formatter.string(from: self)
+        return text.prefix(1).uppercased() + text.dropFirst()
+    }
+
+    var shortTime: String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "es_EC")
+        formatter.dateFormat = "h:mm a"
+        return formatter.string(from: self)
+    }
+}
+
+```
+
+---
+
+# Altos del Murco/root/feature/altos/adventure/presentation/view/ExperienceComboPricingPolicy.swift
+
+```swift
+//
+//  ExperienceComboPricingPolicy.swift
+//  Altos del Murco
+//
+//  Created by José Ruiz on 24/4/26.
+//
+
+import Foundation
+
+struct ExperienceComboPricingBreakdown: Hashable {
+    let matchedPackageId: String?
+    let matchedPackageTitle: String?
+    let packageMatchedItems: [AdventureReservationItemDraft]
+    let extraItems: [AdventureReservationItemDraft]
+    let activityBaseSubtotal: Double
+    let activityDiscountAmount: Double
+    let activitySubtotalAfterIndividualDiscounts: Double
+    let foodSubtotal: Double
+    let comboDiscountAmount: Double
+    let loyaltyDiscountAmount: Double
+    let finalTotal: Double
+
+    var hasValidCombo: Bool {
+        matchedPackageId != nil && comboDiscountAmount > 0 && packageMatchedItems.count > 1
+    }
+
+    var subtotalBeforeComboAndLoyalty: Double {
+        activitySubtotalAfterIndividualDiscounts + foodSubtotal
+    }
+
+    var totalSavings: Double {
+        activityDiscountAmount + comboDiscountAmount + loyaltyDiscountAmount
+    }
+}
+
+enum ExperienceComboPricingPolicy {
+    static func calculate(
+        items: [AdventureReservationItemDraft],
+        foodReservation: ReservationFoodDraft?,
+        catalog: AdventureCatalogSnapshot,
+        featuredPackages: [AdventureFeaturedPackage]? = nil,
+        preferredPackageId: String? = nil,
+        loyaltyDiscountAmount: Double = 0
+    ) -> ExperienceComboPricingBreakdown {
+        let normalizedItems = items.filter { item in
+            catalog.activity(for: item.activity)?.isActive == true
+        }
+        let packages = featuredPackages ?? catalog.activePackagesSorted
+        let foodSubtotal = AdventurePricingEngine.foodSubtotal(for: foodReservation).roundedMoney
+        let activityBaseSubtotal = normalizedItems.reduce(0) { partial, item in
+            guard let config = catalog.activity(for: item.activity) else { return partial }
+            return partial + AdventurePricingEngine.lineBaseSubtotal(for: item, config: config)
+        }.roundedMoney
+        let activitySubtotalAfterIndividualDiscounts = AdventurePricingEngine
+            .estimatedSubtotal(items: normalizedItems, catalog: catalog)
+            .roundedMoney
+        let activityDiscountAmount = max(0, activityBaseSubtotal - activitySubtotalAfterIndividualDiscounts).roundedMoney
+
+        let match = bestPackageMatch(
+            selectedItems: normalizedItems,
+            packages: packages,
+            preferredPackageId: preferredPackageId
+        )
+
+        let comboDiscount: Double
+        if normalizedItems.count <= 1 {
+            comboDiscount = 0
+        } else {
+            comboDiscount = max(0, match?.package.packageDiscountAmount ?? 0).roundedMoney
+        }
+
+        let subtotalBeforeLoyalty = max(
+            0,
+            activitySubtotalAfterIndividualDiscounts + foodSubtotal - comboDiscount
+        ).roundedMoney
+        let safeLoyalty = min(max(0, loyaltyDiscountAmount), subtotalBeforeLoyalty).roundedMoney
+        let finalTotal = max(0, subtotalBeforeLoyalty - safeLoyalty).roundedMoney
+
+        return ExperienceComboPricingBreakdown(
+            matchedPackageId: comboDiscount > 0 ? match?.package.id : nil,
+            matchedPackageTitle: comboDiscount > 0 ? match?.package.title : nil,
+            packageMatchedItems: match?.matchedItems ?? [],
+            extraItems: match?.extraItems ?? normalizedItems,
+            activityBaseSubtotal: activityBaseSubtotal,
+            activityDiscountAmount: activityDiscountAmount,
+            activitySubtotalAfterIndividualDiscounts: activitySubtotalAfterIndividualDiscounts,
+            foodSubtotal: foodSubtotal,
+            comboDiscountAmount: comboDiscount,
+            loyaltyDiscountAmount: safeLoyalty,
+            finalTotal: finalTotal
+        )
+    }
+
+    private struct PackageMatch {
+        let package: AdventureFeaturedPackage
+        let matchedItems: [AdventureReservationItemDraft]
+        let extraItems: [AdventureReservationItemDraft]
+        let score: Int
+    }
+
+    private static func bestPackageMatch(
+        selectedItems: [AdventureReservationItemDraft],
+        packages: [AdventureFeaturedPackage],
+        preferredPackageId: String?
+    ) -> PackageMatch? {
+        guard selectedItems.count > 1 else { return nil }
+
+        let matches = packages
+            .filter { $0.isActive && $0.items.count > 1 }
+            .compactMap { package in matchPackage(selectedItems: selectedItems, package: package) }
+            .filter { $0.matchedItems.count == $0.package.items.count }
+
+        guard !matches.isEmpty else { return nil }
+
+        if let preferredPackageId,
+           let preferred = matches.first(where: { $0.package.id == preferredPackageId }) {
+            return preferred
+        }
+
+        return matches.sorted {
+            if $0.score != $1.score { return $0.score > $1.score }
+            if $0.extraItems.count != $1.extraItems.count { return $0.extraItems.count < $1.extraItems.count }
+            return $0.package.packageDiscountAmount > $1.package.packageDiscountAmount
+        }.first
+    }
+
+    private static func matchPackage(
+        selectedItems: [AdventureReservationItemDraft],
+        package: AdventureFeaturedPackage
+    ) -> PackageMatch? {
+        var remaining = selectedItems
+        var matched: [AdventureReservationItemDraft] = []
+        var score = 0
+
+        for packageItem in package.items {
+            guard let index = remaining.firstIndex(where: { sameActivitySignature(selected: $0, packageItem: packageItem) }) else {
+                return nil
             }
 
-            Spacer(minLength: 12)
-
-            Image(systemName: "chevron.right")
-                .font(.headline.weight(.semibold))
-                .foregroundStyle(palette.textTertiary)
+            let selected = remaining.remove(at: index)
+            matched.append(selected)
+            score += 10
+            score += max(0, 5 - durationDistance(selected: selected, packageItem: packageItem))
         }
-        .appCardStyle(theme, emphasized: false)
+
+        return PackageMatch(
+            package: package,
+            matchedItems: matched,
+            extraItems: remaining,
+            score: score
+        )
+    }
+
+    private static func sameActivitySignature(
+        selected: AdventureReservationItemDraft,
+        packageItem: AdventureReservationItemDraft
+    ) -> Bool {
+        guard selected.activity == packageItem.activity else { return false }
+
+        switch selected.activity {
+        case .offRoad:
+            return selected.durationMinutes == packageItem.durationMinutes
+                && selected.vehicleCount >= packageItem.vehicleCount
+                && selected.offRoadRiderCount >= packageItem.offRoadRiderCount
+
+        case .camping:
+            return selected.nights >= packageItem.nights
+                && selected.peopleCount >= packageItem.peopleCount
+
+        case .paintball, .goKarts, .shootingRange, .extremeSlide:
+            return selected.durationMinutes == packageItem.durationMinutes
+                && selected.peopleCount >= packageItem.peopleCount
+        }
+    }
+
+    private static func durationDistance(
+        selected: AdventureReservationItemDraft,
+        packageItem: AdventureReservationItemDraft
+    ) -> Int {
+        abs(selected.durationMinutes - packageItem.durationMinutes) / 30
+    }
+}
+
+private extension Double {
+    var roundedMoney: Double {
+        (self * 100).rounded() / 100
     }
 }
 
@@ -8401,6 +8785,32 @@ final class AuthenticationRepository: AuthenticationRepositoriable {
     func signOut() throws {
         try Auth.auth().signOut()
     }
+    
+    func verifyCurrentUserIsStillValid() async throws {
+        guard let currentUser = Auth.auth().currentUser else {
+            return
+        }
+
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            currentUser.reload { error in
+                if let error {
+                    continuation.resume(throwing: error)
+                } else {
+                    continuation.resume(returning: ())
+                }
+            }
+        }
+
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            currentUser.getIDTokenForcingRefresh(true) { _, error in
+                if let error {
+                    continuation.resume(throwing: error)
+                } else {
+                    continuation.resume(returning: ())
+                }
+            }
+        }
+    }
 }
 
 ```
@@ -8510,6 +8920,7 @@ protocol AuthenticationRepositoriable {
 
     func deleteCurrentUser() async throws
     func signOut() throws
+    func verifyCurrentUserIsStillValid() async throws
 }
 
 ```
@@ -8682,6 +9093,45 @@ final class DeleteCurrentAccountUseCase {
 
 ---
 
+# Altos del Murco/root/feature/altos/authentication/domain/Error.swift
+
+```swift
+//
+//  Error.swift
+//  Altos del Murco
+//
+//  Created by José Ruiz on 24/4/26.
+//
+
+import Foundation
+import FirebaseAuth
+
+extension Error {
+    var isFirebaseSessionInvalidOrDisabled: Bool {
+        let nsError = self as NSError
+
+        guard nsError.domain == AuthErrorDomain,
+              let code = AuthErrorCode(rawValue: nsError.code) else {
+            return false
+        }
+
+        switch code {
+        case .userDisabled,
+             .userNotFound,
+             .invalidUserToken,
+             .userTokenExpired:
+            return true
+
+        default:
+            return false
+        }
+    }
+}
+
+```
+
+---
+
 # Altos del Murco/root/feature/altos/authentication/domain/ResolveSessionUseCase.swift
 
 ```swift
@@ -8807,6 +9257,36 @@ final class SignOutUseCase {
 
 ---
 
+# Altos del Murco/root/feature/altos/authentication/domain/VerifyCurrentUserSessionUseCase.swift
+
+```swift
+//
+//  VerifyCurrentUserSessionUseCase.swift
+//  Altos del Murco
+//
+//  Created by José Ruiz on 24/4/26.
+//
+
+import Foundation
+
+import Foundation
+
+final class VerifyCurrentUserSessionUseCase {
+    private let repository: AuthenticationRepositoriable
+
+    init(repository: AuthenticationRepositoriable) {
+        self.repository = repository
+    }
+
+    func execute() async throws {
+        try await repository.verifyCurrentUserIsStillValid()
+    }
+}
+
+```
+
+---
+
 # Altos del Murco/root/feature/altos/authentication/presentation/view/AuthenticationView.swift
 
 ```swift
@@ -8902,8 +9382,7 @@ struct AuthenticationView: View {
         VStack(alignment: .leading, spacing: 18) {
             BrandSectionHeader(
                 theme: .neutral,
-                title: "Todo en un solo lugar",
-                subtitle: "Tu cuenta conecta pedidos, reservas, recompensas y ofertas personalizadas."
+                title: "Todo en un solo lugar"
             )
             
             VStack(spacing: 14) {
@@ -8932,22 +9411,11 @@ struct AuthenticationView: View {
                 )
             }
         }
-        .appCardStyle(.neutral, emphasized: true)
+        .appCardStyle(.neutral, emphasized: false)
     }
     
     private var signInCard: some View {
         VStack(spacing: 18) {
-            VStack(spacing: 8) {
-                Text("Inicia sesión para continuar")
-                    .font(.title3.bold())
-                    .foregroundStyle(palette.textPrimary)
-                
-                Text("Tu perfil nos ayuda a personalizar tus reservas, descuentos y datos de contacto.")
-                    .font(.footnote)
-                    .multilineTextAlignment(.center)
-                    .foregroundStyle(palette.textSecondary)
-            }
-            
             SignInWithAppleButton(
                 onRequest: viewModel.onRequestSignIn,
                 onCompletion: viewModel.onCompletionSignIn
@@ -9431,6 +9899,8 @@ final class AppSessionViewModel: ObservableObject {
     private let completeClientProfileUseCase: CompleteClientProfileUseCase
     private let deleteCurrentAccountUseCase: DeleteCurrentAccountUseCase
     private let signOutUseCase: SignOutUseCase
+    private let verifyCurrentUserSessionUseCase: VerifyCurrentUserSessionUseCase
+    private var sessionGuardTask: Task<Void, Never>?
     private let loyaltyRewardsService: LoyaltyRewardsServiceable
 
     private var currentNonce: String?
@@ -9441,6 +9911,7 @@ final class AppSessionViewModel: ObservableObject {
         completeClientProfileUseCase: CompleteClientProfileUseCase,
         deleteCurrentAccountUseCase: DeleteCurrentAccountUseCase,
         signOutUseCase: SignOutUseCase,
+        verifyCurrentUserSessionUseCase: VerifyCurrentUserSessionUseCase,
         loyaltyRewardsService: LoyaltyRewardsServiceable
     ) {
         self.signInWithAppleUseCase = signInWithAppleUseCase
@@ -9448,6 +9919,7 @@ final class AppSessionViewModel: ObservableObject {
         self.completeClientProfileUseCase = completeClientProfileUseCase
         self.deleteCurrentAccountUseCase = deleteCurrentAccountUseCase
         self.signOutUseCase = signOutUseCase
+        self.verifyCurrentUserSessionUseCase = verifyCurrentUserSessionUseCase
         self.loyaltyRewardsService = loyaltyRewardsService
 
         Task { await bootstrap() }
@@ -9479,8 +9951,19 @@ final class AppSessionViewModel: ObservableObject {
         do {
             let destination = try await resolveSessionUseCase.execute()
             state = map(destination)
+
+            if case .authenticated = state {
+                await verifySessionStillValid()
+                startSessionGuardIfNeeded()
+            } else {
+                stopSessionGuard()
+            }
         } catch {
-            state = .error(error.localizedDescription)
+            if error.isFirebaseSessionInvalidOrDisabled {
+                await forceCloseSession()
+            } else {
+                state = .error(error.localizedDescription)
+            }
         }
     }
 
@@ -9512,7 +9995,9 @@ final class AppSessionViewModel: ObservableObject {
     func signOut() {
         Task {
             do {
+                stopSessionGuard()
                 try signOutUseCase.execute()
+                rewardWalletSnapshot = .empty(nationalId: "")
                 state = .signedOut
             } catch {
                 state = .error(error.localizedDescription)
@@ -9530,6 +10015,7 @@ final class AppSessionViewModel: ObservableObject {
             completeClientProfileUseCase: completeClientProfileUseCase,
             onCompleted: { [weak self] profile in
                 self?.state = .authenticated(profile)
+                self?.startSessionGuardIfNeeded()
             }
         )
     }
@@ -9598,6 +10084,9 @@ final class AppSessionViewModel: ObservableObject {
 
             let destination = try await resolveSessionUseCase.execute(for: user)
             state = map(destination)
+            if case .authenticated = state {
+                startSessionGuardIfNeeded()
+            }
         } catch {
             state = .error(error.localizedDescription)
         }
@@ -9612,6 +10101,67 @@ final class AppSessionViewModel: ObservableObject {
         case .authenticated(let profile):
             return .authenticated(profile)
         }
+    }
+    
+    func verifySessionStillValidFromSceneActivation() {
+        Task {
+            await verifySessionStillValid()
+        }
+    }
+
+    func handleFirebaseSessionErrorIfNeeded(_ error: Error) {
+        guard error.isFirebaseSessionInvalidOrDisabled else { return }
+
+        Task {
+            await forceCloseSession()
+        }
+    }
+
+    private func verifySessionStillValid() async {
+        guard case .authenticated = state else { return }
+
+        do {
+            try await verifyCurrentUserSessionUseCase.execute()
+        } catch {
+            if error.isFirebaseSessionInvalidOrDisabled {
+                await forceCloseSession()
+            }
+        }
+    }
+
+    private func startSessionGuardIfNeeded() {
+        guard sessionGuardTask == nil else { return }
+
+        sessionGuardTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 60_000_000_000)
+
+                await MainActor.run {
+                    guard let self else { return }
+
+                    Task {
+                        await self.verifySessionStillValid()
+                    }
+                }
+            }
+        }
+    }
+
+    private func stopSessionGuard() {
+        sessionGuardTask?.cancel()
+        sessionGuardTask = nil
+    }
+
+    private func forceCloseSession() async {
+        stopSessionGuard()
+
+        do {
+            try signOutUseCase.execute()
+        } catch { }
+
+        currentNonce = nil
+        rewardWalletSnapshot = .empty(nationalId: "")
+        state = .signedOut
     }
 }
 
@@ -10437,115 +10987,1547 @@ struct FeaturedPostsSectionView: View {
 
 import SwiftUI
 
+private enum HomeRoute: Hashable {
+    case featuredRestaurant
+    case menuItem(String)
+    case experiencePackages
+    case packageDetail(String)
+    case reservePackage(String)
+    case rewards
+}
+
 struct HomeView: View {
     @Binding var selectedTab: MainTab
 
+    @ObservedObject var menuViewModel: MenuViewModel
+    @ObservedObject var adventureComboBuilderViewModel: AdventureComboBuilderViewModel
+
+    @EnvironmentObject private var sessionViewModel: AppSessionViewModel
+    @Environment(\.colorScheme) private var colorScheme
+
+    @StateObject private var catalogViewModel = AdventureCatalogViewModel(service: AdventureCatalogService())
+
+    private var profile: ClientProfile? {
+        sessionViewModel.authenticatedProfile
+    }
+
+    private var palette: ThemePalette {
+        AppTheme.palette(for: .neutral, scheme: colorScheme)
+    }
+
+    private var featuredItems: [MenuItem] {
+        allMenuItems
+            .filter(\.isFeatured)
+            .sorted {
+                if $0.sortOrder != $1.sortOrder { return $0.sortOrder < $1.sortOrder }
+                return $0.name < $1.name
+            }
+    }
+
+    private var allMenuItems: [MenuItem] {
+        menuViewModel.state.sections.flatMap(\.items)
+    }
+
+    private var activePackages: [AdventureFeaturedPackage] {
+        catalogViewModel.state.catalog.activePackagesSorted
+    }
+
+    private var availableRewards: [LoyaltyRewardTemplate] {
+        menuViewModel.state.rewardWalletSnapshot.availableTemplates
+            .filter { $0.isActive && !$0.isExpired }
+            .sorted {
+                if $0.priority != $1.priority { return $0.priority < $1.priority }
+                return $0.title < $1.title
+            }
+    }
+
     var body: some View {
         NavigationStack {
-            ScrollView {
+            ScrollView(showsIndicators: false) {
                 LazyVStack(alignment: .leading, spacing: 24) {
                     heroSection
-//                    quickAccessSection
-                    featuredSection
+                    quickMetricsSection
+                    restaurantRecommendations
+                    experiencePackages
+                    featuredPostsSection
                 }
-                .padding()
+                .padding(.horizontal, 20)
+                .padding(.top, 8)
+                .padding(.bottom, 32)
             }
             .navigationTitle("Altos del Murco")
             .navigationBarTitleDisplayMode(.large)
             .appScreenStyle(.neutral)
+            .navigationDestination(for: HomeRoute.self) { route in
+                destination(for: route)
+            }
         }
+        .onAppear {
+            menuViewModel.onAppear()
+
+            if let nationalId = profile?.nationalId {
+                menuViewModel.setNationalId(nationalId)
+                adventureComboBuilderViewModel.setNationalId(nationalId)
+            }
+
+            if let profile {
+                adventureComboBuilderViewModel.setClientName(profile.fullName)
+                adventureComboBuilderViewModel.setWhatsapp(profile.phoneNumber)
+            }
+
+            catalogViewModel.onAppear()
+        }
+        .onDisappear {
+            catalogViewModel.onDisappear()
+        }
+        .onChange(of: profile?.nationalId) { _, nationalId in
+            guard let nationalId else { return }
+            menuViewModel.setNationalId(nationalId)
+            adventureComboBuilderViewModel.setNationalId(nationalId)
+        }
+        .onChange(of: profile?.id) { _, _ in
+            syncProfileIntoAdventureBuilder()
+        }
+        .onChange(of: profile?.updatedAt) { _, _ in
+            syncProfileIntoAdventureBuilder()
+        }
+    }
+
+    @ViewBuilder
+    private func destination(for route: HomeRoute) -> some View {
+        switch route {
+        case .featuredRestaurant:
+            HomeFeaturedRestaurantView(
+                featuredItems: featuredItems,
+                rewardPresentationProvider: { item in
+                    menuViewModel.rewardPresentation(for: item, quantity: 1)
+                },
+                onOpenFullMenu: {
+                    selectedTab = .restaurant
+                }
+            )
+
+        case .menuItem(let itemId):
+            if let item = menuItem(with: itemId) {
+                MenuItemDetailView(
+                    item: item,
+                    categoryTitle: categoryTitle(for: item),
+                    rewardPresentationProvider: { item, quantity in
+                        menuViewModel.rewardPresentation(for: item, quantity: quantity)
+                    },
+                    displayedPriceProvider: { item, quantity in
+                        menuViewModel.displayedPrice(for: item, quantity: quantity)
+                    },
+                    incrementalDiscountProvider: { item, quantity in
+                        menuViewModel.incrementalDiscount(for: item, quantity: quantity)
+                    }
+                )
+            } else {
+                HomeMissingContentView(
+                    title: "Plato no disponible",
+                    message: "Este recomendado cambió o ya no está activo en el menú.",
+                    systemImage: "fork.knife.circle"
+                )
+            }
+
+        case .experiencePackages:
+            HomeExperiencePackagesView(
+                packages: activePackages,
+                catalog: catalogViewModel.state.catalog,
+                menuSections: menuViewModel.state.sections,
+                rewardProvider: { package in
+                    adventureComboBuilderViewModel.packageRewardPresentation(
+                        for: package,
+                        menuSections: menuViewModel.state.sections
+                    )
+                },
+                onOpenExperiencesTab: {
+                    selectedTab = .experiences
+                }
+            )
+
+        case .packageDetail(let packageId):
+            if let package = package(with: packageId) {
+                HomePackageDetailView(
+                    package: package,
+                    catalog: catalogViewModel.state.catalog,
+                    menuSections: menuViewModel.state.sections,
+                    reward: adventureComboBuilderViewModel.packageRewardPresentation(
+                        for: package,
+                        menuSections: menuViewModel.state.sections
+                    ),
+                    adventureComboBuilderViewModel: adventureComboBuilderViewModel,
+                    menuViewModel: menuViewModel
+                )
+            } else {
+                HomeMissingContentView(
+                    title: "Combo no disponible",
+                    message: "Este combo cambió o ya no está activo en el catálogo.",
+                    systemImage: "mountain.2.circle"
+                )
+            }
+
+        case .reservePackage(let packageId):
+            if let package = package(with: packageId) {
+                HomePackageReservationDestination(
+                    package: package,
+                    menuSections: menuViewModel.state.sections,
+                    adventureComboBuilderViewModel: adventureComboBuilderViewModel,
+                    menuViewModel: menuViewModel
+                )
+            } else {
+                HomeMissingContentView(
+                    title: "Combo no disponible",
+                    message: "Este combo cambió o ya no está activo en el catálogo.",
+                    systemImage: "mountain.2.circle"
+                )
+            }
+
+        case .rewards:
+            HomeRewardsCenterView(
+                wallet: menuViewModel.state.rewardWalletSnapshot,
+                rewards: availableRewards,
+                featuredItems: featuredItems,
+                activePackages: activePackages,
+                onOpenRestaurant: {
+                    selectedTab = .restaurant
+                },
+                onOpenExperiences: {
+                    selectedTab = .experiences
+                },
+                onOpenProfile: {
+                    selectedTab = .profile
+                }
+            )
+        }
+    }
+
+    private func syncProfileIntoAdventureBuilder() {
+        guard let profile else { return }
+
+        adventureComboBuilderViewModel.setClientName(profile.fullName)
+        adventureComboBuilderViewModel.setWhatsapp(profile.phoneNumber)
+        adventureComboBuilderViewModel.setNationalId(profile.nationalId)
+    }
+
+    private func menuItem(with id: String) -> MenuItem? {
+        allMenuItems.first { $0.id == id }
+    }
+
+    private func package(with id: String) -> AdventureFeaturedPackage? {
+        activePackages.first { $0.id == id }
+    }
+
+    private func categoryTitle(for item: MenuItem) -> String {
+        if !item.categoryTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return item.categoryTitle
+        }
+
+        return menuViewModel.state.sections.first(where: { section in
+            section.items.contains(where: { $0.id == item.id })
+        })?.category.title ?? "Menú"
     }
 
     private var heroSection: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text("Bienvenido")
-                .font(.title2.bold())
+        let firstName = profile?.fullName.split(separator: " ").first.map(String.init)
+        let title = firstName.map { "Hola, \($0). Vive Los Altos del Murco." } ?? "Vive Los Altos del Murco."
 
-            Text("Restaurante y aventura en un solo lugar. Explora experiencias, revisa tus reservas y accede rápido a cada sección.")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
+        return PremiumHero(
+            title: title,
+            subtitle: "Pide comida, reserva experiencias, revisa combos y aprovecha premios  desde una sola cuenta.",
+            badge: "Restaurante + Experiencias"
+        ) {
+            Button {
+                selectedTab = .restaurant
+            } label: {
+                Label(PremiumAltosCopy.restaurantCTA, systemImage: "fork.knife")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
+            .tint(.white)
+            .foregroundStyle(.black)
+        } secondary: {
+            Button {
+                selectedTab = .experiences
+            } label: {
+                Label(PremiumAltosCopy.experiencesCTA, systemImage: "mountain.2.fill")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.large)
+            .tint(.white)
         }
-        .appCardStyle(.neutral, emphasized: false)
     }
 
-    /*
-    private var quickAccessSection: some View {
+    private var quickMetricsSection: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            PremiumSectionHeader(
+                title: "Accesos rápidos",
+                subtitle: "Cada tarjeta ahora abre una acción real, no solo una cifra bonita.",
+                systemImage: "bolt.fill"
+            )
+
+            LazyVGrid(
+                columns: [
+                    GridItem(.flexible(), spacing: 12),
+                    GridItem(.flexible(), spacing: 12)
+                ],
+                spacing: 12
+            ) {
+                NavigationLink(value: HomeRoute.featuredRestaurant) {
+                    HomeActionMetricTile(
+                        title: "Platos destacados",
+                        value: "\(featuredItems.count)",
+                        subtitle: featuredItems.isEmpty ? "Aún sin destacados" : "Ver detalle y agregar",
+                        systemImage: "fork.knife",
+                        actionTitle: "Explorar"
+                    )
+                }
+                .buttonStyle(.plain)
+
+                NavigationLink(value: HomeRoute.experiencePackages) {
+                    HomeActionMetricTile(
+                        title: "Combos activos",
+                        value: "\(activePackages.count)",
+                        subtitle: activePackages.isEmpty ? "Aún sin combos" : "Comparar y reservar",
+                        systemImage: "mountain.2.fill",
+                        actionTitle: "Ver combos"
+                    )
+                }
+                .buttonStyle(.plain)
+
+                NavigationLink(value: HomeRoute.rewards) {
+                    HomeActionMetricTile(
+                        title: "Premios",
+                        value: "\(availableRewards.count)",
+                        subtitle: availableRewards.isEmpty ? "Sigue acumulando" : "Dónde aplican",
+                        systemImage: "gift.fill",
+                        actionTitle: "Usar premios"
+                    )
+                }
+                .buttonStyle(.plain)
+
+                Button {
+                    selectedTab = .bookings
+                } label: {
+                    HomeActionMetricTile(
+                        title: "Reservas",
+                        value: "Agenda",
+                        subtitle: "Actuales, futuras y pasadas",
+                        systemImage: "calendar",
+                        actionTitle: "Ver"
+                    )
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var restaurantRecommendations: some View {
+        if !featuredItems.isEmpty {
+            VStack(alignment: .leading, spacing: 14) {
+                HStack(alignment: .bottom) {
+                    PremiumSectionHeader(
+                        title: "Recomendados del restaurante",
+                        subtitle: "Toca un plato para ver ingredientes, premios, cantidad y agregar al carrito.",
+                        systemImage: "fork.knife"
+                    )
+
+                    Spacer(minLength: 8)
+
+                    NavigationLink(value: HomeRoute.featuredRestaurant) {
+                        Text("Ver todo")
+                            .font(.caption.bold())
+                    }
+                    .buttonStyle(.plain)
+                }
+
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 14) {
+                        ForEach(featuredItems.prefix(8)) { item in
+                            NavigationLink(value: HomeRoute.menuItem(item.id)) {
+                                HomeFeaturedMenuCard(
+                                    item: item,
+                                    reward: menuViewModel.rewardPresentation(for: item, quantity: 1)
+                                )
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .padding(.vertical, 2)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var experiencePackages: some View {
+        if !activePackages.isEmpty {
+            VStack(alignment: .leading, spacing: 14) {
+                HStack(alignment: .bottom) {
+                    PremiumSectionHeader(
+                        title: "Combos de experiencias",
+                        subtitle: "Revisa qué incluye cada combo antes de reservar.",
+                        systemImage: "figure.hiking"
+                    )
+
+                    Spacer(minLength: 8)
+
+                    NavigationLink(value: HomeRoute.experiencePackages) {
+                        Text("Comparar")
+                            .font(.caption.bold())
+                    }
+                    .buttonStyle(.plain)
+                }
+
+                ForEach(activePackages.prefix(4)) { package in
+                    NavigationLink(value: HomeRoute.packageDetail(package.id)) {
+                        HomePackageCard(
+                            package: package,
+                            catalog: catalogViewModel.state.catalog,
+                            menuSections: menuViewModel.state.sections,
+                            reward: adventureComboBuilderViewModel.packageRewardPresentation(
+                                for: package,
+                                menuSections: menuViewModel.state.sections
+                            )
+                        )
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    private var featuredPostsSection: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            PremiumSectionHeader(
+                title: "Momentos destacados",
+                subtitle: "Fotos recientes del restaurante, experiencias y clientes.",
+                systemImage: "photo.on.rectangle.angled"
+            )
+
+            FeaturedPostsSectionView()
+        }
+    }
+}
+
+// MARK: - Home quick actions
+
+private struct HomeActionMetricTile: View {
+    let title: String
+    let value: String
+    let subtitle: String
+    let systemImage: String
+    let actionTitle: String
+
+    @Environment(\.colorScheme) private var colorScheme
+
+    private var palette: ThemePalette {
+        AppTheme.palette(for: .neutral, scheme: colorScheme)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top) {
+                PremiumIconBubble(systemImage: systemImage, selected: true)
+
+                Spacer()
+
+                Image(systemName: "arrow.up.right.circle.fill")
+                    .font(.title3)
+                    .foregroundStyle(palette.textTertiary)
+            }
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(value)
+                    .font(.title3.weight(.bold))
+                    .foregroundStyle(palette.textPrimary)
+                    .monospacedDigit()
+
+                Text(title)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(palette.textPrimary)
+
+                Text(subtitle)
+                    .font(.caption)
+                    .foregroundStyle(palette.textSecondary)
+                    .lineLimit(2)
+            }
+
+            HStack(spacing: 6) {
+                Text(actionTitle)
+                    .font(.caption.bold())
+                Image(systemName: "chevron.right")
+                    .font(.caption2.bold())
+            }
+            .foregroundStyle(palette.primary)
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, minHeight: 166, alignment: .leading)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .stroke(Color.primary.opacity(colorScheme == .dark ? 0.12 : 0.08), lineWidth: 1)
+        )
+        .shadow(
+            color: palette.shadow.opacity(colorScheme == .dark ? 0.16 : 0.07),
+            radius: 12,
+            x: 0,
+            y: 7
+        )
+    }
+}
+
+// MARK: - Restaurant recommendations
+
+private struct HomeFeaturedRestaurantView: View {
+    let featuredItems: [MenuItem]
+    let rewardPresentationProvider: (MenuItem) -> RewardPresentation?
+    let onOpenFullMenu: () -> Void
+
+    @Environment(\.colorScheme) private var colorScheme
+
+    private var palette: ThemePalette {
+        AppTheme.palette(for: .restaurant, scheme: colorScheme)
+    }
+
+    var body: some View {
+        ScrollView(showsIndicators: false) {
+            LazyVStack(alignment: .leading, spacing: 16) {
+                PremiumSectionHeader(
+                    title: "Platos destacados",
+                    subtitle: "Aquí sí hay acción: abre el detalle, revisa ingredientes, cantidad, premios y agrégalo al carrito.",
+                    systemImage: "fork.knife"
+                )
+
+                if featuredItems.isEmpty {
+                    HomeMissingContentView(
+                        title: "Sin platos destacados",
+                        message: "Cuando marques platos como destacados en Firestore, aparecerán aquí.",
+                        systemImage: "fork.knife.circle"
+                    )
+                } else {
+                    ForEach(featuredItems) { item in
+                        NavigationLink(value: HomeRoute.menuItem(item.id)) {
+                            HomeFeaturedMenuListCard(
+                                item: item,
+                                reward: rewardPresentationProvider(item)
+                            )
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+
+                Button(action: onOpenFullMenu) {
+                    Label("Abrir menú completo", systemImage: "menucard.fill")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(BrandPrimaryButtonStyle(theme: .restaurant))
+                .padding(.top, 6)
+            }
+            .padding(20)
+        }
+        .navigationTitle("Recomendados")
+        .navigationBarTitleDisplayMode(.inline)
+        .appScreenStyle(.restaurant)
+    }
+}
+
+private struct HomeFeaturedMenuCard: View {
+    let item: MenuItem
+    let reward: RewardPresentation?
+
+    @Environment(\.colorScheme) private var colorScheme
+
+    private var palette: ThemePalette {
+        AppTheme.palette(for: .restaurant, scheme: colorScheme)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top) {
+                PremiumIconBubble(systemImage: "fork.knife", selected: true)
+
+                Spacer()
+
+                Image(systemName: "arrow.up.right.circle.fill")
+                    .foregroundStyle(palette.primary)
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 6) {
+                    Text("Destacado")
+                        .font(.caption2.bold())
+                        .foregroundStyle(palette.primary)
+
+                    if let reward {
+                        Text(reward.badge)
+                            .font(.caption2.bold())
+                            .foregroundStyle(.green)
+                    }
+                }
+
+                Text(item.name)
+                    .font(.headline)
+                    .foregroundStyle(palette.textPrimary)
+                    .lineLimit(2)
+
+                Text(item.description)
+                    .font(.caption)
+                    .foregroundStyle(palette.textSecondary)
+                    .lineLimit(2)
+
+                priceLine
+
+                Text(item.canBeOrdered ? "Disponible hoy" : "No disponible hoy / reservas futuras")
+                    .font(.caption.bold())
+                    .foregroundStyle(item.canBeOrdered ? .green : .red)
+            }
+
+            HStack(spacing: 6) {
+                Text("Ver detalle")
+                    .font(.caption.bold())
+                Image(systemName: "chevron.right")
+                    .font(.caption2.bold())
+            }
+            .foregroundStyle(palette.primary)
+        }
+        .padding(16)
+        .frame(width: 236)
+        .frame(minHeight: 232)
+        .frame(alignment: .leading)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 28, style: .continuous)
+                .stroke(Color.primary.opacity(0.08), lineWidth: 1)
+        )
+        .shadow(color: palette.shadow.opacity(colorScheme == .dark ? 0.16 : 0.08), radius: 14, x: 0, y: 8)
+    }
+
+    @ViewBuilder
+    private var priceLine: some View {
+        HStack(spacing: 8) {
+            if item.hasOffer {
+                Text(item.price.priceText)
+                    .font(.caption)
+                    .foregroundStyle(palette.textTertiary)
+                    .strikethrough()
+            }
+
+            Text(item.finalPrice.priceText)
+                .font(.subheadline.bold())
+                .foregroundStyle(.green)
+        }
+    }
+}
+
+private struct HomeFeaturedMenuListCard: View {
+    let item: MenuItem
+    let reward: RewardPresentation?
+
+    @Environment(\.colorScheme) private var colorScheme
+
+    private var palette: ThemePalette {
+        AppTheme.palette(for: .restaurant, scheme: colorScheme)
+    }
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 14) {
+            PremiumIconBubble(systemImage: "fork.knife", selected: true)
+
+            VStack(alignment: .leading, spacing: 7) {
+                HStack(spacing: 8) {
+                    Text(item.name)
+                        .font(.headline)
+                        .foregroundStyle(palette.textPrimary)
+                        .lineLimit(2)
+
+                    if item.isFeatured {
+                        BrandBadge(theme: .restaurant, title: "Popular", selected: true)
+                    }
+                }
+
+                Text(item.description)
+                    .font(.subheadline)
+                    .foregroundStyle(palette.textSecondary)
+                    .lineLimit(2)
+
+                if let reward {
+                    HStack(spacing: 8) {
+                        BrandBadge(theme: .restaurant, title: reward.badge, selected: true)
+                        Text(reward.message)
+                            .font(.caption)
+                            .foregroundStyle(palette.textSecondary)
+                            .lineLimit(2)
+                    }
+                }
+
+                HStack(spacing: 10) {
+                    Text(item.finalPrice.priceText)
+                        .font(.subheadline.bold())
+                        .foregroundStyle(.green)
+
+                    Text(item.stockLabel)
+                        .font(.caption.bold())
+                        .foregroundStyle(item.canBeOrdered ? .green : .red)
+                }
+            }
+
+            Spacer(minLength: 8)
+
+            Image(systemName: "chevron.right")
+                .font(.caption.bold())
+                .foregroundStyle(palette.textTertiary)
+                .padding(.top, 6)
+        }
+        .padding(16)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .stroke(Color.primary.opacity(0.08), lineWidth: 1)
+        )
+    }
+}
+
+// MARK: - Experience packages
+
+private struct HomeExperiencePackagesView: View {
+    let packages: [AdventureFeaturedPackage]
+    let catalog: AdventureCatalogSnapshot
+    let menuSections: [MenuSection]
+    let rewardProvider: (AdventureFeaturedPackage) -> RewardPresentation?
+    let onOpenExperiencesTab: () -> Void
+
+    var body: some View {
+        ScrollView(showsIndicators: false) {
+            LazyVStack(alignment: .leading, spacing: 16) {
+                PremiumSectionHeader(
+                    title: "Combos de experiencias",
+                    subtitle: "Compara precio, comida incluida, descuento y premios antes de elegir fecha.",
+                    systemImage: "figure.hiking"
+                )
+
+                if packages.isEmpty {
+                    HomeMissingContentView(
+                        title: "Sin combos activos",
+                        message: "Cuando existan paquetes activos en Firestore, aparecerán aquí.",
+                        systemImage: "mountain.2.circle"
+                    )
+                } else {
+                    ForEach(packages) { package in
+                        NavigationLink(value: HomeRoute.packageDetail(package.id)) {
+                            HomePackageCard(
+                                package: package,
+                                catalog: catalog,
+                                menuSections: menuSections,
+                                reward: rewardProvider(package)
+                            )
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+
+                Button(action: onOpenExperiencesTab) {
+                    Label("Abrir módulo completo de experiencias", systemImage: "mountain.2.fill")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(BrandPrimaryButtonStyle(theme: .adventure))
+                .padding(.top, 6)
+            }
+            .padding(20)
+        }
+        .navigationTitle("Combos")
+        .navigationBarTitleDisplayMode(.inline)
+        .appScreenStyle(.adventure)
+    }
+}
+
+private struct HomePackageCard: View {
+    let package: AdventureFeaturedPackage
+    let catalog: AdventureCatalogSnapshot
+    let menuSections: [MenuSection]
+    let reward: RewardPresentation?
+
+    @Environment(\.colorScheme) private var colorScheme
+
+    private var palette: ThemePalette {
+        AppTheme.palette(for: .adventure, scheme: colorScheme)
+    }
+
+    private var menuItemsById: [String: MenuItem] {
+        Dictionary(
+            uniqueKeysWithValues: menuSections
+                .flatMap(\.items)
+                .map { ($0.id, $0) }
+        )
+    }
+
+    private var activitySubtotal: Double {
+        AdventurePricingEngine.estimatedSubtotal(
+            items: package.items,
+            catalog: catalog
+        )
+    }
+
+    private var foodSubtotal: Double {
+        package.foodItems.reduce(0) { partial, food in
+            partial + Double(food.quantity) * (menuItemsById[food.menuItemId]?.finalPrice ?? 0)
+        }
+    }
+
+    private var subtotal: Double {
+        activitySubtotal + foodSubtotal
+    }
+
+    private var comboDiscount: Double {
+        min(max(0, package.packageDiscountAmount), subtotal)
+    }
+
+    private var finalTotal: Double {
+        max(0, subtotal - comboDiscount)
+    }
+
+    private var totalSavings: Double {
+        comboDiscount
+    }
+
+    private var activitiesText: String {
+        package.items
+            .prefix(3)
+            .map { item in
+                catalog.activity(for: item.activity)?.title ?? item.activity.legacyTitle
+            }
+            .joined(separator: " • ")
+    }
+
+    private var foodText: String? {
+        let value = package.foodItems
+            .prefix(3)
+            .map { food in
+                let name = menuItemsById[food.menuItemId]?.name ?? food.menuItemId
+                return "\(food.quantity)x \(name)"
+            }
+            .joined(separator: " • ")
+
+        return value.isEmpty ? nil : value
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            header
+            packageBreakdown
+
+            if let reward {
+                PremiumRewardCard(reward: reward)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+
+            Divider()
+
+            HStack(alignment: .firstTextBaseline) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Total estimado")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
+                    if totalSavings > 0 {
+                        Text("Ahorras \(totalSavings.priceText)")
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(.green)
+                    }
+                }
+
+                Spacer(minLength: 12)
+
+                Text(finalTotal.priceText)
+                    .font(.title3.weight(.bold))
+                    .foregroundStyle(.primary)
+                    .monospacedDigit()
+            }
+
+            HStack(spacing: 6) {
+                Text("Ver detalle del combo")
+                    .font(.caption.bold())
+                Image(systemName: "chevron.right")
+                    .font(.caption2.bold())
+            }
+            .foregroundStyle(palette.primary)
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 26, style: .continuous)
+                .fill(.ultraThinMaterial)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 26, style: .continuous)
+                .stroke(Color.primary.opacity(0.08), lineWidth: 1)
+        )
+        .shadow(color: palette.shadow.opacity(colorScheme == .dark ? 0.16 : 0.07), radius: 16, x: 0, y: 8)
+    }
+
+    private var header: some View {
+        HStack(alignment: .top, spacing: 12) {
+            PremiumIconBubble(
+                systemImage: "mountain.2.fill",
+                selected: true
+            )
+            .fixedSize()
+
+            VStack(alignment: .leading, spacing: 5) {
+                HStack(spacing: 8) {
+                    if let badge = package.badge, !badge.isEmpty {
+                        BrandBadge(theme: .adventure, title: badge, selected: true)
+                    }
+
+                    if comboDiscount > 0 {
+                        BrandBadge(theme: .adventure, title: "Combo", selected: true)
+                    }
+                }
+
+                Text(package.title)
+                    .font(.headline)
+                    .foregroundStyle(palette.textPrimary)
+                    .lineLimit(2)
+
+                Text(package.subtitle)
+                    .font(.subheadline)
+                    .foregroundStyle(palette.textSecondary)
+                    .lineLimit(2)
+            }
+
+            Spacer(minLength: 8)
+
+            Image(systemName: "arrow.up.right.circle.fill")
+                .font(.title3)
+                .foregroundStyle(palette.primary)
+        }
+    }
+
+    private var packageBreakdown: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            if !activitiesText.isEmpty {
+                HomeIconLine(systemImage: "figure.hiking", text: activitiesText)
+            }
+
+            if let foodText {
+                HomeIconLine(systemImage: "fork.knife", text: foodText)
+            }
+
+            HStack(spacing: 10) {
+                HomeMiniPricePill(title: "Aventura", value: activitySubtotal.priceText)
+                if foodSubtotal > 0 {
+                    HomeMiniPricePill(title: "Comida", value: foodSubtotal.priceText)
+                }
+                if comboDiscount > 0 {
+                    HomeMiniPricePill(title: "Descuento", value: "-\(comboDiscount.priceText)")
+                }
+            }
+        }
+    }
+}
+
+private struct HomePackageDetailView: View {
+    let package: AdventureFeaturedPackage
+    let catalog: AdventureCatalogSnapshot
+    let menuSections: [MenuSection]
+    let reward: RewardPresentation?
+    @ObservedObject var adventureComboBuilderViewModel: AdventureComboBuilderViewModel
+    @ObservedObject var menuViewModel: MenuViewModel
+
+    @Environment(\.colorScheme) private var colorScheme
+
+    private var palette: ThemePalette {
+        AppTheme.palette(for: .adventure, scheme: colorScheme)
+    }
+
+    private var menuItemsById: [String: MenuItem] {
+        Dictionary(
+            uniqueKeysWithValues: menuSections
+                .flatMap(\.items)
+                .map { ($0.id, $0) }
+        )
+    }
+
+    private var activitySubtotal: Double {
+        AdventurePricingEngine.estimatedSubtotal(items: package.items, catalog: catalog)
+    }
+
+    private var foodSubtotal: Double {
+        package.foodItems.reduce(0) { partial, food in
+            partial + Double(food.quantity) * (menuItemsById[food.menuItemId]?.finalPrice ?? 0)
+        }
+    }
+
+    private var comboDiscount: Double {
+        min(max(0, package.packageDiscountAmount), activitySubtotal + foodSubtotal)
+    }
+
+    private var finalTotal: Double {
+        max(0, activitySubtotal + foodSubtotal - comboDiscount)
+    }
+
+    var body: some View {
+        ScrollView(showsIndicators: false) {
+            VStack(alignment: .leading, spacing: 18) {
+                heroCard
+                activitiesSection
+
+                if !package.foodItems.isEmpty {
+                    foodSection
+                }
+
+                if let reward {
+                    rewardSection(reward)
+                }
+
+                totalsSection
+
+                NavigationLink(value: HomeRoute.reservePackage(package.id)) {
+                    Label("Reservar este combo", systemImage: "calendar.badge.plus")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(BrandPrimaryButtonStyle(theme: .adventure))
+
+                Text("Después podrás cambiar fecha, horario, cantidades, comida y notas antes de confirmar.")
+                    .font(.footnote)
+                    .foregroundStyle(palette.textSecondary)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: .infinity)
+            }
+            .padding(20)
+        }
+        .navigationTitle("Detalle del combo")
+        .navigationBarTitleDisplayMode(.inline)
+        .appScreenStyle(.adventure)
+    }
+
+    private var heroCard: some View {
         VStack(alignment: .leading, spacing: 16) {
+            HStack(alignment: .top, spacing: 14) {
+                PremiumIconBubble(systemImage: "mountain.2.fill", selected: true)
+
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(spacing: 8) {
+                        if let badge = package.badge, !badge.isEmpty {
+                            BrandBadge(theme: .adventure, title: badge, selected: true)
+                        }
+
+                        if comboDiscount > 0 {
+                            BrandBadge(theme: .adventure, title: "Ahorro \(comboDiscount.priceText)", selected: true)
+                        }
+                    }
+
+                    Text(package.title)
+                        .font(.title2.bold())
+                        .foregroundStyle(palette.textPrimary)
+
+                    Text(package.subtitle)
+                        .font(.subheadline)
+                        .foregroundStyle(palette.textSecondary)
+                }
+
+                Spacer()
+            }
+
+            HStack(spacing: 10) {
+                HomeMiniPricePill(title: "Aventura", value: activitySubtotal.priceText)
+                if foodSubtotal > 0 {
+                    HomeMiniPricePill(title: "Comida", value: foodSubtotal.priceText)
+                }
+                HomeMiniPricePill(title: "Total", value: finalTotal.priceText)
+            }
+        }
+        .appCardStyle(.adventure)
+    }
+
+    private var activitiesSection: some View {
+        VStack(alignment: .leading, spacing: 14) {
             BrandSectionHeader(
-                theme: .neutral,
-                title: "Acceso rápido",
-                subtitle: "Tus secciones principales, con identidad visual propia."
+                theme: .adventure,
+                title: "Actividades incluidas",
+                subtitle: "Este será el borrador inicial de la reserva."
+            )
+
+            ForEach(package.items) { item in
+                HStack(alignment: .top, spacing: 12) {
+                    BrandIconBubble(
+                        theme: .adventure,
+                        systemImage: catalog.activity(for: item.activity)?.systemImage ?? item.activity.legacySystemImage,
+                        size: 42
+                    )
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(catalog.activity(for: item.activity)?.title ?? item.activity.legacyTitle)
+                            .font(.headline)
+                            .foregroundStyle(palette.textPrimary)
+
+                        Text(item.summaryText)
+                            .font(.subheadline)
+                            .foregroundStyle(palette.textSecondary)
+
+                        Text(AdventurePricingEngine.subtotal(for: item, catalog: catalog).priceText)
+                            .font(.caption.bold())
+                            .foregroundStyle(palette.primary)
+                    }
+
+                    Spacer()
+                }
+                .padding(14)
+                .background(
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .fill(palette.elevatedCard)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .stroke(palette.stroke, lineWidth: 1)
+                )
+            }
+        }
+        .appCardStyle(.adventure, emphasized: false)
+    }
+
+    private var foodSection: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            BrandSectionHeader(
+                theme: .adventure,
+                title: "Comida incluida",
+                subtitle: "Se agregará automáticamente al creador de reservas."
+            )
+
+            ForEach(package.foodItems) { food in
+                let item = menuItemsById[food.menuItemId]
+
+                HStack(alignment: .top, spacing: 12) {
+                    BrandIconBubble(theme: .adventure, systemImage: "fork.knife", size: 42)
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(item?.name ?? food.menuItemId)
+                            .font(.headline)
+                            .foregroundStyle(palette.textPrimary)
+
+                        Text("\(food.quantity) unidad(es)")
+                            .font(.subheadline)
+                            .foregroundStyle(palette.textSecondary)
+
+                        if let item {
+                            Text((item.finalPrice * Double(food.quantity)).priceText)
+                                .font(.caption.bold())
+                                .foregroundStyle(palette.primary)
+                        }
+                    }
+
+                    Spacer()
+                }
+                .padding(14)
+                .background(
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .fill(palette.elevatedCard)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .stroke(palette.stroke, lineWidth: 1)
+                )
+            }
+        }
+        .appCardStyle(.adventure)
+    }
+
+    private func rewardSection(_ reward: RewardPresentation) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            BrandSectionHeader(
+                theme: .adventure,
+                title: "Premio disponible",
+                subtitle: "Si sigue vigente al confirmar, se aplicará automáticamente."
+            )
+
+            PremiumRewardCard(reward: reward)
+        }
+        .appCardStyle(.adventure, emphasized: false)
+    }
+
+    private var totalsSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            BrandSectionHeader(
+                theme: .adventure,
+                title: "Resumen estimado",
+                subtitle: "El total final puede cambiar si editas cantidades o agregas más comida."
+            )
+
+            HomeTotalRow(title: "Aventura", value: activitySubtotal)
+            HomeTotalRow(title: "Comida", value: foodSubtotal)
+
+            if comboDiscount > 0 {
+                HomeTotalRow(title: "Descuento del combo", value: -comboDiscount, accent: true)
+            }
+
+            Divider()
+
+            HomeTotalRow(title: "Total estimado", value: finalTotal, primary: true)
+        }
+        .appCardStyle(.adventure)
+    }
+}
+
+private struct HomePackageReservationDestination: View {
+    let package: AdventureFeaturedPackage
+    let menuSections: [MenuSection]
+    @ObservedObject var adventureComboBuilderViewModel: AdventureComboBuilderViewModel
+    @ObservedObject var menuViewModel: MenuViewModel
+
+    @State private var didPreparePackage = false
+
+    var body: some View {
+        AdventureComboBuilderView(
+            adventureComboBuilderViewModel: adventureComboBuilderViewModel,
+            menuViewModel: menuViewModel
+        )
+        .onAppear {
+            guard !didPreparePackage else { return }
+            didPreparePackage = true
+
+            adventureComboBuilderViewModel.replacePackage(
+                package,
+                menuSections: menuSections
+            )
+        }
+    }
+}
+
+// MARK: - Rewards
+
+private struct HomeRewardsCenterView: View {
+    let wallet: RewardWalletSnapshot
+    let rewards: [LoyaltyRewardTemplate]
+    let featuredItems: [MenuItem]
+    let activePackages: [AdventureFeaturedPackage]
+    let onOpenRestaurant: () -> Void
+    let onOpenExperiences: () -> Void
+    let onOpenProfile: () -> Void
+
+    @Environment(\.colorScheme) private var colorScheme
+
+    private var palette: ThemePalette {
+        AppTheme.palette(for: .neutral, scheme: colorScheme)
+    }
+
+    var body: some View {
+        ScrollView(showsIndicators: false) {
+            VStack(alignment: .leading, spacing: 18) {
+                heroCard
+
+                if rewards.isEmpty {
+                    HomeMissingContentView(
+                        title: "Aún no hay premios disponibles",
+                        message: "Sigue acumulando consumo en restaurante y experiencias. Cuando tengas premios activos, aquí verás dónde usarlos.",
+                        systemImage: "gift.circle"
+                    )
+
+                    Button(action: onOpenProfile) {
+                        Label("Ver mi perfil y progreso", systemImage: wallet.currentLevel.systemImage)
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(BrandPrimaryButtonStyle(theme: .neutral))
+                } else {
+                    VStack(alignment: .leading, spacing: 12) {
+                        PremiumSectionHeader(
+                            title: "Premios listos para usar",
+                            subtitle: "Estos premios son automáticos: abre restaurante o experiencias y el checkout/builder hará el cálculo.",
+                            systemImage: "gift.fill"
+                        )
+
+                        ForEach(rewards) { reward in
+                            HomeRewardTemplateCard(
+                                template: reward,
+                                onOpenRestaurant: onOpenRestaurant,
+                                onOpenExperiences: onOpenExperiences
+                            )
+                        }
+                    }
+                }
+
+                suggestionSection
+            }
+            .padding(20)
+        }
+        .navigationTitle("Murco Loyalty")
+        .navigationBarTitleDisplayMode(.inline)
+        .appScreenStyle(.neutral)
+    }
+
+    private var heroCard: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(alignment: .top, spacing: 14) {
+                PremiumIconBubble(systemImage: wallet.currentLevel.systemImage, selected: true)
+
+                VStack(alignment: .leading, spacing: 5) {
+                    Text("Nivel \(wallet.currentLevel.title)")
+                        .font(.title2.bold())
+                        .foregroundStyle(palette.textPrimary)
+
+                    Text(wallet.currentLevel.badgeSubtitle)
+                        .font(.subheadline)
+                        .foregroundStyle(palette.textSecondary)
+
+                    Text("Consumo acumulado: \(wallet.totalSpent.priceText)")
+                        .font(.caption.bold())
+                        .foregroundStyle(palette.primary)
+                }
+
+                Spacer()
+            }
+
+            HStack(spacing: 10) {
+                HomeMiniPricePill(title: "Puntos", value: "\(wallet.points)")
+                HomeMiniPricePill(title: "Premios", value: "\(rewards.count)")
+                HomeMiniPricePill(title: "Nivel", value: wallet.currentLevel.title)
+            }
+        }
+        .appCardStyle(.neutral)
+    }
+
+    private var suggestionSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            PremiumSectionHeader(
+                title: "Dónde empezar",
+                subtitle: "Accesos rápidos según lo que ya está destacado.",
+                systemImage: "sparkles"
             )
 
             HStack(spacing: 12) {
-                quickAccessCard(
-                    title: "Restaurante",
-                    systemImage: "fork.knife",
-                    theme: .restaurant,
-                    action: { selectedTab = .restaurant }
-                )
+                Button(action: onOpenRestaurant) {
+                    HomeSmallCTA(
+                        title: "Restaurante",
+                        subtitle: "\(featuredItems.count) recomendados",
+                        systemImage: "fork.knife"
+                    )
+                }
+                .buttonStyle(.plain)
 
-                quickAccessCard(
-                    title: "Experiencias",
-                    systemImage: "figure",
-                    theme: .adventure,
-                    action: { selectedTab = .experiences }
-                )
-            }
-
-            HStack(spacing: 12) {
-                quickAccessCard(
-                    title: "Reservas",
-                    systemImage: "calendar",
-                    theme: .adventure,
-                    action: { selectedTab = .bookings }
-                )
-
-                quickAccessCard(
-                    title: "Perfil",
-                    systemImage: "person.crop.circle",
-                    theme: .neutral,
-                    action: { selectedTab = .profile }
-                )
+                Button(action: onOpenExperiences) {
+                    HomeSmallCTA(
+                        title: "Experiencias",
+                        subtitle: "\(activePackages.count) combos",
+                        systemImage: "mountain.2.fill"
+                    )
+                }
+                .buttonStyle(.plain)
             }
         }
     }
-     */
+}
 
-    private func quickAccessCard(
-        title: String,
-        systemImage: String,
-        theme: AppSectionTheme,
-        action: @escaping () -> Void
-    ) -> some View {
-        Button(action: action) {
-            VStack(alignment: .leading, spacing: 14) {
-                BrandIconBubble(theme: theme, systemImage: systemImage, size: 50)
+private struct HomeRewardTemplateCard: View {
+    let template: LoyaltyRewardTemplate
+    let onOpenRestaurant: () -> Void
+    let onOpenExperiences: () -> Void
 
-                Spacer(minLength: 0)
+    @Environment(\.colorScheme) private var colorScheme
 
+    private var palette: ThemePalette {
+        AppTheme.palette(for: .neutral, scheme: colorScheme)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top, spacing: 12) {
+                PremiumIconBubble(systemImage: iconName, selected: true)
+
+                VStack(alignment: .leading, spacing: 5) {
+                    HStack(spacing: 8) {
+                        BrandBadge(theme: .neutral, title: template.scope.title, selected: true)
+                        BrandBadge(theme: .neutral, title: template.minimumLevel.title)
+                    }
+
+                    Text(template.title)
+                        .font(.headline)
+                        .foregroundStyle(palette.textPrimary)
+
+                    Text(template.subtitle)
+                        .font(.subheadline)
+                        .foregroundStyle(palette.textSecondary)
+
+                    Text(template.displaySummary)
+                        .font(.caption.bold())
+                        .foregroundStyle(palette.primary)
+                }
+
+                Spacer()
+            }
+
+            if let expirationText = template.expirationText {
+                HomeIconLine(systemImage: "clock", text: expirationText)
+            }
+
+            HStack(spacing: 10) {
+                if template.scope.matchesRestaurant() {
+                    Button(action: onOpenRestaurant) {
+                        Label("Usar en restaurante", systemImage: "fork.knife")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                }
+
+                if template.scope.matchesAdventure() {
+                    Button(action: onOpenExperiences) {
+                        Label("Usar en aventura", systemImage: "mountain.2.fill")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                }
+            }
+        }
+        .padding(16)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .stroke(Color.primary.opacity(0.08), lineWidth: 1)
+        )
+    }
+
+    private var iconName: String {
+        switch template.rule.type {
+        case .mostExpensiveMenuItemPercentage, .specificMenuItemPercentage:
+            return "percent"
+        case .activityPercentage:
+            return "mountain.2.fill"
+        case .freeMenuItem:
+            return "gift.fill"
+        case .buyXGetYFree:
+            return "plus.forwardslash.minus"
+        }
+    }
+}
+
+// MARK: - Shared Home UI
+
+private struct HomeIconLine: View {
+    let systemImage: String
+    let text: String
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: systemImage)
+                .font(.caption.bold())
+                .frame(width: 16)
+                .padding(.top, 2)
+
+            Text(text)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(3)
+
+            Spacer(minLength: 0)
+        }
+    }
+}
+
+private struct HomeMiniPricePill: View {
+    let title: String
+    let value: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(title)
+                .font(.caption2.bold())
+                .foregroundStyle(.secondary)
+
+            Text(value)
+                .font(.caption.bold())
+                .foregroundStyle(.primary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(10)
+        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+    }
+}
+
+private struct HomeTotalRow: View {
+    let title: String
+    let value: Double
+    var primary: Bool = false
+    var accent: Bool = false
+
+    var body: some View {
+        HStack {
+            Text(title)
+                .font(primary ? .headline : .subheadline)
+                .foregroundStyle(.secondary)
+
+            Spacer()
+
+            Text(value.priceText)
+                .font(primary ? .headline.bold() : .subheadline.weight(.semibold))
+                .foregroundStyle(accent ? .green : .primary)
+                .monospacedDigit()
+        }
+    }
+}
+
+private struct HomeSmallCTA: View {
+    let title: String
+    let subtitle: String
+    let systemImage: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            PremiumIconBubble(systemImage: systemImage, selected: true)
+
+            Text(title)
+                .font(.headline)
+
+            Text(subtitle)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            HStack(spacing: 6) {
+                Text("Abrir")
+                    .font(.caption.bold())
+                Image(systemName: "chevron.right")
+                    .font(.caption2.bold())
+            }
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+    }
+}
+
+private struct HomeMissingContentView: View {
+    let title: String
+    let message: String
+    let systemImage: String
+
+    var body: some View {
+        VStack(spacing: 14) {
+            Image(systemName: systemImage)
+                .font(.system(size: 38, weight: .semibold))
+                .foregroundStyle(.secondary)
+
+            VStack(spacing: 6) {
                 Text(title)
                     .font(.headline)
-                    .multilineTextAlignment(.leading)
+                    .multilineTextAlignment(.center)
 
-                HStack(spacing: 6) {
-                    Text("Abrir")
-                        .font(.caption.weight(.semibold))
-
-                    Image(systemName: "arrow.right")
-                        .font(.caption.weight(.bold))
-                }
-                .foregroundStyle(.secondary)
+                Text(message)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .frame(height: 138, alignment: .topLeading)
-            .appCardStyle(theme)
         }
-        .buttonStyle(.plain)
-    }
-
-    private var featuredSection: some View {
-        FeaturedPostsSectionView()
+        .frame(maxWidth: .infinity)
+        .padding(22)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
     }
 }
 
@@ -21649,11 +23631,13 @@ struct MainTabView: View {
 
     var body: some View {
         TabView(selection: $selectedTab) {
-            HomeView(selectedTab: $selectedTab)
-                .tabItem {
-                    Label(MainTab.home.title, systemImage: MainTab.home.systemImage)
-                }
-                .tag(MainTab.home)
+            HomeView(
+                selectedTab: $selectedTab,
+                menuViewModel: menuViewModel,
+                adventureComboBuilderViewModel: adventureComboBuilderViewModel
+            )
+            .tabItem { Label(MainTab.home.title, systemImage: MainTab.home.systemImage) }
+            .tag(MainTab.home)
 
             RestaurantRootView(
                 ordersViewModel: ordersViewModel,
@@ -21661,65 +23645,58 @@ struct MainTabView: View {
                 adventureComboBuilderViewModel: adventureComboBuilderViewModel,
                 menuViewModel: menuViewModel
             )
-            .tabItem {
-                Label(MainTab.restaurant.title, systemImage: MainTab.restaurant.systemImage)
-            }
+            .tabItem { Label(MainTab.restaurant.title, systemImage: MainTab.restaurant.systemImage) }
             .tag(MainTab.restaurant)
 
             ExperiencesView(
                 adventureComboBuilderViewModel: adventureComboBuilderViewModel,
                 menuViewModel: menuViewModel
             )
-            .tabItem {
-                Label(MainTab.experiences.title, systemImage: MainTab.experiences.systemImage)
-            }
+            .tabItem { Label(MainTab.experiences.title, systemImage: MainTab.experiences.systemImage) }
             .tag(MainTab.experiences)
 
             BookingsView(
                 ordersViewModel: ordersViewModel,
                 adventureModuleFactory: adventureModuleFactory
             )
-            .tabItem {
-                Label(MainTab.bookings.title, systemImage: MainTab.bookings.systemImage)
-            }
+            .tabItem { Label(MainTab.bookings.title, systemImage: MainTab.bookings.systemImage) }
             .tag(MainTab.bookings)
 
             ProfileContainerView()
-                .tabItem {
-                    Label(MainTab.profile.title, systemImage: MainTab.profile.systemImage)
-                }
+                .tabItem { Label(MainTab.profile.title, systemImage: MainTab.profile.systemImage) }
                 .tag(MainTab.profile)
         }
         .tint(selectedPalette.primary)
     }
 }
+
 enum MainTab: Hashable {
     case home
     case restaurant
     case experiences
     case bookings
     case profile
-    
+
     var title: String {
         switch self {
         case .home: return "Inicio"
         case .restaurant: return "Restaurante"
-        case .experiences: return "Aventura"
+        case .experiences: return "Experiencias"
         case .bookings: return "Reservas"
         case .profile: return "Perfil"
         }
     }
-    
+
     var systemImage: String {
         switch self {
         case .home: return "house"
         case .restaurant: return "fork.knife"
-        case .experiences: return "figure"
+        case .experiences: return "mountain.2.fill"
         case .bookings: return "calendar"
         case .profile: return "person.crop.circle"
         }
     }
-    
+
     var theme: AppSectionTheme {
         switch self {
         case .home: return .neutral
@@ -21870,6 +23847,10 @@ private struct SessionErrorView: View {
                         .font(.body)
                         .multilineTextAlignment(.center)
                         .foregroundStyle(palette.textSecondary)
+                    
+                    Text("Please contact administrator")
+                        .font(.caption)
+                        .foregroundStyle(palette.warning)
                 }
 
                 VStack(spacing: 12) {
@@ -21885,7 +23866,7 @@ private struct SessionErrorView: View {
                 }
             }
             .frame(maxWidth: 420)
-            .appCardStyle(.neutral, emphasized: true)
+            .appCardStyle(.neutral)
             .padding(24)
         }
     }
@@ -21939,8 +23920,6 @@ enum AppSectionTheme: String, Hashable, CaseIterable {
     case adventure
     case restaurant
     
-    /// Optional watermark asset names.
-    /// Add your uploaded illustrations to Assets using these names if you want them as subtle background marks.
     var watermarkAssetName: String? {
         switch self {
         case .neutral:
@@ -23017,6 +24996,422 @@ extension OrderStatus {
         case .preparing: return .purple
         case .completed: return .gray
         case .canceled: return .red
+        }
+    }
+}
+
+```
+
+---
+
+# Altos del Murco/root/util/ui/PremiumAltosComponents.swift
+
+```swift
+import SwiftUI
+
+struct PremiumAltosCopy {
+    static let brand = "Altos del Murco"
+    static let promise = "Restaurante y experiencias de montaña"
+    static let restaurantCTA = "Pedir comida"
+    static let experiencesCTA = "Reservar experiencia"
+}
+
+struct PremiumCard<Content: View>: View {
+    let content: Content
+
+    init(@ViewBuilder content: () -> Content) {
+        self.content = content()
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            content
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 26, style: .continuous)
+                .fill(.ultraThinMaterial)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 26, style: .continuous)
+                .stroke(Color.primary.opacity(0.08), lineWidth: 1)
+        )
+        .shadow(color: .black.opacity(0.06), radius: 16, x: 0, y: 8)
+    }
+}
+
+struct PremiumSectionHeader: View {
+    let title: String
+    var subtitle: String? = nil
+    var systemImage: String? = nil
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            if let systemImage {
+                PremiumIconBubble(systemImage: systemImage)
+            }
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title)
+                    .font(.title3.bold())
+                if let subtitle, !subtitle.isEmpty {
+                    Text(subtitle)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            Spacer(minLength: 0)
+        }
+    }
+}
+
+struct PremiumIconBubble: View {
+    let systemImage: String
+    var selected: Bool = false
+    var size: CGFloat = 48
+
+    var body: some View {
+        Image(systemName: systemImage)
+            .font(.system(size: size * 0.42, weight: .bold, design: .rounded))
+            .foregroundStyle(selected ? .white : .accentColor)
+            .frame(width: size, height: size)
+            .background(
+                Circle().fill(selected ? Color.accentColor : Color.accentColor.opacity(0.14))
+            )
+    }
+}
+
+struct PremiumHero<Primary: View, Secondary: View>: View {
+    let title: String
+    let subtitle: String
+    let badge: String
+    let primary: Primary
+    let secondary: Secondary
+
+    init(
+        title: String,
+        subtitle: String,
+        badge: String,
+        @ViewBuilder primary: () -> Primary,
+        @ViewBuilder secondary: () -> Secondary
+    ) {
+        self.title = title
+        self.subtitle = subtitle
+        self.badge = badge
+        self.primary = primary()
+        self.secondary = secondary()
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            HStack {
+                Text(badge)
+                    .font(.caption.bold())
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 7)
+                    .background(.white.opacity(0.18), in: Capsule())
+                Spacer()
+                Text("ADM")
+                    .font(.caption.bold())
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(.white.opacity(0.18), in: Capsule())
+            }
+
+            Text(title)
+                .font(.system(size: 34, weight: .black))
+                .foregroundStyle(.white)
+                .lineLimit(3)
+                .minimumScaleFactor(0.82)
+
+            Text(subtitle)
+                .font(.body)
+                .foregroundStyle(.white.opacity(0.92))
+
+            HStack(spacing: 12) {
+                primary
+                secondary
+            }
+        }
+        .padding(22)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            LinearGradient(
+                colors: [Color.green.opacity(0.95), Color.orange.opacity(0.88), Color.black.opacity(0.86)],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            ),
+            in: RoundedRectangle(cornerRadius: 34, style: .continuous)
+        )
+        .shadow(color: .black.opacity(0.20), radius: 22, x: 0, y: 14)
+    }
+}
+
+struct PremiumMetricTile: View {
+    let title: String
+    let value: String
+    let systemImage: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            PremiumIconBubble(systemImage: systemImage, size: 38)
+            Text(value)
+                .font(.title3.bold())
+            Text(title)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.secondary.opacity(0.10), in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+    }
+}
+
+struct PremiumPriceRow: View {
+    let title: String
+    let value: String
+    var negative = false
+    var bold = false
+
+    var body: some View {
+        HStack {
+            Text(title)
+                .foregroundStyle(.secondary)
+            Spacer()
+            Text(value)
+                .fontWeight(bold ? .black : .semibold)
+                .foregroundStyle(negative ? .green : .primary)
+        }
+        .font(bold ? .headline : .subheadline)
+    }
+}
+
+struct PremiumRewardCard: View {
+    let reward: RewardPresentation
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            PremiumIconBubble(systemImage: "checkmark.seal.fill", selected: true, size: 38)
+            VStack(alignment: .leading, spacing: 4) {
+                HStack {
+                    Text(reward.badge)
+                        .font(.caption.bold())
+                        .foregroundStyle(.green)
+                    if let amountText = reward.amountText {
+                        Text("-\(amountText)")
+                            .font(.caption.bold())
+                            .foregroundStyle(.green)
+                    }
+                }
+                Text(reward.title)
+                    .font(.subheadline.bold())
+                Text(reward.message)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+            }
+            Spacer()
+        }
+        .padding(14)
+        .background(Color.green.opacity(0.12), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+    }
+}
+
+```
+
+---
+
+# Altos del Murco/root/util/ui/PremiumProfileDashboard.swift
+
+```swift
+import SwiftUI
+
+struct PremiumProfileDashboard: View {
+    let profile: ClientProfile
+    let stats: ProfileStats
+    var isLoading: Bool = false
+    let onEditProfile: () -> Void
+    let onOpenAccount: () -> Void
+    let onOpenPreferences: () -> Void
+
+    var body: some View {
+        ScrollView(showsIndicators: false) {
+            LazyVStack(alignment: .leading, spacing: 20) {
+                PremiumSectionHeader(
+                    title: "Perfil",
+                    subtitle: "Tu identidad, nivel, beneficios y resumen de visitas.",
+                    systemImage: "person.crop.circle"
+                )
+
+                identityCard
+                loyaltyCard
+                statsGrid
+                rewardsSection
+                accountSection
+            }
+            .padding(.horizontal, 20)
+            .padding(.vertical, 16)
+        }
+        .appScreenStyle(.neutral)
+    }
+
+    private var identityCard: some View {
+        PremiumCard {
+            HStack(alignment: .center, spacing: 14) {
+                AsyncImage(url: profile.profileImageURL.flatMap(URL.init(string:))) { image in
+                    image
+                        .resizable()
+                        .scaledToFill()
+                } placeholder: {
+                    Image(systemName: "person.fill")
+                        .font(.system(size: 34, weight: .bold))
+                        .foregroundStyle(.primary)
+                }
+                .frame(width: 78, height: 78)
+                .clipShape(Circle())
+                .background(Circle().fill(Color.accentColor.opacity(0.14)))
+
+                VStack(alignment: .leading, spacing: 5) {
+                    Text(profile.fullName.isEmpty ? "Cliente Altos" : profile.fullName)
+                        .font(.title3.bold())
+                        .lineLimit(2)
+                    Text("Cédula \(profile.nationalId)")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                    Text("Nivel \(stats.level.title)")
+                        .font(.subheadline.bold())
+                        .foregroundStyle(.green)
+                }
+
+                Spacer()
+
+                Button(action: onEditProfile) {
+                    Image(systemName: "pencil.circle.fill")
+                        .font(.title2)
+                }
+            }
+
+            Divider()
+
+            VStack(alignment: .leading, spacing: 6) {
+                Label(profile.phoneNumber.isEmpty ? "Sin teléfono registrado" : profile.phoneNumber, systemImage: "phone.fill")
+                Label(profile.email.isEmpty ? "Sin email registrado" : profile.email, systemImage: "envelope.fill")
+            }
+            .font(.subheadline)
+            .foregroundStyle(.secondary)
+        }
+    }
+
+    private var loyaltyCard: some View {
+        PremiumCard {
+            HStack(spacing: 12) {
+                PremiumIconBubble(systemImage: "crown.fill", selected: true)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Murco Loyalty")
+                        .font(.headline)
+                    Text("Nivel \(stats.level.title) • \(stats.points) puntos")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Text(stats.totalSpent.priceText)
+                    .font(.headline.bold())
+                    .foregroundStyle(.green)
+            }
+
+            ProgressView(value: LoyaltyLevel.progress(for: stats.totalSpent))
+                .tint(.green)
+
+            if let next = stats.level.nextLevel {
+                Text("Siguiente meta: \(next.title) (\(next.spendRangeText))")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            } else {
+                Text("Ya estás en el nivel máximo.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+
+//            VStack(alignment: .leading, spacing: 8) {
+//                ForEach(stats.level.benefits, id: \.self) { benefit in
+//                    Label(benefit, systemImage: "star.fill")
+//                        .font(.caption)
+//                        .foregroundStyle(.secondary)
+//                }
+//            }
+        }
+    }
+
+    private var statsGrid: some View {
+        VStack(spacing: 12) {
+            HStack(spacing: 12) {
+                PremiumMetricTile(title: "Pedidos", value: "\(stats.completedOrders)", systemImage: "receipt.fill")
+                PremiumMetricTile(title: "Reservas", value: "\(stats.completedBookings)", systemImage: "calendar")
+            }
+            HStack(spacing: 12) {
+                PremiumMetricTile(title: "Restaurante", value: stats.restaurantSpent.priceText, systemImage: "fork.knife")
+                PremiumMetricTile(title: "Experiencias", value: stats.adventureSpent.priceText, systemImage: "mountain.2.fill")
+            }
+        }
+    }
+
+    private var rewardsSection: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            PremiumSectionHeader(
+                title: "Beneficios activos",
+                subtitle: "Todo descuento debe mostrarse antes del checkout.",
+                systemImage: "gift.fill"
+            )
+
+            let rewards = stats.wallet.availableTemplates.filter { !$0.isExpired }.prefix(5)
+            if rewards.isEmpty {
+                PremiumCard {
+                    Text("No tienes premios activos en este momento.")
+                        .font(.headline)
+                    Text("Sigue acumulando consumo para desbloquear nuevos beneficios.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+            } else {
+                ForEach(Array(rewards), id: \.id) { template in
+                    PremiumCard {
+                        Text(template.title)
+                            .font(.headline)
+                        Text(template.subtitle.isEmpty ? template.displaySummary : template.subtitle)
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                        Text("Disponible para \(template.scope.title)")
+                            .font(.caption.bold())
+                            .foregroundStyle(.green)
+                    }
+                }
+            }
+        }
+    }
+
+    private var accountSection: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            PremiumSectionHeader(
+                title: "Cuenta",
+                subtitle: "Acciones secundarias separadas del tablero principal.",
+                systemImage: "gearshape.fill"
+            )
+
+            HStack(spacing: 12) {
+                Button(action: onOpenPreferences) {
+                    Label("Preferencias", systemImage: "slider.horizontal.3")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+
+                Button(action: onOpenAccount) {
+                    Label("Cuenta", systemImage: "person.crop.circle.badge.gearshape")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+            }
         }
     }
 }

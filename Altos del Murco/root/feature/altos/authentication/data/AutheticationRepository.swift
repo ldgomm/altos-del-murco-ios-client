@@ -119,4 +119,30 @@ final class AuthenticationRepository: AuthenticationRepositoriable {
     func signOut() throws {
         try Auth.auth().signOut()
     }
+    
+    func verifyCurrentUserIsStillValid() async throws {
+        guard let currentUser = Auth.auth().currentUser else {
+            return
+        }
+
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            currentUser.reload { error in
+                if let error {
+                    continuation.resume(throwing: error)
+                } else {
+                    continuation.resume(returning: ())
+                }
+            }
+        }
+
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            currentUser.getIDTokenForcingRefresh(true) { _, error in
+                if let error {
+                    continuation.resume(throwing: error)
+                } else {
+                    continuation.resume(returning: ())
+                }
+            }
+        }
+    }
 }
