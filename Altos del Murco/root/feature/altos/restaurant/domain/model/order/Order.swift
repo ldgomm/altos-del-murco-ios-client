@@ -7,6 +7,18 @@
 
 import Foundation
 
+enum OrderServiceMode: String, Codable, Hashable, CaseIterable {
+    case now
+    case scheduled
+
+    var title: String {
+        switch self {
+        case .now: return "Pedido inmediato"
+        case .scheduled: return "Reserva de comida"
+        }
+    }
+}
+
 struct Order: Identifiable, Hashable, Codable {
     let id: String
     let nationalId: String?
@@ -14,6 +26,9 @@ struct Order: Identifiable, Hashable, Codable {
     let tableNumber: String
     let createdAt: Date
     let updatedAt: Date
+    let scheduledAt: Date
+    let scheduledDayKey: String
+    let serviceMode: OrderServiceMode
     let items: [OrderItem]
     let subtotal: Double
     let loyaltyDiscountAmount: Double
@@ -30,6 +45,9 @@ struct Order: Identifiable, Hashable, Codable {
         tableNumber: String,
         createdAt: Date,
         updatedAt: Date,
+        scheduledAt: Date? = nil,
+        scheduledDayKey: String? = nil,
+        serviceMode: OrderServiceMode? = nil,
         items: [OrderItem],
         subtotal: Double,
         loyaltyDiscountAmount: Double = 0,
@@ -39,12 +57,21 @@ struct Order: Identifiable, Hashable, Codable {
         revision: Int,
         lastConfirmedRevision: Int?
     ) {
+        let resolvedScheduledAt = scheduledAt ?? createdAt
+        let resolvedMode = serviceMode ?? OrderScheduleResolver.mode(
+            createdAt: createdAt,
+            scheduledAt: resolvedScheduledAt
+        )
+
         self.id = id
         self.nationalId = nationalId
         self.clientName = clientName
         self.tableNumber = tableNumber
         self.createdAt = createdAt
         self.updatedAt = updatedAt
+        self.scheduledAt = resolvedScheduledAt
+        self.scheduledDayKey = scheduledDayKey ?? OrderScheduleResolver.dayKey(from: resolvedScheduledAt)
+        self.serviceMode = resolvedMode
         self.items = items
         self.subtotal = subtotal
         self.loyaltyDiscountAmount = max(0, loyaltyDiscountAmount)
@@ -66,6 +93,9 @@ struct Order: Identifiable, Hashable, Codable {
             tableNumber: tableNumber,
             createdAt: createdAt,
             updatedAt: updatedAt,
+            scheduledAt: scheduledAt,
+            scheduledDayKey: scheduledDayKey,
+            serviceMode: serviceMode,
             items: items,
             subtotal: subtotal,
             loyaltyDiscountAmount: max(0, discount),
@@ -102,6 +132,27 @@ struct Order: Identifiable, Hashable, Codable {
         return revision > lastConfirmedRevision
     }
 
+    var isScheduledForLater: Bool {
+        serviceMode == .scheduled || scheduledAt.timeIntervalSince(createdAt) > OrderScheduleResolver.laterThreshold
+    }
+
+    var isScheduledForToday: Bool {
+        Calendar.current.isDateInToday(scheduledAt)
+    }
+
+    /// Same-day scheduled food still consumes today's menu stock. Future-day reservations do not.
+    var shouldConsumeCurrentMenuStock: Bool {
+        !isScheduledForLater || Calendar.current.isDate(scheduledAt, inSameDayAs: Date())
+    }
+
+    var scheduleTitle: String {
+        isScheduledForLater ? "Reserva para" : "Preparar ahora"
+    }
+
+    var scheduledDateText: String {
+        OrderScheduleResolver.displayText(for: scheduledAt)
+    }
+
     func recalculatedStatus() -> OrderStatus {
         if status == .canceled { return .canceled }
         if requiresReconfirmation { return .pending }
@@ -109,5 +160,32 @@ struct Order: Identifiable, Hashable, Codable {
         if hasStartedPreparing { return .preparing }
         if status == .confirmed { return .confirmed }
         return .pending
+    }
+}
+
+enum OrderScheduleResolver {
+    static let laterThreshold: TimeInterval = 5 * 60
+
+    static func mode(createdAt: Date, scheduledAt: Date) -> OrderServiceMode {
+        scheduledAt.timeIntervalSince(createdAt) > laterThreshold ? .scheduled : .now
+    }
+
+    static func sanitizedScheduledAt(_ value: Date, now: Date = Date()) -> Date {
+        value < now.addingTimeInterval(-120) ? now : value
+    }
+
+    static func dayKey(from date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter.string(from: date)
+    }
+
+    static func displayText(for date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "es_EC")
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .short
+        return formatter.string(from: date)
     }
 }

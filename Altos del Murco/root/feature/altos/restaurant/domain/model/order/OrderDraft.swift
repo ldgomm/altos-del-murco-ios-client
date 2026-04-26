@@ -12,42 +12,49 @@ struct OrderDraft: Identifiable, Hashable {
     var nationalId: String?
     var clientName: String
     var tableNumber: String
+    var scheduledAt: Date
     var createdAt: Date
     var updatedAt: Date
     var items: [CartItem]
     var revision: Int?
     var lastConfirmedRevision: Int?
-    
+
     init(
         id: UUID = UUID(),
         clientId: String? = nil,
         clientName: String = "",
         tableNumber: String = "",
+        scheduledAt: Date = Date(),
         createdAt: Date = Date(),
         updatedAt: Date = Date(),
-        items: [CartItem] = []
+        items: [CartItem] = [],
+        revision: Int? = nil,
+        lastConfirmedRevision: Int? = nil
     ) {
         self.id = id
         self.nationalId = clientId
         self.clientName = clientName
         self.tableNumber = tableNumber
+        self.scheduledAt = scheduledAt
         self.createdAt = createdAt
         self.updatedAt = updatedAt
         self.items = items
+        self.revision = revision
+        self.lastConfirmedRevision = lastConfirmedRevision
     }
-    
+
     var totalItems: Int {
         items.reduce(0) { $0 + $1.quantity }
     }
-    
+
     var subtotal: Double {
         items.reduce(0) { $0 + $1.totalPrice }
     }
-    
+
     var totalAmount: Double {
         subtotal
     }
-    
+
     var isEmpty: Bool {
         items.isEmpty
     }

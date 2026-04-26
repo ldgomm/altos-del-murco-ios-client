@@ -21009,18 +21009,20 @@ struct MenuListView: View {
 
             LazyVStack(spacing: 12) {
                 ForEach(section.items) { item in
-                    NavigationLink(value: Route.menuDetail(item, section.category.title)) {
-                        VStack(alignment: .leading, spacing: 10) {
-                            MenuItemRowView(item: item)
-
-                            if let appliedReward = checkoutViewModel.appliedRewardPresentation(forMenuItemId: item.id) {
-                                appliedRewardCard(appliedReward)
-                            } else if let availableReward = menuViewModel.rewardPresentation(for: item) {
-                                availableRewardCard(availableReward)
+                    if item.isAvailable {
+                        NavigationLink(value: Route.menuDetail(item, section.category.title)) {
+                            VStack(alignment: .leading, spacing: 10) {
+                                MenuItemRowView(item: item)
+                                
+                                if let appliedReward = checkoutViewModel.appliedRewardPresentation(forMenuItemId: item.id) {
+                                    appliedRewardCard(appliedReward)
+                                } else if let availableReward = menuViewModel.rewardPresentation(for: item) {
+                                    availableRewardCard(availableReward)
+                                }
                             }
                         }
+                        .buttonStyle(.plain)
                     }
-                    .buttonStyle(.plain)
                 }
             }
         }
@@ -22470,7 +22472,7 @@ private struct InfoRow: View {
     var emphasized: Bool = false
     
     @Environment(\.colorScheme) private var colorScheme
-    
+     
     private var palette: ThemePalette {
         AppTheme.palette(for: theme, scheme: colorScheme)
     }
@@ -23777,35 +23779,30 @@ private struct SessionLoadingView: View {
         
         ZStack {
             BrandScreenBackground(theme: .restaurant)
+            LinearGradient(
+                colors: [
+                    Color(.systemBackground),
+                    Color.accentColor.opacity(0.12)
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+            .ignoresSafeArea()
 
-            VStack(spacing: 24) {
-                VStack(spacing: 18) {
-                    BrandIconBubble(
-                        theme: .restaurant,
-                        systemImage: "flame.fill",
-                        size: 72
-                    )
-                    
-                    VStack(spacing: 8) {
-                        Text("Altos del Murco")
-                            .font(.title.bold())
-                            .foregroundStyle(palette.textPrimary)
-                        
-                        Text("Loading your experience...")
-                            .font(.subheadline)
-                            .foregroundStyle(palette.textSecondary)
-                    }
-                }
-                
-                VStack(spacing: 14) {
-                    ProgressView()
-                        .progressViewStyle(.circular)
-                        .tint(palette.primary)
-                    
-                    Text("Please wait a moment")
-                        .font(.footnote)
-                        .foregroundStyle(palette.textTertiary)
-                }
+            VStack(spacing: 18) {
+                Image(systemName: "lock.shield.fill")
+                    .font(.system(size: 46, weight: .semibold))
+                    .foregroundStyle(Color.accentColor)
+
+                ProgressView()
+
+                Text("Altos del Murco")
+                    .font(.headline)
+                    .foregroundStyle(palette.textPrimary)
+
+                Text("Validando sesión segura...")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(palette.textSecondary)
             }
             .frame(maxWidth: 360)
             .appCardStyle(.restaurant, emphasized: false)

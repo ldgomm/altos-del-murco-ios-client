@@ -61,6 +61,7 @@ extension CartDraftEntity {
             nationalId: draft.nationalId,
             clientName: draft.clientName,
             tableNumber: draft.tableNumber,
+            scheduledAt: draft.scheduledAt,
             createdAt: draft.createdAt,
             updatedAt: draft.updatedAt,
             items: []
@@ -75,6 +76,7 @@ extension CartDraftEntity {
             clientId: nationalId,
             clientName: clientName,
             tableNumber: tableNumber,
+            scheduledAt: scheduledAt,
             createdAt: createdAt,
             updatedAt: updatedAt,
             items: items.map { $0.toDomain() }

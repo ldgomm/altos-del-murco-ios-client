@@ -34,6 +34,7 @@ struct CheckoutView: View {
         ScrollView {
             VStack(spacing: 20) {
                 clientDetailsSection
+                scheduleSection
                 summarySection
                 rewardsSection
                 confirmSection
@@ -49,22 +50,17 @@ struct CheckoutView: View {
             isPresented: Binding(
                 get: { viewModel.state.errorMessage != nil },
                 set: { isPresented in
-                    if !isPresented {
-                        viewModel.clearError()
-                    }
+                    if !isPresented { viewModel.clearError() }
                 }
             ),
             actions: {
-                Button("Aceptar") {
-                    viewModel.clearError()
-                }
+                Button("Aceptar") { viewModel.clearError() }
             },
-            message: {
-                Text(viewModel.state.errorMessage ?? "")
-            }
+            message: { Text(viewModel.state.errorMessage ?? "") }
         )
         .onAppear {
             syncProfileFieldsFromSession()
+            cartManager.refreshDefaultScheduleIfNeeded()
             let nationalId = authenticatedProfile?.nationalId ?? cartManager.clientId ?? ""
             viewModel.onAppear(nationalId: nationalId)
         }
@@ -110,15 +106,70 @@ struct CheckoutView: View {
                 .disabled(true)
 
                 themedField(
-                    title: "Número de mesa",
+                    title: cartManager.isScheduledForLater ? "Mesa o referencia" : "Número de mesa",
                     text: Binding(
                         get: { cartManager.tableNumber },
                         set: { cartManager.updateTableNumber($0) }
                     )
                 )
-                .keyboardType(.numberPad)
+                .keyboardType(.default)
 
-                Text("¿Necesitas cambiar tu nombre o cédula? Hazlo desde Editar perfil.")
+                Text(cartManager.isScheduledForLater
+                     ? "Para una reserva posterior puedes dejar la mesa vacía; ADM la verá como Por asignar."
+                     : "Para pedidos inmediatos, indica la mesa donde debe llegar la comida.")
+                    .font(.caption)
+                    .foregroundStyle(palette.textSecondary)
+            }
+        }
+        .appCardStyle(.restaurant)
+    }
+
+    private var scheduleSection: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            BrandSectionHeader(
+                theme: .restaurant,
+                title: "Cuándo preparar",
+                subtitle: "Reserva solo comida para más tarde sin entrar al módulo de aventura."
+            )
+
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(spacing: 10) {
+                    Image(systemName: cartManager.isScheduledForLater ? "calendar.badge.clock" : "bolt.fill")
+                        .font(.title3)
+                        .foregroundStyle(palette.primary)
+                        .frame(width: 34)
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(cartManager.isScheduledForLater ? "Reserva de comida" : "Pedido inmediato")
+                            .font(.headline)
+                            .foregroundStyle(palette.textPrimary)
+
+                        Text(OrderScheduleResolver.displayText(for: cartManager.scheduledAt))
+                            .font(.subheadline)
+                            .foregroundStyle(palette.textSecondary)
+                    }
+
+                    Spacer()
+
+                    Button("Ahora") {
+                        viewModel.onEvent(.scheduleNowTapped)
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(!cartManager.isScheduledForLater)
+                }
+
+                DatePicker(
+                    "Fecha y hora",
+                    selection: Binding(
+                        get: { cartManager.scheduledAt },
+                        set: { viewModel.onEvent(.scheduledAtChanged($0)) }
+                    ),
+                    in: Date()...,
+                    displayedComponents: [.date, .hourAndMinute]
+                )
+                .datePickerStyle(.compact)
+
+                Text("Por defecto es ahora. Si eliges otro día, se guardará como reserva de comida en restaurant_orders con scheduledAt.")
                     .font(.caption)
                     .foregroundStyle(palette.textSecondary)
             }
@@ -179,26 +230,18 @@ struct CheckoutView: View {
             }
 
             Divider().overlay(palette.stroke)
-
             detailLine(title: "Subtotal", value: cartManager.subtotal.priceText)
 
             if viewModel.state.isLoadingRewards {
                 detailLine(title: "Murco Loyalty", value: "Calculando...", secondary: true)
             } else if viewModel.state.rewardPreview.discountAmount > 0 {
-                detailLine(
-                    title: "Murco Loyalty",
-                    value: "-\(viewModel.state.rewardPreview.discountAmount.priceText)",
-                    accent: true
-                )
+                detailLine(title: "Murco Loyalty", value: "-\(viewModel.state.rewardPreview.discountAmount.priceText)", accent: true)
             }
 
-            Divider().overlay(palette.stroke)
+            detailLine(title: cartManager.isScheduledForLater ? "Reserva" : "Hora", value: OrderScheduleResolver.displayText(for: cartManager.scheduledAt), secondary: true)
 
-            detailLine(
-                title: "Total",
-                value: effectiveTotal.priceText,
-                emphasized: true
-            )
+            Divider().overlay(palette.stroke)
+            detailLine(title: "Total", value: effectiveTotal.priceText, emphasized: true)
         }
         .appCardStyle(.restaurant)
     }
@@ -253,7 +296,7 @@ struct CheckoutView: View {
         VStack(spacing: 14) {
             HStack {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Total a pagar")
+                    Text(cartManager.isScheduledForLater ? "Total de la reserva" : "Total a pagar")
                         .font(.subheadline)
                         .foregroundStyle(palette.textSecondary)
 
@@ -269,15 +312,14 @@ struct CheckoutView: View {
                 viewModel.onEvent(.confirmTapped)
             } label: {
                 if viewModel.state.isSubmitting {
-                    ProgressView()
-                        .frame(maxWidth: .infinity)
+                    ProgressView().frame(maxWidth: .infinity)
                 } else {
-                    Text("Confirmar pedido")
+                    Text(cartManager.isScheduledForLater ? "Confirmar reserva de comida" : "Confirmar pedido")
                         .frame(maxWidth: .infinity)
                 }
             }
             .buttonStyle(BrandPrimaryButtonStyle(theme: .restaurant))
-            .disabled(cartManager.isEmpty || viewModel.state.isSubmitting)
+            .disabled(!cartManager.canSubmit || viewModel.state.isSubmitting)
         }
         .appCardStyle(.restaurant, emphasized: false)
     }
@@ -315,21 +357,13 @@ struct CheckoutView: View {
         HStack {
             Text(title)
                 .font(emphasized ? .headline : .subheadline)
-                .foregroundStyle(
-                    accent
-                    ? palette.success
-                    : (secondary ? palette.textSecondary : palette.textPrimary)
-                )
+                .foregroundStyle(accent ? palette.success : (secondary ? palette.textSecondary : palette.textPrimary))
 
             Spacer()
 
             Text(value)
                 .font(emphasized ? .headline.bold() : .subheadline.weight(.semibold))
-                .foregroundStyle(
-                    accent
-                    ? palette.success
-                    : (secondary ? palette.textSecondary : palette.textPrimary)
-                )
+                .foregroundStyle(accent ? palette.success : (secondary ? palette.textSecondary : palette.textPrimary))
         }
     }
 }

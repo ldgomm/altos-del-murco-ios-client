@@ -46,6 +46,9 @@ final class CartManager: ObservableObject {
         }
     }
 
+    var scheduledAt: Date { draft.scheduledAt }
+    var isScheduledForLater: Bool { draft.isScheduledForLater }
+    var canSubmit: Bool { draft.canSubmit }
     var orderCreatedAt: Date { draft.createdAt }
     var totalItems: Int { draft.totalItems }
     var subtotal: Double { draft.subtotal }
@@ -53,22 +56,28 @@ final class CartManager: ObservableObject {
     var isEmpty: Bool { draft.isEmpty }
 
     func add(item: MenuItem, quantity: Int = 1, notes: String? = nil) {
-        guard item.canBeOrdered else { return }
+        guard item.canBeOrdered || isScheduledForLater else { return }
         guard quantity > 0 else { return }
 
         let cleanNotes = notes?.trimmingCharacters(in: .whitespacesAndNewlines)
         let finalNotes = (cleanNotes?.isEmpty == true) ? nil : cleanNotes
 
         if draft.items.isEmpty {
-            draft.createdAt = Date()
+            let now = Date()
+            draft.createdAt = now
+            if draft.scheduledAt < now.addingTimeInterval(-120) {
+                draft.scheduledAt = now
+            }
         }
 
         if let index = draft.items.firstIndex(where: { $0.menuItem.id == item.id && $0.notes == finalNotes }) {
             let current = draft.items[index].quantity
-            let next = min(current + quantity, item.remainingQuantity)
-            draft.items[index].quantity = next
+            let next = isScheduledForLater
+                ? current + quantity
+                : min(current + quantity, item.remainingQuantity)
+            draft.items[index].quantity = max(1, next)
         } else {
-            let safeQuantity = min(quantity, item.remainingQuantity)
+            let safeQuantity = isScheduledForLater ? max(1, quantity) : min(quantity, item.remainingQuantity)
             guard safeQuantity > 0 else { return }
             draft.items.append(CartItem(menuItem: item, quantity: safeQuantity, notes: finalNotes))
         }
@@ -82,10 +91,12 @@ final class CartManager: ObservableObject {
         guard let index = draft.items.firstIndex(where: { $0.menuItem.id == itemId }) else { return }
 
         let menuItem = draft.items[index].menuItem
-        guard menuItem.canBeOrdered else { return }
+        guard menuItem.canBeOrdered || isScheduledForLater else { return }
 
         let current = draft.items[index].quantity
-        let next = min(current + amount, menuItem.remainingQuantity)
+        let next = isScheduledForLater
+            ? current + amount
+            : min(current + amount, menuItem.remainingQuantity)
         guard next > current else { return }
 
         draft.items[index].quantity = next
@@ -128,8 +139,10 @@ final class CartManager: ObservableObject {
             return
         }
 
-        guard draft.items[index].menuItem.isAvailable else { return }
-        draft.items[index].quantity = quantity
+        guard draft.items[index].menuItem.isAvailable || isScheduledForLater else { return }
+        draft.items[index].quantity = isScheduledForLater
+            ? max(1, quantity)
+            : min(quantity, draft.items[index].menuItem.remainingQuantity)
         draft.updatedAt = Date()
         persist()
     }
@@ -160,6 +173,26 @@ final class CartManager: ObservableObject {
         persist()
     }
 
+    func updateScheduledAt(_ date: Date) {
+        draft.scheduledAt = OrderScheduleResolver.sanitizedScheduledAt(date)
+        draft.updatedAt = Date()
+        persist()
+    }
+
+    func scheduleForNow() {
+        draft.scheduledAt = Date()
+        draft.updatedAt = Date()
+        persist()
+    }
+
+    func refreshDefaultScheduleIfNeeded() {
+        let now = Date()
+        guard !draft.isScheduledForLater, draft.scheduledAt < now.addingTimeInterval(-120) else { return }
+        draft.scheduledAt = now
+        draft.updatedAt = now
+        persist()
+    }
+
     func contains(itemId: String) -> Bool {
         draft.items.contains { $0.menuItem.id == itemId }
     }
@@ -180,6 +213,7 @@ final class CartManager: ObservableObject {
     func resetDraftMetadata() {
         draft.clientName = ""
         draft.tableNumber = ""
+        draft.scheduledAt = Date()
         draft.createdAt = Date()
     }
 
@@ -194,6 +228,7 @@ final class CartManager: ObservableObject {
     }
 
     func createOrder() -> Order? {
+        refreshDefaultScheduleIfNeeded()
         guard draft.canSubmit else { return nil }
         return draft.toOrder()
     }

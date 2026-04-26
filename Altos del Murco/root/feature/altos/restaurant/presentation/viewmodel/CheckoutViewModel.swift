@@ -63,10 +63,10 @@ final class CheckoutViewModel: ObservableObject {
     }
 
     func onAppear(nationalId: String) {
-        let cleanNationalId = nationalId.trimmingCharacters(in: .whitespacesAndNewlines)
-        let shouldRestartObservation =
-            cleanNationalId != currentNationalId || walletListenerToken == nil
+        cartManager.refreshDefaultScheduleIfNeeded()
 
+        let cleanNationalId = nationalId.trimmingCharacters(in: .whitespacesAndNewlines)
+        let shouldRestartObservation = cleanNationalId != currentNationalId || walletListenerToken == nil
         currentNationalId = cleanNationalId
 
         if shouldRestartObservation {
@@ -99,6 +99,10 @@ final class CheckoutViewModel: ObservableObject {
         switch event {
         case .confirmTapped:
             submitOrder()
+        case .scheduledAtChanged(let date):
+            cartManager.updateScheduledAt(date)
+        case .scheduleNowTapped:
+            cartManager.scheduleForNow()
         }
     }
 
@@ -148,10 +152,7 @@ final class CheckoutViewModel: ObservableObject {
                     allocation = min(cartItem.totalPrice, max(0, roundMoney(remainingDiscount)))
                 } else {
                     let share = cartItem.totalPrice / subtotal
-                    allocation = min(
-                        cartItem.totalPrice,
-                        max(0, roundMoney(totalDiscount * share))
-                    )
+                    allocation = min(cartItem.totalPrice, max(0, roundMoney(totalDiscount * share)))
                     remainingDiscount = roundMoney(remainingDiscount - allocation)
                 }
 
@@ -206,7 +207,9 @@ final class CheckoutViewModel: ObservableObject {
     private func submitOrder() {
         Task { @MainActor in
             guard let baseOrder = cartManager.createOrder() else {
-                state.errorMessage = "Please complete client name, table number, and cart items."
+                state.errorMessage = cartManager.isScheduledForLater
+                    ? "Agrega productos y confirma que tu perfil tenga nombre y cédula. La mesa puede quedar por asignar para reservas."
+                    : "Completa la mesa y asegúrate de tener productos en el carrito."
                 return
             }
 

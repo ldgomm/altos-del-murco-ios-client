@@ -9,4 +9,6 @@ import Foundation
 
 enum CheckoutEvent {
     case confirmTapped
+    case scheduledAtChanged(Date)
+    case scheduleNowTapped
 }

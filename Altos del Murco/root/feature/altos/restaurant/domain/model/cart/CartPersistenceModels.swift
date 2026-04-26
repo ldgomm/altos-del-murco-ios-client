@@ -14,6 +14,7 @@ final class CartDraftEntity {
     var nationalId: String?
     var clientName: String
     var tableNumber: String
+    var scheduledAt: Date
     var createdAt: Date
     var updatedAt: Date
 
@@ -25,6 +26,7 @@ final class CartDraftEntity {
         nationalId: String? = nil,
         clientName: String = "",
         tableNumber: String = "",
+        scheduledAt: Date = Date(),
         createdAt: Date = Date(),
         updatedAt: Date = Date(),
         items: [CartItemEntity] = []
@@ -33,6 +35,7 @@ final class CartDraftEntity {
         self.nationalId = nationalId
         self.clientName = clientName
         self.tableNumber = tableNumber
+        self.scheduledAt = scheduledAt
         self.createdAt = createdAt
         self.updatedAt = updatedAt
         self.items = items

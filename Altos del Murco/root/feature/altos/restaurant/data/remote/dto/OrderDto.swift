@@ -47,6 +47,9 @@ struct OrderDto: Codable {
     let tableNumber: String
     let createdAt: Timestamp
     let updatedAt: Timestamp?
+    let scheduledAt: Timestamp?
+    let scheduledDayKey: String?
+    let serviceMode: String?
     let items: [OrderItemDto]
     let subtotal: Double
     let loyaltyDiscountAmount: Double?
@@ -63,6 +66,9 @@ struct OrderDto: Codable {
         self.tableNumber = domain.tableNumber
         self.createdAt = Timestamp(date: domain.createdAt)
         self.updatedAt = Timestamp(date: domain.updatedAt)
+        self.scheduledAt = Timestamp(date: domain.scheduledAt)
+        self.scheduledDayKey = domain.scheduledDayKey
+        self.serviceMode = domain.serviceMode.rawValue
         self.items = domain.items.map(OrderItemDto.init(from:))
         self.subtotal = domain.subtotal
         self.loyaltyDiscountAmount = domain.loyaltyDiscountAmount
@@ -80,6 +86,9 @@ struct OrderDto: Codable {
         let safeStatus = OrderStatus(rawValue: status ?? OrderStatus.pending.rawValue) ?? .pending
         let safeCreatedAt = createdAt.dateValue()
         let safeUpdatedAt = updatedAt?.dateValue() ?? safeCreatedAt
+        let safeScheduledAt = scheduledAt?.dateValue() ?? safeCreatedAt
+        let safeServiceMode = OrderServiceMode(rawValue: serviceMode ?? "")
+            ?? OrderScheduleResolver.mode(createdAt: safeCreatedAt, scheduledAt: safeScheduledAt)
         let safeRevision = revision ?? 1
 
         return Order(
@@ -89,6 +98,9 @@ struct OrderDto: Codable {
             tableNumber: tableNumber,
             createdAt: safeCreatedAt,
             updatedAt: safeUpdatedAt,
+            scheduledAt: safeScheduledAt,
+            scheduledDayKey: scheduledDayKey ?? OrderScheduleResolver.dayKey(from: safeScheduledAt),
+            serviceMode: safeServiceMode,
             items: domainItems,
             subtotal: subtotal,
             loyaltyDiscountAmount: max(0, loyaltyDiscountAmount ?? 0),
