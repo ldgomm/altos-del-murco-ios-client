@@ -22,10 +22,19 @@ final class CartManager: ObservableObject {
 
     var items: [CartItem] { draft.items }
 
+    // Backward-compatible name used by existing views. This is the national ID, not Firebase uid.
     var clientId: String? {
         get { draft.nationalId }
         set {
-            draft.nationalId = newValue
+            draft.nationalId = newValue?.filter(\.isNumber)
+            persist()
+        }
+    }
+
+    var nationalId: String? {
+        get { draft.nationalId }
+        set {
+            draft.nationalId = newValue?.filter(\.isNumber)
             persist()
         }
     }
@@ -55,9 +64,10 @@ final class CartManager: ObservableObject {
     var totalAmount: Double { draft.totalAmount }
     var isEmpty: Bool { draft.isEmpty }
 
-    func add(item: MenuItem, quantity: Int = 1, notes: String? = nil) {
-        guard item.canBeOrdered || isScheduledForLater else { return }
-        guard quantity > 0 else { return }
+    @discardableResult
+    func add(item: MenuItem, quantity: Int = 1, notes: String? = nil) -> Bool {
+        guard item.canBeOrdered || isScheduledForLater else { return false }
+        guard quantity > 0 else { return false }
 
         let cleanNotes = notes?.trimmingCharacters(in: .whitespacesAndNewlines)
         let finalNotes = (cleanNotes?.isEmpty == true) ? nil : cleanNotes
@@ -78,12 +88,13 @@ final class CartManager: ObservableObject {
             draft.items[index].quantity = max(1, next)
         } else {
             let safeQuantity = isScheduledForLater ? max(1, quantity) : min(quantity, item.remainingQuantity)
-            guard safeQuantity > 0 else { return }
+            guard safeQuantity > 0 else { return false }
             draft.items.append(CartItem(menuItem: item, quantity: safeQuantity, notes: finalNotes))
         }
 
         draft.updatedAt = Date()
         persist()
+        return true
     }
 
     func increaseQuantity(for itemId: String, by amount: Int = 1) {
@@ -159,7 +170,7 @@ final class CartManager: ObservableObject {
     }
 
     func updateClientId(_ id: String) {
-        draft.nationalId = id
+        draft.nationalId = id.filter(\.isNumber)
         persist()
     }
 
@@ -227,14 +238,14 @@ final class CartManager: ObservableObject {
         persist()
     }
 
-    func createOrder() -> Order? {
+    func createOrder(firebaseClientId: String? = nil) -> Order? {
         refreshDefaultScheduleIfNeeded()
         guard draft.canSubmit else { return nil }
-        return draft.toOrder()
+        return draft.toOrder(clientId: firebaseClientId)
     }
 
-    func submitOrder() -> Order? {
-        guard let order = createOrder() else { return nil }
+    func submitOrder(firebaseClientId: String? = nil) -> Order? {
+        guard let order = createOrder(firebaseClientId: firebaseClientId) else { return nil }
         clear()
         return order
     }

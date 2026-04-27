@@ -6,51 +6,100 @@
 //
 
 import Combine
+import FirebaseAuth
 import FirebaseFirestore
 
 final class OrdersService: OrdersServiceable {
     private let db: Firestore
+    private let auth: Auth
     private let loyaltyRewardsService: LoyaltyRewardsServiceable
 
     init(
         db: Firestore = Firestore.firestore(),
+        auth: Auth = Auth.auth(),
         loyaltyRewardsService: LoyaltyRewardsServiceable
     ) {
         self.db = db
+        self.auth = auth
         self.loyaltyRewardsService = loyaltyRewardsService
     }
 
     func submit(order: Order) async throws {
+        let trustedOrder = try await makeTrustedOrder(from: order)
+
         let now = Date()
-        guard order.scheduledAt >= now.addingTimeInterval(-120) else {
-            throw NSError(
-                domain: "OrdersService",
+        guard trustedOrder.scheduledAt >= now.addingTimeInterval(-120) else {
+            throw makeError(
                 code: 20,
-                userInfo: [NSLocalizedDescriptionKey: "La fecha de la reserva ya pasó. Elige una hora actual o futura."]
+                message: "La fecha de la reserva ya pasó. Elige una hora actual o futura."
             )
         }
 
-        if order.shouldConsumeCurrentMenuStock {
-            try await submitAndConsumeCurrentStock(order: order)
+        if trustedOrder.shouldConsumeCurrentMenuStock {
+            try await submitAndConsumeCurrentStock(order: trustedOrder)
         } else {
-            try await submitFutureFoodReservation(order: order)
+            try await submitFutureFoodReservation(order: trustedOrder)
         }
 
-        if let nationalId = order.nationalId?.trimmingCharacters(in: .whitespacesAndNewlines),
+        if let nationalId = trustedOrder.nationalId?.trimmingCharacters(in: .whitespacesAndNewlines),
            !nationalId.isEmpty,
-           !order.appliedRewards.isEmpty {
+           !trustedOrder.appliedRewards.isEmpty {
             try await loyaltyRewardsService.reserveRewards(
                 nationalId: nationalId,
                 referenceType: .order,
-                referenceId: order.id,
-                appliedRewards: order.appliedRewards
+                referenceId: trustedOrder.id,
+                appliedRewards: trustedOrder.appliedRewards
             )
         }
+    }
+
+    private func makeTrustedOrder(from order: Order) async throws -> Order {
+        let uid = try requireCurrentUid()
+
+        let cleanNationalId = order.nationalId?.filter(\.isNumber) ?? ""
+        guard !cleanNationalId.isEmpty else {
+            throw makeError(code: 21, message: "No se encontró una cédula asociada a esta cuenta.")
+        }
+
+        let trustedItems = try await order.items.asyncMap { item -> OrderItem in
+            let ref = db.collection(FirestoreConstants.restaurant_menu_items).document(item.menuItemId)
+            let snapshot = try await ref.getDocument()
+            let dto = try snapshot.data(as: MenuItemDto.self)
+            let menuItem = dto.toDomain()
+
+            return OrderItem(
+                menuItemId: menuItem.id,
+                name: menuItem.name,
+                unitPrice: menuItem.finalPrice,
+                quantity: max(1, item.quantity),
+                preparedQuantity: 0,
+                notes: item.notes?.trimmingCharacters(in: .whitespacesAndNewlines)
+            )
+        }
+
+        let preview = try await loyaltyRewardsService.previewRestaurantRewards(
+            for: cleanNationalId,
+            items: trustedItems
+        )
+
+        let cleanTable = order.tableNumber.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleanTable.isEmpty || order.isScheduledForLater else {
+            throw makeError(code: 22, message: "Completa la mesa para pedidos inmediatos.")
+        }
+
+        return order
+            .withClientId(uid)
+            .withTrustedPricing(
+                items: trustedItems,
+                appliedRewards: preview.appliedRewards,
+                discount: preview.totalDiscount
+            )
     }
 
     private func submitFutureFoodReservation(order: Order) async throws {
         let dto = OrderDto(from: order)
         let orderData = try Firestore.Encoder().encode(dto)
+
         try await db
             .collection(FirestoreConstants.restaurant_orders)
             .document(order.id)
@@ -83,11 +132,11 @@ final class OrdersService: OrdersServiceable {
 
                 for item in loadedItems {
                     guard item.dto.isAvailable else {
-                        throw NSError(domain: "OrdersService", code: 1, userInfo: [NSLocalizedDescriptionKey: "\(item.dto.name) no está disponible."])
+                        throw self.makeError(code: 1, message: "\(item.dto.name) no está disponible.")
                     }
 
                     guard item.dto.remainingQuantity >= item.totalQuantity else {
-                        throw NSError(domain: "OrdersService", code: 2, userInfo: [NSLocalizedDescriptionKey: "Ya no hay suficiente stock de \(item.dto.name)."])
+                        throw self.makeError(code: 2, message: "Ya no hay suficiente stock de \(item.dto.name).")
                     }
 
                     let newRemainingQuantity = item.dto.remainingQuantity - item.totalQuantity
@@ -111,10 +160,8 @@ final class OrdersService: OrdersServiceable {
     }
 
     func observeOrders(for nationalId: String) -> AsyncThrowingStream<[Order], Error> {
-        let cleanNationalId = nationalId.trimmingCharacters(in: .whitespacesAndNewlines)
-
-        return AsyncThrowingStream { continuation in
-            guard !cleanNationalId.isEmpty else {
+        AsyncThrowingStream { continuation in
+            guard let uid = auth.currentUser?.uid, !uid.isEmpty else {
                 continuation.yield([])
                 continuation.finish()
                 return
@@ -122,8 +169,8 @@ final class OrdersService: OrdersServiceable {
 
             let listener = db
                 .collection(FirestoreConstants.restaurant_orders)
-                .whereField("nationalId", isEqualTo: cleanNationalId)
-                .order(by: "createdAt", descending: true)
+                .whereField("clientId", isEqualTo: uid)
+                .order(by: "scheduledAt", descending: true)
                 .addSnapshotListener { snapshot, error in
                     if let error {
                         continuation.finish(throwing: error)
@@ -150,5 +197,32 @@ final class OrdersService: OrdersServiceable {
 
             continuation.onTermination = { _ in listener.remove() }
         }
+    }
+
+    private func requireCurrentUid() throws -> String {
+        guard let uid = auth.currentUser?.uid.trimmingCharacters(in: .whitespacesAndNewlines),
+              !uid.isEmpty else {
+            throw makeError(code: 401, message: "Debes iniciar sesión nuevamente para enviar el pedido.")
+        }
+
+        return uid
+    }
+
+    private func makeError(code: Int, message: String) -> NSError {
+        NSError(
+            domain: "OrdersService",
+            code: code,
+            userInfo: [NSLocalizedDescriptionKey: message]
+        )
+    }
+}
+
+private extension Sequence {
+    func asyncMap<T>(_ transform: (Element) async throws -> T) async throws -> [T] {
+        var values: [T] = []
+        for element in self {
+            try await values.append(transform(element))
+        }
+        return values
     }
 }

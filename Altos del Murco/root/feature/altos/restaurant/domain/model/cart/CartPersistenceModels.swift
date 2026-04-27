@@ -11,6 +11,7 @@ import SwiftData
 @Model
 final class CartDraftEntity {
     @Attribute(.unique) var id: UUID
+    var clientId: String?
     var nationalId: String?
     var clientName: String
     var tableNumber: String
@@ -23,6 +24,7 @@ final class CartDraftEntity {
 
     init(
         id: UUID = UUID(),
+        clientId: String? = nil,
         nationalId: String? = nil,
         clientName: String = "",
         tableNumber: String = "",
@@ -32,6 +34,7 @@ final class CartDraftEntity {
         items: [CartItemEntity] = []
     ) {
         self.id = id
+        self.clientId = clientId
         self.nationalId = nationalId
         self.clientName = clientName
         self.tableNumber = tableNumber

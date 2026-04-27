@@ -346,11 +346,16 @@ struct MenuItemDetailView: View {
                     let trimmedNotes = notesText.trimmingCharacters(in: .whitespacesAndNewlines)
                     let finalNotes = trimmedNotes.isEmpty ? nil : trimmedNotes
 
-                    cartManager.add(
+                    let didAdd = cartManager.add(
                         item: item,
                         quantity: quantity,
                         notes: finalNotes
                     )
+
+                    guard didAdd else {
+                        // Use your existing alert/toast state if this view has one.
+                        return
+                    }
 
                     withAnimation(.easeInOut(duration: 0.25)) {
                         showAddedMessage = true

@@ -72,11 +72,20 @@ struct OrdersView: View {
     private var sortedOrders: [Order] {
         switch sortOption {
         case .newestFirst:
-            return filteredOrders.sorted { $0.createdAt > $1.createdAt }
+            return filteredOrders.sorted {
+                if $0.scheduledAt != $1.scheduledAt { return $0.scheduledAt > $1.scheduledAt }
+                return $0.createdAt > $1.createdAt
+            }
         case .oldestFirst:
-            return filteredOrders.sorted { $0.createdAt < $1.createdAt }
+            return filteredOrders.sorted {
+                if $0.scheduledAt != $1.scheduledAt { return $0.scheduledAt < $1.scheduledAt }
+                return $0.createdAt < $1.createdAt
+            }
         case .highestTotal:
-            return filteredOrders.sorted { $0.totalAmount > $1.totalAmount }
+            return filteredOrders.sorted {
+                if $0.totalAmount != $1.totalAmount { return $0.totalAmount > $1.totalAmount }
+                return $0.scheduledAt < $1.scheduledAt
+            }
         }
     }
 
@@ -97,7 +106,7 @@ struct OrdersView: View {
 
         case .byDate:
             let calendar = Calendar.current
-            let buckets = Dictionary(grouping: sortedOrders) { calendar.startOfDay(for: $0.createdAt) }
+            let buckets = Dictionary(grouping: sortedOrders) { calendar.startOfDay(for: $0.scheduledAt) }
 
             return buckets
                 .map { day, orders in
@@ -108,8 +117,8 @@ struct OrdersView: View {
                     )
                 }
                 .sorted { lhs, rhs in
-                    guard let lhsDate = lhs.orders.first?.createdAt,
-                          let rhsDate = rhs.orders.first?.createdAt else {
+                    guard let lhsDate = lhs.orders.first?.scheduledAt,
+                          let rhsDate = rhs.orders.first?.scheduledAt else {
                         return lhs.title > rhs.title
                     }
 
@@ -302,11 +311,20 @@ struct OrdersView: View {
     private func sortInsideGroup(_ orders: [Order]) -> [Order] {
         switch sortOption {
         case .newestFirst:
-            return orders.sorted { $0.createdAt > $1.createdAt }
+            return orders.sorted {
+                if $0.scheduledAt != $1.scheduledAt { return $0.scheduledAt > $1.scheduledAt }
+                return $0.createdAt > $1.createdAt
+            }
         case .oldestFirst:
-            return orders.sorted { $0.createdAt < $1.createdAt }
+            return orders.sorted {
+                if $0.scheduledAt != $1.scheduledAt { return $0.scheduledAt < $1.scheduledAt }
+                return $0.createdAt < $1.createdAt
+            }
         case .highestTotal:
-            return orders.sorted { $0.totalAmount > $1.totalAmount }
+            return orders.sorted {
+                if $0.totalAmount != $1.totalAmount { return $0.totalAmount > $1.totalAmount }
+                return $0.scheduledAt < $1.scheduledAt
+            }
         }
     }
 

@@ -16,7 +16,7 @@ struct AppliedRewardDto: Codable {
     let note: String
     let affectedMenuItemIds: [String]
     let affectedActivityIds: [String]
-
+    
     init(domain: AppliedReward) {
         self.id = domain.id
         self.templateId = domain.templateId
@@ -26,7 +26,7 @@ struct AppliedRewardDto: Codable {
         self.affectedMenuItemIds = domain.affectedMenuItemIds
         self.affectedActivityIds = domain.affectedActivityIds
     }
-
+    
     func toDomain() -> AppliedReward {
         AppliedReward(
             id: id,
@@ -42,6 +42,7 @@ struct AppliedRewardDto: Codable {
 
 struct OrderDto: Codable {
     let id: String
+    let clientId: String?
     let nationalId: String?
     let clientName: String
     let tableNumber: String
@@ -58,9 +59,10 @@ struct OrderDto: Codable {
     let status: String?
     let revision: Int?
     let lastConfirmedRevision: Int?
-
+    
     init(from domain: Order) {
         self.id = domain.id
+        self.clientId = domain.clientId
         self.nationalId = domain.nationalId
         self.clientName = domain.clientName
         self.tableNumber = domain.tableNumber
@@ -78,21 +80,22 @@ struct OrderDto: Codable {
         self.revision = domain.revision
         self.lastConfirmedRevision = domain.lastConfirmedRevision
     }
-
+    
     func toDomain() -> Order? {
         let domainItems = items.compactMap { $0.toDomain() }
         guard domainItems.count == items.count else { return nil }
-
+        
         let safeStatus = OrderStatus(rawValue: status ?? OrderStatus.pending.rawValue) ?? .pending
         let safeCreatedAt = createdAt.dateValue()
         let safeUpdatedAt = updatedAt?.dateValue() ?? safeCreatedAt
         let safeScheduledAt = scheduledAt?.dateValue() ?? safeCreatedAt
         let safeServiceMode = OrderServiceMode(rawValue: serviceMode ?? "")
-            ?? OrderScheduleResolver.mode(createdAt: safeCreatedAt, scheduledAt: safeScheduledAt)
+        ?? OrderScheduleResolver.mode(createdAt: safeCreatedAt, scheduledAt: safeScheduledAt)
         let safeRevision = revision ?? 1
-
+        
         return Order(
             id: id,
+            clientId: clientId,
             nationalId: nationalId,
             clientName: clientName,
             tableNumber: tableNumber,

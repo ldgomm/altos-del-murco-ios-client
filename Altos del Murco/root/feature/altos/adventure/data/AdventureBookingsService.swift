@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import FirebaseAuth
 import FirebaseFirestore
 
 private final class EmptyAdventureListenerToken: AdventureListenerToken {
@@ -14,16 +15,19 @@ private final class EmptyAdventureListenerToken: AdventureListenerToken {
 
 final class AdventureBookingsService: AdventureBookingsServiceable {
     private let db: Firestore
+    private let auth: Auth
     private let bookingsCollection = "adventure_bookings"
     private let catalogService: AdventureCatalogServiceable
     private let loyaltyRewardsService: LoyaltyRewardsServiceable
 
     init(
         db: Firestore = Firestore.firestore(),
+        auth: Auth = Auth.auth(),
         catalogService: AdventureCatalogServiceable,
         loyaltyRewardsService: LoyaltyRewardsServiceable
     ) {
         self.db = db
+        self.auth = auth
         self.catalogService = catalogService
         self.loyaltyRewardsService = loyaltyRewardsService
     }
@@ -32,15 +36,13 @@ final class AdventureBookingsService: AdventureBookingsServiceable {
         nationalId: String,
         onChange: @escaping (Result<[AdventureBooking], Error>) -> Void
     ) -> AdventureListenerToken {
-        let cleanNationalId = nationalId.trimmingCharacters(in: .whitespacesAndNewlines)
-
-        guard !cleanNationalId.isEmpty else {
+        guard let uid = auth.currentUser?.uid, !uid.isEmpty else {
             onChange(.success([]))
             return EmptyAdventureListenerToken()
         }
 
         let registration = db.collection(bookingsCollection)
-            .whereField("nationalId", isEqualTo: cleanNationalId)
+            .whereField("clientId", isEqualTo: uid)
             .order(by: "startAt", descending: false)
             .addSnapshotListener { snapshot, error in
                 if let error {
@@ -86,6 +88,13 @@ final class AdventureBookingsService: AdventureBookingsServiceable {
     }
 
     func createBooking(_ request: AdventureBookingRequest) async throws -> AdventureBooking {
+        let uid = try requireCurrentUid()
+        let cleanNationalId = request.nationalId.filter(\.isNumber)
+
+        guard !cleanNationalId.isEmpty else {
+            throw makeError("No se encontró una cédula asociada a esta cuenta.")
+        }
+
         let catalog = try await catalogService.fetchCatalog()
 
         guard let basePlan = AdventurePlanner.buildPlan(
@@ -100,7 +109,7 @@ final class AdventureBookingsService: AdventureBookingsServiceable {
         }
 
         let rewardPreview = try await loyaltyRewardsService.previewAdventureRewards(
-            for: request.nationalId,
+            for: cleanNationalId,
             activityItems: request.items,
             foodItems: request.foodReservation?.items ?? [],
             catalog: catalog
@@ -122,10 +131,10 @@ final class AdventureBookingsService: AdventureBookingsServiceable {
         )
 
         let normalizedRequest = AdventureBookingRequest(
-            clientId: request.clientId,
+            clientId: uid,
             clientName: request.clientName,
             whatsappNumber: request.whatsappNumber,
-            nationalId: request.nationalId,
+            nationalId: cleanNationalId,
             date: request.date,
             selectedStartAt: request.selectedStartAt,
             guestCount: request.guestCount,
@@ -173,6 +182,7 @@ final class AdventureBookingsService: AdventureBookingsServiceable {
     }
 
     func cancelBooking(id: String, nationalId: String) async throws {
+        let uid = try requireCurrentUid()
         let bookingRef = db.collection(bookingsCollection).document(id)
         let snapshot = try await bookingRef.getDocument()
 
@@ -181,15 +191,23 @@ final class AdventureBookingsService: AdventureBookingsServiceable {
         }
 
         let dto = try snapshot.data(as: AdventureBookingDto.self)
+        let booking = dto.toDomain(documentId: id)
 
-        guard dto.nationalId == nationalId else {
+        guard booking.clientId == uid else {
             throw makeError("You are not allowed to cancel this booking.")
         }
 
+        if let reason = ReservationCancellationPolicy.reasonClientCannotCancel(booking) {
+            throw makeError(reason)
+        }
+
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-            bookingRef.updateData(
-                ["status": AdventureBookingStatus.canceled.rawValue]
-            ) { error in
+            bookingRef.updateData([
+                "status": AdventureBookingStatus.canceled.rawValue,
+                "updatedAt": Timestamp(date: Date()),
+                "canceledAt": Timestamp(date: Date()),
+                "canceledByClientId": uid
+            ]) { error in
                 if let error {
                     continuation.resume(throwing: error)
                 } else {
@@ -202,6 +220,15 @@ final class AdventureBookingsService: AdventureBookingsServiceable {
             nationalId: dto.nationalId,
             referenceId: id
         )
+    }
+
+    private func requireCurrentUid() throws -> String {
+        guard let uid = auth.currentUser?.uid.trimmingCharacters(in: .whitespacesAndNewlines),
+              !uid.isEmpty else {
+            throw makeError("Debes iniciar sesión nuevamente para continuar.")
+        }
+
+        return uid
     }
 
     private func makeError(_ message: String) -> NSError {

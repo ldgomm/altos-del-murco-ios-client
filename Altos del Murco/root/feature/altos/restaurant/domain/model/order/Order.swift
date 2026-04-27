@@ -21,6 +21,7 @@ enum OrderServiceMode: String, Codable, Hashable, CaseIterable {
 
 struct Order: Identifiable, Hashable, Codable {
     let id: String
+    let clientId: String?
     let nationalId: String?
     let clientName: String
     let tableNumber: String
@@ -40,6 +41,7 @@ struct Order: Identifiable, Hashable, Codable {
 
     init(
         id: String,
+        clientId: String? = nil,
         nationalId: String?,
         clientName: String,
         tableNumber: String,
@@ -64,7 +66,8 @@ struct Order: Identifiable, Hashable, Codable {
         )
 
         self.id = id
-        self.nationalId = nationalId
+        self.clientId = clientId?.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.nationalId = nationalId?.filter(\.isNumber)
         self.clientName = clientName
         self.tableNumber = tableNumber
         self.createdAt = createdAt
@@ -73,7 +76,7 @@ struct Order: Identifiable, Hashable, Codable {
         self.scheduledDayKey = scheduledDayKey ?? OrderScheduleResolver.dayKey(from: resolvedScheduledAt)
         self.serviceMode = resolvedMode
         self.items = items
-        self.subtotal = subtotal
+        self.subtotal = max(0, subtotal)
         self.loyaltyDiscountAmount = max(0, loyaltyDiscountAmount)
         self.appliedRewards = appliedRewards
         self.totalAmount = max(0, totalAmount)
@@ -82,12 +85,10 @@ struct Order: Identifiable, Hashable, Codable {
         self.lastConfirmedRevision = lastConfirmedRevision
     }
 
-    func withLoyalty(
-        appliedRewards: [AppliedReward],
-        discount: Double
-    ) -> Order {
+    func withClientId(_ uid: String) -> Order {
         Order(
             id: id,
+            clientId: uid,
             nationalId: nationalId,
             clientName: clientName,
             tableNumber: tableNumber,
@@ -98,9 +99,67 @@ struct Order: Identifiable, Hashable, Codable {
             serviceMode: serviceMode,
             items: items,
             subtotal: subtotal,
-            loyaltyDiscountAmount: max(0, discount),
+            loyaltyDiscountAmount: loyaltyDiscountAmount,
             appliedRewards: appliedRewards,
-            totalAmount: max(0, subtotal - max(0, discount)),
+            totalAmount: totalAmount,
+            status: status,
+            revision: revision,
+            lastConfirmedRevision: lastConfirmedRevision
+        )
+    }
+
+    func withTrustedPricing(
+        items trustedItems: [OrderItem],
+        appliedRewards: [AppliedReward],
+        discount: Double
+    ) -> Order {
+        let trustedSubtotal = trustedItems.reduce(0) { $0 + $1.totalPrice }.roundedMoney
+        let safeDiscount = min(max(0, discount), trustedSubtotal).roundedMoney
+
+        return Order(
+            id: id,
+            clientId: clientId,
+            nationalId: nationalId,
+            clientName: clientName,
+            tableNumber: tableNumber,
+            createdAt: createdAt,
+            updatedAt: Date(),
+            scheduledAt: scheduledAt,
+            scheduledDayKey: scheduledDayKey,
+            serviceMode: serviceMode,
+            items: trustedItems,
+            subtotal: trustedSubtotal,
+            loyaltyDiscountAmount: safeDiscount,
+            appliedRewards: appliedRewards,
+            totalAmount: max(0, trustedSubtotal - safeDiscount).roundedMoney,
+            status: status,
+            revision: revision,
+            lastConfirmedRevision: lastConfirmedRevision
+        )
+    }
+
+    func withLoyalty(
+        appliedRewards: [AppliedReward],
+        discount: Double
+    ) -> Order {
+        let safeDiscount = min(max(0, discount), subtotal).roundedMoney
+
+        return Order(
+            id: id,
+            clientId: clientId,
+            nationalId: nationalId,
+            clientName: clientName,
+            tableNumber: tableNumber,
+            createdAt: createdAt,
+            updatedAt: updatedAt,
+            scheduledAt: scheduledAt,
+            scheduledDayKey: scheduledDayKey,
+            serviceMode: serviceMode,
+            items: items,
+            subtotal: subtotal,
+            loyaltyDiscountAmount: safeDiscount,
+            appliedRewards: appliedRewards,
+            totalAmount: max(0, subtotal - safeDiscount).roundedMoney,
             status: status,
             revision: revision,
             lastConfirmedRevision: lastConfirmedRevision
@@ -140,7 +199,6 @@ struct Order: Identifiable, Hashable, Codable {
         Calendar.current.isDateInToday(scheduledAt)
     }
 
-    /// Same-day scheduled food still consumes today's menu stock. Future-day reservations do not.
     var shouldConsumeCurrentMenuStock: Bool {
         !isScheduledForLater || Calendar.current.isDate(scheduledAt, inSameDayAs: Date())
     }
@@ -187,5 +245,11 @@ enum OrderScheduleResolver {
         formatter.dateStyle = .medium
         formatter.timeStyle = .short
         return formatter.string(from: date)
+    }
+}
+
+private extension Double {
+    var roundedMoney: Double {
+        (self * 100).rounded() / 100
     }
 }
