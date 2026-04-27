@@ -86,7 +86,6 @@ struct AdventureComboBuilderView: View {
             isPresented: Binding(
                 get: {
                     adventureComboBuilderViewModel.state.errorMessage != nil
-                    || adventureComboBuilderViewModel.state.successMessage != nil
                 },
                 set: {
                     if !$0 { adventureComboBuilderViewModel.dismissMessage() }
@@ -97,11 +96,7 @@ struct AdventureComboBuilderView: View {
                 adventureComboBuilderViewModel.dismissMessage()
             }
         } message: {
-            Text(
-                adventureComboBuilderViewModel.state.errorMessage
-                ?? adventureComboBuilderViewModel.state.successMessage
-                ?? ""
-            )
+            Text(adventureComboBuilderViewModel.state.errorMessage ?? "")
         }
     }
 
@@ -743,20 +738,25 @@ struct AdventureComboBuilderView: View {
                     }
 
                     syncProfileFieldsFromSession()
-                    adventureComboBuilderViewModel.submit(clientId: authenticatedProfile?.id)
 
-                    withAnimation(.easeInOut(duration: 0.25)) {
-                        showAddedMessage = true
-                    }
+                    Task { @MainActor in
+                        let didSubmit = await adventureComboBuilderViewModel.submit(
+                            clientId: authenticatedProfile?.id
+                        )
 
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+                        guard didSubmit else { return }
+
+                        withAnimation(.easeInOut(duration: 0.25)) {
+                            showAddedMessage = true
+                        }
+
+                        try? await Task.sleep(nanoseconds: 650_000_000)
+
                         withAnimation(.easeInOut(duration: 0.25)) {
                             showAddedMessage = false
                         }
 
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
-                            dismiss()
-                        }
+                        dismiss()
                     }
                 } label: {
                     if adventureComboBuilderViewModel.state.isSubmitting {

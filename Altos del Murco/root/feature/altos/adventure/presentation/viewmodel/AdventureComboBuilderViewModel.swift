@@ -580,8 +580,9 @@ final class AdventureComboBuilderViewModel: ObservableObject {
         return max(0, subtotal - foodPickerIncrementalDiscount(for: menuItem, quantity: quantity))
     }
 
-    func submit(clientId: String?) {
-        Task { await submitReservation(clientId: clientId) }
+    @discardableResult
+    func submit(clientId: String?) async -> Bool {
+        await submitReservation(clientId: clientId)
     }
 
     var estimatedAdventureSubtotal: Double {
@@ -990,8 +991,8 @@ final class AdventureComboBuilderViewModel: ObservableObject {
         Task { await refreshRewardPreview() }
     }
 
-    private func submitReservation(clientId: String?) async {
-        guard !state.isSubmitting else { return }
+    private func submitReservation(clientId: String?) async -> Bool {
+        guard !state.isSubmitting else { return false }
 
         let foodDraft = buildFoodDraft()
         let hasFood = !(foodDraft?.isEmpty ?? true)
@@ -1027,8 +1028,10 @@ final class AdventureComboBuilderViewModel: ObservableObject {
             let booking = try await createBookingUseCase.execute(request)
             state.successMessage = "Reserva confirmada para \(booking.clientName) a las \(AdventureDateHelper.timeText(booking.startAt))."
             await loadAvailability()
+            return true
         } catch {
             state.errorMessage = error.localizedDescription
+            return false
         }
     }
 
