@@ -167,8 +167,8 @@ struct AdventureComboBuilderView: View {
             VStack(alignment: .leading, spacing: 16) {
                 BrandSectionHeader(
                     theme: .adventure,
-                    title: "Horarios disponibles",
-                    subtitle: "Selecciona el mejor horario de inicio o llegada para tu reserva."
+                    title: "Horarios sugeridos",
+                    subtitle: "Elige una hora preferida. Confirmaremos disponibilidad final por WhatsApp si hay cambios."
                 )
 
                 if adventureComboBuilderViewModel.state.isLoadingAvailability {
@@ -179,7 +179,7 @@ struct AdventureComboBuilderView: View {
                     ContentUnavailableView(
                         "Sin horarios disponibles",
                         systemImage: "calendar.badge.exclamationmark",
-                        description: Text("Agrega una actividad o comida, o prueba otra fecha.")
+                        description: Text("Agrega una actividad o comida para ver horarios sugeridos.")
                     )
                 } else {
                     ScrollView(.horizontal, showsIndicators: false) {

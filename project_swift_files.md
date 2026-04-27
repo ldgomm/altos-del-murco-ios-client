@@ -501,6 +501,7 @@ struct AdventureBookingDto: Codable {
 //
 
 import Foundation
+import FirebaseAuth
 import FirebaseFirestore
 
 private final class EmptyAdventureListenerToken: AdventureListenerToken {
@@ -509,16 +510,19 @@ private final class EmptyAdventureListenerToken: AdventureListenerToken {
 
 final class AdventureBookingsService: AdventureBookingsServiceable {
     private let db: Firestore
+    private let auth: Auth
     private let bookingsCollection = "adventure_bookings"
     private let catalogService: AdventureCatalogServiceable
     private let loyaltyRewardsService: LoyaltyRewardsServiceable
 
     init(
         db: Firestore = Firestore.firestore(),
+        auth: Auth = Auth.auth(),
         catalogService: AdventureCatalogServiceable,
         loyaltyRewardsService: LoyaltyRewardsServiceable
     ) {
         self.db = db
+        self.auth = auth
         self.catalogService = catalogService
         self.loyaltyRewardsService = loyaltyRewardsService
     }
@@ -527,15 +531,13 @@ final class AdventureBookingsService: AdventureBookingsServiceable {
         nationalId: String,
         onChange: @escaping (Result<[AdventureBooking], Error>) -> Void
     ) -> AdventureListenerToken {
-        let cleanNationalId = nationalId.trimmingCharacters(in: .whitespacesAndNewlines)
-
-        guard !cleanNationalId.isEmpty else {
+        guard let uid = auth.currentUser?.uid, !uid.isEmpty else {
             onChange(.success([]))
             return EmptyAdventureListenerToken()
         }
 
         let registration = db.collection(bookingsCollection)
-            .whereField("nationalId", isEqualTo: cleanNationalId)
+            .whereField("clientId", isEqualTo: uid)
             .order(by: "startAt", descending: false)
             .addSnapshotListener { snapshot, error in
                 if let error {
@@ -581,6 +583,13 @@ final class AdventureBookingsService: AdventureBookingsServiceable {
     }
 
     func createBooking(_ request: AdventureBookingRequest) async throws -> AdventureBooking {
+        let uid = try requireCurrentUid()
+        let cleanNationalId = request.nationalId.filter(\.isNumber)
+
+        guard !cleanNationalId.isEmpty else {
+            throw makeError("No se encontró una cédula asociada a esta cuenta.")
+        }
+
         let catalog = try await catalogService.fetchCatalog()
 
         guard let basePlan = AdventurePlanner.buildPlan(
@@ -595,7 +604,7 @@ final class AdventureBookingsService: AdventureBookingsServiceable {
         }
 
         let rewardPreview = try await loyaltyRewardsService.previewAdventureRewards(
-            for: request.nationalId,
+            for: cleanNationalId,
             activityItems: request.items,
             foodItems: request.foodReservation?.items ?? [],
             catalog: catalog
@@ -617,10 +626,10 @@ final class AdventureBookingsService: AdventureBookingsServiceable {
         )
 
         let normalizedRequest = AdventureBookingRequest(
-            clientId: request.clientId,
+            clientId: uid,
             clientName: request.clientName,
             whatsappNumber: request.whatsappNumber,
-            nationalId: request.nationalId,
+            nationalId: cleanNationalId,
             date: request.date,
             selectedStartAt: request.selectedStartAt,
             guestCount: request.guestCount,
@@ -668,6 +677,7 @@ final class AdventureBookingsService: AdventureBookingsServiceable {
     }
 
     func cancelBooking(id: String, nationalId: String) async throws {
+        let uid = try requireCurrentUid()
         let bookingRef = db.collection(bookingsCollection).document(id)
         let snapshot = try await bookingRef.getDocument()
 
@@ -676,15 +686,23 @@ final class AdventureBookingsService: AdventureBookingsServiceable {
         }
 
         let dto = try snapshot.data(as: AdventureBookingDto.self)
+        let booking = dto.toDomain(documentId: id)
 
-        guard dto.nationalId == nationalId else {
+        guard booking.clientId == uid else {
             throw makeError("You are not allowed to cancel this booking.")
         }
 
+        if let reason = ReservationCancellationPolicy.reasonClientCannotCancel(booking) {
+            throw makeError(reason)
+        }
+
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-            bookingRef.updateData(
-                ["status": AdventureBookingStatus.canceled.rawValue]
-            ) { error in
+            bookingRef.updateData([
+                "status": AdventureBookingStatus.canceled.rawValue,
+                "updatedAt": Timestamp(date: Date()),
+                "canceledAt": Timestamp(date: Date()),
+                "canceledByClientId": uid
+            ]) { error in
                 if let error {
                     continuation.resume(throwing: error)
                 } else {
@@ -697,6 +715,15 @@ final class AdventureBookingsService: AdventureBookingsServiceable {
             nationalId: dto.nationalId,
             referenceId: id
         )
+    }
+
+    private func requireCurrentUid() throws -> String {
+        guard let uid = auth.currentUser?.uid.trimmingCharacters(in: .whitespacesAndNewlines),
+              !uid.isEmpty else {
+            throw makeError("Debes iniciar sesión nuevamente para continuar.")
+        }
+
+        return uid
     }
 
     private func makeError(_ message: String) -> NSError {
@@ -2426,6 +2453,47 @@ struct CancelAdventureBookingUseCase {
         nationalId: String
     ) async throws {
         try await service.cancelBooking(id: id, nationalId: nationalId)
+    }
+}
+
+```
+
+---
+
+# Altos del Murco/root/feature/altos/adventure/domain/ReservationCancellationPolicy.swift
+
+```swift
+//
+//  ReservationCancellationPolicy.swift
+//  Altos del Murco
+//
+//  Created by José Ruiz on 27/4/26.
+//
+
+import Foundation
+
+enum ReservationCancellationPolicy {
+    static let minimumClientNotice: TimeInterval = 2 * 60 * 60
+
+    static func canClientCancel(_ booking: AdventureBooking, now: Date = Date()) -> Bool {
+        reasonClientCannotCancel(booking, now: now) == nil
+    }
+
+    static func reasonClientCannotCancel(_ booking: AdventureBooking, now: Date = Date()) -> String? {
+        guard booking.status == .pending || booking.status == .confirmed else {
+            return "Solo se pueden cancelar reservas pendientes o confirmadas."
+        }
+
+        guard booking.startAt > now else {
+            return "Esta reserva ya inició o ya pasó."
+        }
+
+        let latestAllowedCancellation = booking.startAt.addingTimeInterval(-minimumClientNotice)
+        guard now <= latestAllowedCancellation else {
+            return "Para cancelar con menos de 2 horas de anticipación, por favor contáctanos por WhatsApp."
+        }
+
+        return nil
     }
 }
 
@@ -19128,7 +19196,7 @@ struct AppliedRewardDto: Codable {
     let note: String
     let affectedMenuItemIds: [String]
     let affectedActivityIds: [String]
-
+    
     init(domain: AppliedReward) {
         self.id = domain.id
         self.templateId = domain.templateId
@@ -19138,7 +19206,7 @@ struct AppliedRewardDto: Codable {
         self.affectedMenuItemIds = domain.affectedMenuItemIds
         self.affectedActivityIds = domain.affectedActivityIds
     }
-
+    
     func toDomain() -> AppliedReward {
         AppliedReward(
             id: id,
@@ -19154,6 +19222,7 @@ struct AppliedRewardDto: Codable {
 
 struct OrderDto: Codable {
     let id: String
+    let clientId: String?
     let nationalId: String?
     let clientName: String
     let tableNumber: String
@@ -19170,9 +19239,10 @@ struct OrderDto: Codable {
     let status: String?
     let revision: Int?
     let lastConfirmedRevision: Int?
-
+    
     init(from domain: Order) {
         self.id = domain.id
+        self.clientId = domain.clientId
         self.nationalId = domain.nationalId
         self.clientName = domain.clientName
         self.tableNumber = domain.tableNumber
@@ -19190,21 +19260,22 @@ struct OrderDto: Codable {
         self.revision = domain.revision
         self.lastConfirmedRevision = domain.lastConfirmedRevision
     }
-
+    
     func toDomain() -> Order? {
         let domainItems = items.compactMap { $0.toDomain() }
         guard domainItems.count == items.count else { return nil }
-
+        
         let safeStatus = OrderStatus(rawValue: status ?? OrderStatus.pending.rawValue) ?? .pending
         let safeCreatedAt = createdAt.dateValue()
         let safeUpdatedAt = updatedAt?.dateValue() ?? safeCreatedAt
         let safeScheduledAt = scheduledAt?.dateValue() ?? safeCreatedAt
         let safeServiceMode = OrderServiceMode(rawValue: serviceMode ?? "")
-            ?? OrderScheduleResolver.mode(createdAt: safeCreatedAt, scheduledAt: safeScheduledAt)
+        ?? OrderScheduleResolver.mode(createdAt: safeCreatedAt, scheduledAt: safeScheduledAt)
         let safeRevision = revision ?? 1
-
+        
         return Order(
             id: id,
+            clientId: clientId,
             nationalId: nationalId,
             clientName: clientName,
             tableNumber: tableNumber,
@@ -19438,51 +19509,100 @@ final class MenuService: MenuServiceable {
 //
 
 import Combine
+import FirebaseAuth
 import FirebaseFirestore
 
 final class OrdersService: OrdersServiceable {
     private let db: Firestore
+    private let auth: Auth
     private let loyaltyRewardsService: LoyaltyRewardsServiceable
 
     init(
         db: Firestore = Firestore.firestore(),
+        auth: Auth = Auth.auth(),
         loyaltyRewardsService: LoyaltyRewardsServiceable
     ) {
         self.db = db
+        self.auth = auth
         self.loyaltyRewardsService = loyaltyRewardsService
     }
 
     func submit(order: Order) async throws {
+        let trustedOrder = try await makeTrustedOrder(from: order)
+
         let now = Date()
-        guard order.scheduledAt >= now.addingTimeInterval(-120) else {
-            throw NSError(
-                domain: "OrdersService",
+        guard trustedOrder.scheduledAt >= now.addingTimeInterval(-120) else {
+            throw makeError(
                 code: 20,
-                userInfo: [NSLocalizedDescriptionKey: "La fecha de la reserva ya pasó. Elige una hora actual o futura."]
+                message: "La fecha de la reserva ya pasó. Elige una hora actual o futura."
             )
         }
 
-        if order.shouldConsumeCurrentMenuStock {
-            try await submitAndConsumeCurrentStock(order: order)
+        if trustedOrder.shouldConsumeCurrentMenuStock {
+            try await submitAndConsumeCurrentStock(order: trustedOrder)
         } else {
-            try await submitFutureFoodReservation(order: order)
+            try await submitFutureFoodReservation(order: trustedOrder)
         }
 
-        if let nationalId = order.nationalId?.trimmingCharacters(in: .whitespacesAndNewlines),
+        if let nationalId = trustedOrder.nationalId?.trimmingCharacters(in: .whitespacesAndNewlines),
            !nationalId.isEmpty,
-           !order.appliedRewards.isEmpty {
+           !trustedOrder.appliedRewards.isEmpty {
             try await loyaltyRewardsService.reserveRewards(
                 nationalId: nationalId,
                 referenceType: .order,
-                referenceId: order.id,
-                appliedRewards: order.appliedRewards
+                referenceId: trustedOrder.id,
+                appliedRewards: trustedOrder.appliedRewards
             )
         }
+    }
+
+    private func makeTrustedOrder(from order: Order) async throws -> Order {
+        let uid = try requireCurrentUid()
+
+        let cleanNationalId = order.nationalId?.filter(\.isNumber) ?? ""
+        guard !cleanNationalId.isEmpty else {
+            throw makeError(code: 21, message: "No se encontró una cédula asociada a esta cuenta.")
+        }
+
+        let trustedItems = try await order.items.asyncMap { item -> OrderItem in
+            let ref = db.collection(FirestoreConstants.restaurant_menu_items).document(item.menuItemId)
+            let snapshot = try await ref.getDocument()
+            let dto = try snapshot.data(as: MenuItemDto.self)
+            let menuItem = dto.toDomain()
+
+            return OrderItem(
+                menuItemId: menuItem.id,
+                name: menuItem.name,
+                unitPrice: menuItem.finalPrice,
+                quantity: max(1, item.quantity),
+                preparedQuantity: 0,
+                notes: item.notes?.trimmingCharacters(in: .whitespacesAndNewlines)
+            )
+        }
+
+        let preview = try await loyaltyRewardsService.previewRestaurantRewards(
+            for: cleanNationalId,
+            items: trustedItems
+        )
+
+        let cleanTable = order.tableNumber.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleanTable.isEmpty || order.isScheduledForLater else {
+            throw makeError(code: 22, message: "Completa la mesa para pedidos inmediatos.")
+        }
+
+        return order
+            .withClientId(uid)
+            .withTrustedPricing(
+                items: trustedItems,
+                appliedRewards: preview.appliedRewards,
+                discount: preview.totalDiscount
+            )
     }
 
     private func submitFutureFoodReservation(order: Order) async throws {
         let dto = OrderDto(from: order)
         let orderData = try Firestore.Encoder().encode(dto)
+
         try await db
             .collection(FirestoreConstants.restaurant_orders)
             .document(order.id)
@@ -19515,11 +19635,11 @@ final class OrdersService: OrdersServiceable {
 
                 for item in loadedItems {
                     guard item.dto.isAvailable else {
-                        throw NSError(domain: "OrdersService", code: 1, userInfo: [NSLocalizedDescriptionKey: "\(item.dto.name) no está disponible."])
+                        throw self.makeError(code: 1, message: "\(item.dto.name) no está disponible.")
                     }
 
                     guard item.dto.remainingQuantity >= item.totalQuantity else {
-                        throw NSError(domain: "OrdersService", code: 2, userInfo: [NSLocalizedDescriptionKey: "Ya no hay suficiente stock de \(item.dto.name)."])
+                        throw self.makeError(code: 2, message: "Ya no hay suficiente stock de \(item.dto.name).")
                     }
 
                     let newRemainingQuantity = item.dto.remainingQuantity - item.totalQuantity
@@ -19543,10 +19663,8 @@ final class OrdersService: OrdersServiceable {
     }
 
     func observeOrders(for nationalId: String) -> AsyncThrowingStream<[Order], Error> {
-        let cleanNationalId = nationalId.trimmingCharacters(in: .whitespacesAndNewlines)
-
-        return AsyncThrowingStream { continuation in
-            guard !cleanNationalId.isEmpty else {
+        AsyncThrowingStream { continuation in
+            guard let uid = auth.currentUser?.uid, !uid.isEmpty else {
                 continuation.yield([])
                 continuation.finish()
                 return
@@ -19554,8 +19672,8 @@ final class OrdersService: OrdersServiceable {
 
             let listener = db
                 .collection(FirestoreConstants.restaurant_orders)
-                .whereField("nationalId", isEqualTo: cleanNationalId)
-                .order(by: "createdAt", descending: true)
+                .whereField("clientId", isEqualTo: uid)
+                .order(by: "scheduledAt", descending: true)
                 .addSnapshotListener { snapshot, error in
                     if let error {
                         continuation.finish(throwing: error)
@@ -19582,6 +19700,33 @@ final class OrdersService: OrdersServiceable {
 
             continuation.onTermination = { _ in listener.remove() }
         }
+    }
+
+    private func requireCurrentUid() throws -> String {
+        guard let uid = auth.currentUser?.uid.trimmingCharacters(in: .whitespacesAndNewlines),
+              !uid.isEmpty else {
+            throw makeError(code: 401, message: "Debes iniciar sesión nuevamente para enviar el pedido.")
+        }
+
+        return uid
+    }
+
+    private func makeError(code: Int, message: String) -> NSError {
+        NSError(
+            domain: "OrdersService",
+            code: code,
+            userInfo: [NSLocalizedDescriptionKey: message]
+        )
+    }
+}
+
+private extension Sequence {
+    func asyncMap<T>(_ transform: (Element) async throws -> T) async throws -> [T] {
+        var values: [T] = []
+        for element in self {
+            try await values.append(transform(element))
+        }
+        return values
     }
 }
 
@@ -19886,6 +20031,7 @@ extension CartDraftEntity {
     convenience init(from draft: OrderDraft) {
         self.init(
             id: draft.id,
+            clientId: draft.clientId,
             nationalId: draft.nationalId,
             clientName: draft.clientName,
             tableNumber: draft.tableNumber,
@@ -19901,7 +20047,8 @@ extension CartDraftEntity {
     func toDomain() -> OrderDraft {
         OrderDraft(
             id: id,
-            clientId: nationalId,
+            clientId: clientId,
+            nationalId: nationalId,
             clientName: clientName,
             tableNumber: tableNumber,
             scheduledAt: scheduledAt,
@@ -19932,6 +20079,7 @@ import SwiftData
 @Model
 final class CartDraftEntity {
     @Attribute(.unique) var id: UUID
+    var clientId: String?
     var nationalId: String?
     var clientName: String
     var tableNumber: String
@@ -19944,6 +20092,7 @@ final class CartDraftEntity {
 
     init(
         id: UUID = UUID(),
+        clientId: String? = nil,
         nationalId: String? = nil,
         clientName: String = "",
         tableNumber: String = "",
@@ -19953,6 +20102,7 @@ final class CartDraftEntity {
         items: [CartItemEntity] = []
     ) {
         self.id = id
+        self.clientId = clientId
         self.nationalId = nationalId
         self.clientName = clientName
         self.tableNumber = tableNumber
@@ -20177,6 +20327,7 @@ enum OrderServiceMode: String, Codable, Hashable, CaseIterable {
 
 struct Order: Identifiable, Hashable, Codable {
     let id: String
+    let clientId: String?
     let nationalId: String?
     let clientName: String
     let tableNumber: String
@@ -20196,6 +20347,7 @@ struct Order: Identifiable, Hashable, Codable {
 
     init(
         id: String,
+        clientId: String? = nil,
         nationalId: String?,
         clientName: String,
         tableNumber: String,
@@ -20220,7 +20372,8 @@ struct Order: Identifiable, Hashable, Codable {
         )
 
         self.id = id
-        self.nationalId = nationalId
+        self.clientId = clientId?.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.nationalId = nationalId?.filter(\.isNumber)
         self.clientName = clientName
         self.tableNumber = tableNumber
         self.createdAt = createdAt
@@ -20229,7 +20382,7 @@ struct Order: Identifiable, Hashable, Codable {
         self.scheduledDayKey = scheduledDayKey ?? OrderScheduleResolver.dayKey(from: resolvedScheduledAt)
         self.serviceMode = resolvedMode
         self.items = items
-        self.subtotal = subtotal
+        self.subtotal = max(0, subtotal)
         self.loyaltyDiscountAmount = max(0, loyaltyDiscountAmount)
         self.appliedRewards = appliedRewards
         self.totalAmount = max(0, totalAmount)
@@ -20238,12 +20391,10 @@ struct Order: Identifiable, Hashable, Codable {
         self.lastConfirmedRevision = lastConfirmedRevision
     }
 
-    func withLoyalty(
-        appliedRewards: [AppliedReward],
-        discount: Double
-    ) -> Order {
+    func withClientId(_ uid: String) -> Order {
         Order(
             id: id,
+            clientId: uid,
             nationalId: nationalId,
             clientName: clientName,
             tableNumber: tableNumber,
@@ -20254,9 +20405,67 @@ struct Order: Identifiable, Hashable, Codable {
             serviceMode: serviceMode,
             items: items,
             subtotal: subtotal,
-            loyaltyDiscountAmount: max(0, discount),
+            loyaltyDiscountAmount: loyaltyDiscountAmount,
             appliedRewards: appliedRewards,
-            totalAmount: max(0, subtotal - max(0, discount)),
+            totalAmount: totalAmount,
+            status: status,
+            revision: revision,
+            lastConfirmedRevision: lastConfirmedRevision
+        )
+    }
+
+    func withTrustedPricing(
+        items trustedItems: [OrderItem],
+        appliedRewards: [AppliedReward],
+        discount: Double
+    ) -> Order {
+        let trustedSubtotal = trustedItems.reduce(0) { $0 + $1.totalPrice }.roundedMoney
+        let safeDiscount = min(max(0, discount), trustedSubtotal).roundedMoney
+
+        return Order(
+            id: id,
+            clientId: clientId,
+            nationalId: nationalId,
+            clientName: clientName,
+            tableNumber: tableNumber,
+            createdAt: createdAt,
+            updatedAt: Date(),
+            scheduledAt: scheduledAt,
+            scheduledDayKey: scheduledDayKey,
+            serviceMode: serviceMode,
+            items: trustedItems,
+            subtotal: trustedSubtotal,
+            loyaltyDiscountAmount: safeDiscount,
+            appliedRewards: appliedRewards,
+            totalAmount: max(0, trustedSubtotal - safeDiscount).roundedMoney,
+            status: status,
+            revision: revision,
+            lastConfirmedRevision: lastConfirmedRevision
+        )
+    }
+
+    func withLoyalty(
+        appliedRewards: [AppliedReward],
+        discount: Double
+    ) -> Order {
+        let safeDiscount = min(max(0, discount), subtotal).roundedMoney
+
+        return Order(
+            id: id,
+            clientId: clientId,
+            nationalId: nationalId,
+            clientName: clientName,
+            tableNumber: tableNumber,
+            createdAt: createdAt,
+            updatedAt: updatedAt,
+            scheduledAt: scheduledAt,
+            scheduledDayKey: scheduledDayKey,
+            serviceMode: serviceMode,
+            items: items,
+            subtotal: subtotal,
+            loyaltyDiscountAmount: safeDiscount,
+            appliedRewards: appliedRewards,
+            totalAmount: max(0, subtotal - safeDiscount).roundedMoney,
             status: status,
             revision: revision,
             lastConfirmedRevision: lastConfirmedRevision
@@ -20296,7 +20505,6 @@ struct Order: Identifiable, Hashable, Codable {
         Calendar.current.isDateInToday(scheduledAt)
     }
 
-    /// Same-day scheduled food still consumes today's menu stock. Future-day reservations do not.
     var shouldConsumeCurrentMenuStock: Bool {
         !isScheduledForLater || Calendar.current.isDate(scheduledAt, inSameDayAs: Date())
     }
@@ -20346,6 +20554,12 @@ enum OrderScheduleResolver {
     }
 }
 
+private extension Double {
+    var roundedMoney: Double {
+        (self * 100).rounded() / 100
+    }
+}
+
 ```
 
 ---
@@ -20362,8 +20576,11 @@ enum OrderScheduleResolver {
 
 import Foundation
 
+import Foundation
+
 struct OrderDraft: Identifiable, Hashable {
     let id: UUID
+    var clientId: String?
     var nationalId: String?
     var clientName: String
     var tableNumber: String
@@ -20377,6 +20594,7 @@ struct OrderDraft: Identifiable, Hashable {
     init(
         id: UUID = UUID(),
         clientId: String? = nil,
+        nationalId: String? = nil,
         clientName: String = "",
         tableNumber: String = "",
         scheduledAt: Date = Date(),
@@ -20387,7 +20605,8 @@ struct OrderDraft: Identifiable, Hashable {
         lastConfirmedRevision: Int? = nil
     ) {
         self.id = id
-        self.nationalId = clientId
+        self.clientId = clientId
+        self.nationalId = nationalId
         self.clientName = clientName
         self.tableNumber = tableNumber
         self.scheduledAt = scheduledAt
@@ -20412,6 +20631,119 @@ struct OrderDraft: Identifiable, Hashable {
 
     var isEmpty: Bool {
         items.isEmpty
+    }
+}
+
+extension OrderDraft {
+    var normalizedScheduledAt: Date {
+        OrderScheduleResolver.sanitizedScheduledAt(scheduledAt)
+    }
+
+    var serviceMode: OrderServiceMode {
+        OrderScheduleResolver.mode(
+            createdAt: Date(),
+            scheduledAt: normalizedScheduledAt
+        )
+    }
+
+    var isScheduledForLater: Bool {
+        serviceMode == .scheduled
+    }
+
+    var hasValidClientName: Bool {
+        !clientName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    var hasValidTableNumber: Bool {
+        !tableNumber.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    var canSubmit: Bool {
+        !isEmpty && hasValidClientName && (hasValidTableNumber || isScheduledForLater)
+    }
+
+    func normalizedForSubmit(now: Date = Date()) -> OrderDraft {
+        OrderDraft(
+            id: id,
+            nationalId: nationalId,
+            clientName: clientName,
+            tableNumber: tableNumber,
+            scheduledAt: OrderScheduleResolver.sanitizedScheduledAt(scheduledAt, now: now),
+            createdAt: createdAt,
+            updatedAt: now,
+            items: items,
+            revision: revision,
+            lastConfirmedRevision: lastConfirmedRevision
+        )
+    }
+
+    func toOrder(
+        clientId: String?,
+        orderId: String = UUID().uuidString,
+        status: OrderStatus = .pending
+    ) -> Order {
+        let now = Date()
+
+        let resolvedScheduledAt = OrderScheduleResolver.sanitizedScheduledAt(
+            scheduledAt,
+            now: now
+        )
+
+        let resolvedServiceMode = OrderScheduleResolver.mode(
+            createdAt: now,
+            scheduledAt: resolvedScheduledAt
+        )
+
+        let orderItems = items.map { item in
+            OrderItem(
+                menuItemId: item.menuItem.id,
+                name: item.menuItem.name,
+                unitPrice: item.unitPrice,
+                quantity: item.quantity,
+                notes: item.notes
+            )
+        }
+
+        let cleanClientId = clientId?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .nilIfBlank
+
+        let cleanNationalId = nationalId?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .nilIfBlank
+
+        let cleanClientName = clientName
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        let cleanTable = tableNumber
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        return Order(
+            id: orderId,
+            clientId: cleanClientId,
+            nationalId: cleanNationalId,
+            clientName: cleanClientName,
+            tableNumber: cleanTable.isEmpty && resolvedServiceMode == .scheduled ? "Por asignar" : cleanTable,
+            createdAt: now,
+            updatedAt: now,
+            scheduledAt: resolvedScheduledAt,
+            scheduledDayKey: OrderScheduleResolver.dayKey(from: resolvedScheduledAt),
+            serviceMode: resolvedServiceMode,
+            items: orderItems,
+            subtotal: subtotal,
+            loyaltyDiscountAmount: 0,
+            appliedRewards: [],
+            totalAmount: totalAmount,
+            status: status,
+            revision: revision ?? 0,
+            lastConfirmedRevision: lastConfirmedRevision
+        )
+    }
+}
+
+private extension String {
+    var nilIfBlank: String? {
+        isEmpty ? nil : self
     }
 }
 
@@ -20870,10 +21202,19 @@ final class CartManager: ObservableObject {
 
     var items: [CartItem] { draft.items }
 
+    // Backward-compatible name used by existing views. This is the national ID, not Firebase uid.
     var clientId: String? {
         get { draft.nationalId }
         set {
-            draft.nationalId = newValue
+            draft.nationalId = newValue?.filter(\.isNumber)
+            persist()
+        }
+    }
+
+    var nationalId: String? {
+        get { draft.nationalId }
+        set {
+            draft.nationalId = newValue?.filter(\.isNumber)
             persist()
         }
     }
@@ -20903,9 +21244,10 @@ final class CartManager: ObservableObject {
     var totalAmount: Double { draft.totalAmount }
     var isEmpty: Bool { draft.isEmpty }
 
-    func add(item: MenuItem, quantity: Int = 1, notes: String? = nil) {
-        guard item.canBeOrdered || isScheduledForLater else { return }
-        guard quantity > 0 else { return }
+    @discardableResult
+    func add(item: MenuItem, quantity: Int = 1, notes: String? = nil) -> Bool {
+        guard item.canBeOrdered || isScheduledForLater else { return false }
+        guard quantity > 0 else { return false }
 
         let cleanNotes = notes?.trimmingCharacters(in: .whitespacesAndNewlines)
         let finalNotes = (cleanNotes?.isEmpty == true) ? nil : cleanNotes
@@ -20926,12 +21268,13 @@ final class CartManager: ObservableObject {
             draft.items[index].quantity = max(1, next)
         } else {
             let safeQuantity = isScheduledForLater ? max(1, quantity) : min(quantity, item.remainingQuantity)
-            guard safeQuantity > 0 else { return }
+            guard safeQuantity > 0 else { return false }
             draft.items.append(CartItem(menuItem: item, quantity: safeQuantity, notes: finalNotes))
         }
 
         draft.updatedAt = Date()
         persist()
+        return true
     }
 
     func increaseQuantity(for itemId: String, by amount: Int = 1) {
@@ -21007,7 +21350,7 @@ final class CartManager: ObservableObject {
     }
 
     func updateClientId(_ id: String) {
-        draft.nationalId = id
+        draft.nationalId = id.filter(\.isNumber)
         persist()
     }
 
@@ -21075,14 +21418,14 @@ final class CartManager: ObservableObject {
         persist()
     }
 
-    func createOrder() -> Order? {
+    func createOrder(firebaseClientId: String? = nil) -> Order? {
         refreshDefaultScheduleIfNeeded()
         guard draft.canSubmit else { return nil }
-        return draft.toOrder()
+        return draft.toOrder(clientId: firebaseClientId)
     }
 
-    func submitOrder() -> Order? {
-        guard let order = createOrder() else { return nil }
+    func submitOrder(firebaseClientId: String? = nil) -> Order? {
+        guard let order = createOrder(firebaseClientId: firebaseClientId) else { return nil }
         clear()
         return order
     }
@@ -22292,11 +22635,16 @@ struct MenuItemDetailView: View {
                     let trimmedNotes = notesText.trimmingCharacters(in: .whitespacesAndNewlines)
                     let finalNotes = trimmedNotes.isEmpty ? nil : trimmedNotes
 
-                    cartManager.add(
+                    let didAdd = cartManager.add(
                         item: item,
                         quantity: quantity,
                         notes: finalNotes
                     )
+
+                    guard didAdd else {
+                        // Use your existing alert/toast state if this view has one.
+                        return
+                    }
 
                     withAnimation(.easeInOut(duration: 0.25)) {
                         showAddedMessage = true
@@ -24258,11 +24606,20 @@ struct OrdersView: View {
     private var sortedOrders: [Order] {
         switch sortOption {
         case .newestFirst:
-            return filteredOrders.sorted { $0.createdAt > $1.createdAt }
+            return filteredOrders.sorted {
+                if $0.scheduledAt != $1.scheduledAt { return $0.scheduledAt > $1.scheduledAt }
+                return $0.createdAt > $1.createdAt
+            }
         case .oldestFirst:
-            return filteredOrders.sorted { $0.createdAt < $1.createdAt }
+            return filteredOrders.sorted {
+                if $0.scheduledAt != $1.scheduledAt { return $0.scheduledAt < $1.scheduledAt }
+                return $0.createdAt < $1.createdAt
+            }
         case .highestTotal:
-            return filteredOrders.sorted { $0.totalAmount > $1.totalAmount }
+            return filteredOrders.sorted {
+                if $0.totalAmount != $1.totalAmount { return $0.totalAmount > $1.totalAmount }
+                return $0.scheduledAt < $1.scheduledAt
+            }
         }
     }
 
@@ -24283,7 +24640,7 @@ struct OrdersView: View {
 
         case .byDate:
             let calendar = Calendar.current
-            let buckets = Dictionary(grouping: sortedOrders) { calendar.startOfDay(for: $0.createdAt) }
+            let buckets = Dictionary(grouping: sortedOrders) { calendar.startOfDay(for: $0.scheduledAt) }
 
             return buckets
                 .map { day, orders in
@@ -24294,8 +24651,8 @@ struct OrdersView: View {
                     )
                 }
                 .sorted { lhs, rhs in
-                    guard let lhsDate = lhs.orders.first?.createdAt,
-                          let rhsDate = rhs.orders.first?.createdAt else {
+                    guard let lhsDate = lhs.orders.first?.scheduledAt,
+                          let rhsDate = rhs.orders.first?.scheduledAt else {
                         return lhs.title > rhs.title
                     }
 
@@ -24488,11 +24845,20 @@ struct OrdersView: View {
     private func sortInsideGroup(_ orders: [Order]) -> [Order] {
         switch sortOption {
         case .newestFirst:
-            return orders.sorted { $0.createdAt > $1.createdAt }
+            return orders.sorted {
+                if $0.scheduledAt != $1.scheduledAt { return $0.scheduledAt > $1.scheduledAt }
+                return $0.createdAt > $1.createdAt
+            }
         case .oldestFirst:
-            return orders.sorted { $0.createdAt < $1.createdAt }
+            return orders.sorted {
+                if $0.scheduledAt != $1.scheduledAt { return $0.scheduledAt < $1.scheduledAt }
+                return $0.createdAt < $1.createdAt
+            }
         case .highestTotal:
-            return orders.sorted { $0.totalAmount > $1.totalAmount }
+            return orders.sorted {
+                if $0.totalAmount != $1.totalAmount { return $0.totalAmount > $1.totalAmount }
+                return $0.scheduledAt < $1.scheduledAt
+            }
         }
     }
 
@@ -26439,84 +26805,6 @@ extension Double {
     
     var priceText: String {
         "\(String(format: "%.2f", self))"
-    }
-}
-
-```
-
----
-
-# Altos del Murco/root/util/extension/OrderDraftExtension.swift
-
-```swift
-//
-//  OrderDraft.swift
-//  Altos del Murco
-//
-//  Created by José Ruiz on 12/3/26.
-//
-
-import Foundation
-
-extension OrderDraft {
-    var normalizedScheduledAt: Date {
-        OrderScheduleResolver.sanitizedScheduledAt(scheduledAt)
-    }
-
-    var serviceMode: OrderServiceMode {
-        OrderScheduleResolver.mode(createdAt: Date(), scheduledAt: normalizedScheduledAt)
-    }
-
-    var isScheduledForLater: Bool {
-        serviceMode == .scheduled
-    }
-
-    func toOrder(orderId: String = UUID().uuidString, status: OrderStatus = .pending) -> Order {
-        let now = Date()
-        let resolvedScheduledAt = OrderScheduleResolver.sanitizedScheduledAt(scheduledAt, now: now)
-        let resolvedServiceMode = OrderScheduleResolver.mode(createdAt: now, scheduledAt: resolvedScheduledAt)
-
-        let orderItems = items.map {
-            OrderItem(
-                menuItemId: $0.menuItem.id,
-                name: $0.menuItem.name,
-                unitPrice: $0.unitPrice,
-                quantity: $0.quantity,
-                notes: $0.notes
-            )
-        }
-
-        let cleanTable = tableNumber.trimmingCharacters(in: .whitespacesAndNewlines)
-
-        return Order(
-            id: orderId,
-            nationalId: nationalId?.trimmingCharacters(in: .whitespacesAndNewlines),
-            clientName: clientName.trimmingCharacters(in: .whitespacesAndNewlines),
-            tableNumber: cleanTable.isEmpty && resolvedServiceMode == .scheduled ? "Por asignar" : cleanTable,
-            createdAt: now,
-            updatedAt: now,
-            scheduledAt: resolvedScheduledAt,
-            scheduledDayKey: OrderScheduleResolver.dayKey(from: resolvedScheduledAt),
-            serviceMode: resolvedServiceMode,
-            items: orderItems,
-            subtotal: subtotal,
-            totalAmount: totalAmount,
-            status: status,
-            revision: revision ?? 0,
-            lastConfirmedRevision: lastConfirmedRevision
-        )
-    }
-
-    var hasValidClientName: Bool {
-        !clientName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-    }
-
-    var hasValidTableNumber: Bool {
-        !tableNumber.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-    }
-
-    var canSubmit: Bool {
-        !isEmpty && hasValidClientName && (hasValidTableNumber || isScheduledForLater)
     }
 }
 

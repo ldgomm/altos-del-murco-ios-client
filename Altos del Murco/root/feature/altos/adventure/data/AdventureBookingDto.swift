@@ -236,7 +236,7 @@ struct AdventureBookingDto: Codable {
             appliedRewards: appliedRewards?.compactMap { $0.toDomain() } ?? [],
             nightPremium: nightPremium,
             totalAmount: totalAmount,
-            status: AdventureBookingStatus(rawValue: status) ?? .confirmed,
+            status: parsedStatus,
             createdAt: createdAt.dateValue(),
             notes: notes
         )
@@ -276,5 +276,9 @@ struct AdventureBookingDto: Codable {
             createdAt: Timestamp(date: createdAt),
             notes: request.notes
         )
+    }
+    
+    private var parsedStatus: AdventureBookingStatus {
+        AdventureBookingStatus(rawValue: status.trimmingCharacters(in: .whitespacesAndNewlines)) ?? .pending
     }
 }
