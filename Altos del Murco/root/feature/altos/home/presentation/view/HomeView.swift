@@ -250,7 +250,7 @@ struct HomeView: View {
 
     private var heroSection: some View {
         let firstName = profile?.fullName.split(separator: " ").first.map(String.init)
-        let title = firstName.map { "Hola, \($0). Vive Los Altos del Murco." } ?? "Vive Los Altos del Murco."
+        let title = firstName.map { "Hola, \($0)\nVive Los Altos" } ?? "Vive Los Altos"
 
         return PremiumHero(
             title: title,
