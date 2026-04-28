@@ -35,3 +35,5 @@ fastlane/test_output
 # Firebase config
 
 Altos del Murco/GoogleService-Info.plist
+export_swift_to_md.sh
+project_swift_files.md
