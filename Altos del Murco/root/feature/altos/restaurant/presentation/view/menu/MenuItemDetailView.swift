@@ -44,6 +44,17 @@ struct MenuItemDetailView: View {
         item.finalPrice * Double(quantity)
     }
 
+    private var currentTotal: Double {
+        incrementalDiscount > 0 ? displayedPrice : baseSubtotal
+    }
+
+    private var heroShape: RoundedRectangle {
+        RoundedRectangle(
+            cornerRadius: AppTheme.Radius.xLarge,
+            style: .continuous
+        )
+    }
+
     init(
         item: MenuItem,
         categoryTitle: String,
@@ -59,87 +70,247 @@ struct MenuItemDetailView: View {
     }
 
     var body: some View {
-        ScrollView {
+        ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: 18) {
                 heroSection
+
+                if !item.canBeOrdered {
+                    availabilityWarningCard
+                }
+
                 detailsSection
+                Divider()
+                bottomBar
             }
             .padding(.horizontal, 16)
             .padding(.top, 12)
             .padding(.bottom, 120)
         }
-        .navigationTitle("Plato")
+        .navigationTitle(item.name)
         .navigationBarTitleDisplayMode(.inline)
         .appScreenStyle(.restaurant)
-        .safeAreaInset(edge: .bottom) {
-            bottomBar
-        }
+//        .safeAreaInset(edge: .bottom) {
+//            
+//        }
     }
 
     private var heroSection: some View {
         ZStack(alignment: .bottomLeading) {
-            RoundedRectangle(cornerRadius: AppTheme.Radius.xLarge, style: .continuous)
-                .fill(palette.heroGradient)
-                .frame(height: 260)
-                .overlay(
-                    RoundedRectangle(cornerRadius: AppTheme.Radius.xLarge, style: .continuous)
-                        .fill(.black.opacity(colorScheme == .dark ? 0.08 : 0.02))
-                )
-                .overlay(alignment: .topTrailing) {
-                    Circle()
-                        .fill(palette.glow.opacity(colorScheme == .dark ? 0.30 : 0.18))
-                        .frame(width: 140, height: 140)
-                        .blur(radius: 30)
-                        .offset(x: 24, y: -24)
-                }
+            heroImageLayer
+            heroGradientOverlay
+            heroDecorations
+            heroContent
+        }
+        .frame(height: 320)
+        .clipShape(heroShape)
+        .overlay {
+            heroShape
+                .stroke(Color.white.opacity(colorScheme == .dark ? 0.10 : 0.18), lineWidth: 1)
+        }
+        .shadow(
+            color: palette.shadow.opacity(colorScheme == .dark ? 0.30 : 0.14),
+            radius: 22,
+            x: 0,
+            y: 12
+        )
+    }
 
-            VStack(alignment: .leading, spacing: 14) {
-                HStack {
-                    BrandIconBubble(theme: .restaurant, systemImage: "fork.knife", size: 60)
+    @ViewBuilder
+    private var heroImageLayer: some View {
+        if let imageURL = item.imageURL,
+           let url = URL(string: imageURL) {
+            GeometryReader { proxy in
+                AsyncImage(url: url) { phase in
+                    switch phase {
+                    case .empty:
+                        heroImageLoadingView
+                            .frame(width: proxy.size.width, height: proxy.size.height)
 
-                    Spacer()
+                    case .success(let image):
+                        image
+                            .resizable()
+                            .scaledToFill()
+                            .frame(width: proxy.size.width, height: proxy.size.height)
+                            .clipped()
 
-                    if item.isFeatured {
-                        BrandBadge(theme: .restaurant, title: "Popular", selected: true)
+                    case .failure:
+                        heroImagePlaceholder
+                            .frame(width: proxy.size.width, height: proxy.size.height)
+
+                    @unknown default:
+                        heroImagePlaceholder
+                            .frame(width: proxy.size.width, height: proxy.size.height)
                     }
+                }
+            }
+        } else {
+            heroImagePlaceholder
+        }
+    }
+
+    private var heroImageLoadingView: some View {
+        ZStack {
+            palette.heroGradient
+
+            VStack(spacing: 12) {
+                ProgressView()
+                    .tint(palette.primary)
+
+                Text("Preparando imagen")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(palette.onPrimary.opacity(0.82))
+            }
+        }
+    }
+
+    private var heroImagePlaceholder: some View {
+        ZStack {
+            palette.heroGradient
+
+            Circle()
+                .fill(Color.white.opacity(colorScheme == .dark ? 0.08 : 0.16))
+                .frame(width: 190, height: 190)
+                .blur(radius: 12)
+                .offset(x: 70, y: -70)
+
+            VStack(spacing: 14) {
+                Image(systemName: "fork.knife.circle.fill")
+                    .font(.system(size: 54))
+                    .foregroundStyle(palette.onPrimary.opacity(0.92))
+
+                Text(item.name)
+                    .font(.headline)
+                    .foregroundStyle(palette.onPrimary.opacity(0.92))
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 28)
+            }
+        }
+    }
+
+    private var heroGradientOverlay: some View {
+        LinearGradient(
+            colors: [
+                .black.opacity(0.05),
+                .black.opacity(colorScheme == .dark ? 0.30 : 0.18),
+                .black.opacity(0.78)
+            ],
+            startPoint: .top,
+            endPoint: .bottom
+        )
+    }
+
+    private var heroDecorations: some View {
+        VStack {
+            HStack {
+                if item.isFeatured {
+                    BrandBadge(theme: .restaurant, title: "Popular", selected: true)
                 }
 
                 Spacer()
 
-                Text(item.name)
-                    .font(.system(size: 30, weight: .bold, design: .rounded))
-                    .foregroundStyle(palette.onPrimary)
-
-                HStack(spacing: 10) {
-                    Label(categoryTitle, systemImage: "tag.fill")
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(palette.onPrimary.opacity(0.92))
-
-                    Text(item.stockLabel)
-                        .font(.caption.weight(.bold))
-                        .foregroundStyle(item.canBeOrdered ? palette.onPrimary : palette.destructive)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 6)
-                        .background(
-                            item.canBeOrdered
-                                ? .white.opacity(0.18)
-                                : .white.opacity(0.92)
-                        )
-                        .clipShape(Capsule())
-                }
+                Text(item.stockLabel)
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(item.canBeOrdered ? .white : palette.destructive)
+                    .padding(.horizontal, 11)
+                    .padding(.vertical, 7)
+                    .background(
+                        Capsule()
+                            .fill(item.canBeOrdered ? .white.opacity(0.18) : .white.opacity(0.94))
+                    )
+                    .overlay {
+                        Capsule()
+                            .stroke(.white.opacity(0.22), lineWidth: 1)
+                    }
             }
-            .padding(20)
+
+            Spacer()
         }
-        .shadow(
-            color: palette.shadow.opacity(colorScheme == .dark ? 0.28 : 0.12),
-            radius: 18,
-            x: 0,
-            y: 10
-        )
+        .padding(18)
+    }
+
+    private var heroContent: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Spacer()
+
+            VStack(alignment: .leading, spacing: 8) {
+                Label(categoryTitle, systemImage: "tag.fill")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.white.opacity(0.92))
+
+                Text(item.name)
+                    .font(.system(size: 32, weight: .bold, design: .rounded))
+                    .foregroundStyle(.white)
+                    .lineLimit(3)
+                    .minimumScaleFactor(0.82)
+
+                Text(item.description)
+                    .font(.subheadline)
+                    .foregroundStyle(.white.opacity(0.90))
+                    .lineLimit(2)
+            }
+
+            HStack(alignment: .lastTextBaseline, spacing: 10) {
+                if incrementalDiscount > 0 {
+                    Text(baseSubtotal.priceText)
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(.white.opacity(0.68))
+                        .strikethrough()
+
+                    Text(displayedPrice.priceText)
+                        .font(.title2.bold())
+                        .foregroundStyle(.white)
+
+                    BrandBadge(theme: .restaurant, title: "Premio", selected: true)
+                } else if item.hasOffer, let offerPrice = item.offerPrice {
+                    Text(item.price.priceText)
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(.white.opacity(0.68))
+                        .strikethrough()
+
+                    Text(offerPrice.priceText)
+                        .font(.title2.bold())
+                        .foregroundStyle(.white)
+
+                    BrandBadge(theme: .restaurant, title: "Oferta", selected: true)
+                } else {
+                    Text(item.finalPrice.priceText)
+                        .font(.title2.bold())
+                        .foregroundStyle(.white)
+                }
+
+                Spacer()
+            }
+        }
+        .padding(20)
+    }
+
+    private var availabilityWarningCard: some View {
+        HStack(alignment: .top, spacing: 12) {
+            BrandIconBubble(
+                theme: .restaurant,
+                systemImage: "exclamationmark.triangle.fill",
+                size: 42
+            )
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text("No disponible por ahora")
+                    .font(.headline)
+                    .foregroundStyle(palette.textPrimary)
+
+                Text("Este producto no se puede agregar al carrito en este momento. Puedes revisar otros platos disponibles del menú.")
+                    .font(.subheadline)
+                    .foregroundStyle(palette.textSecondary)
+            }
+
+            Spacer()
+        }
+        .appCardStyle(.restaurant, emphasized: false)
     }
 
     private var detailsSection: some View {
         VStack(alignment: .leading, spacing: 16) {
+            quickInfoCard
+
             if let rewardPresentation {
                 rewardsCard(rewardPresentation)
             }
@@ -150,6 +321,61 @@ struct MenuItemDetailView: View {
             quantityCard
             notesCard
         }
+    }
+
+    private var quickInfoCard: some View {
+        HStack(spacing: 10) {
+            infoPill(
+                title: "Categoría",
+                value: categoryTitle,
+                systemImage: "tag.fill"
+            )
+
+            infoPill(
+                title: "Stock",
+                value: item.stockLabel,
+                systemImage: item.canBeOrdered ? "checkmark.circle.fill" : "xmark.circle.fill"
+            )
+
+            infoPill(
+                title: "Cantidad",
+                value: "\(quantity)",
+                systemImage: "number.circle.fill"
+            )
+        }
+    }
+
+    private func infoPill(
+        title: String,
+        value: String,
+        systemImage: String
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 7) {
+            Image(systemName: systemImage)
+                .font(.caption.weight(.bold))
+                .foregroundStyle(palette.primary)
+
+            Text(value)
+                .font(.caption.bold())
+                .foregroundStyle(palette.textPrimary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.72)
+
+            Text(title)
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(palette.textSecondary)
+                .lineLimit(1)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(palette.elevatedCard)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(palette.stroke, lineWidth: 1)
+        )
     }
 
     private func rewardsCard(_ reward: RewardPresentation) -> some View {
@@ -209,16 +435,44 @@ struct MenuItemDetailView: View {
                 subtitle: "Componentes frescos y acompañamientos."
             )
 
-            ForEach(item.ingredients, id: \.self) { ingredient in
-                HStack(alignment: .top, spacing: 10) {
-                    Circle()
-                        .fill(palette.accent)
-                        .frame(width: 7, height: 7)
-                        .padding(.top, 7)
+            if item.ingredients.isEmpty {
+                Text("No hay ingredientes detallados para este plato.")
+                    .font(.subheadline)
+                    .foregroundStyle(palette.textSecondary)
+            } else {
+                LazyVGrid(
+                    columns: [
+                        GridItem(.flexible(), spacing: 8),
+                        GridItem(.flexible(), spacing: 8)
+                    ],
+                    alignment: .leading,
+                    spacing: 8
+                ) {
+                    ForEach(item.ingredients, id: \.self) { ingredient in
+                        HStack(spacing: 8) {
+                            Circle()
+                                .fill(palette.primary)
+                                .frame(width: 6, height: 6)
 
-                    Text(ingredient)
-                        .font(.subheadline)
-                        .foregroundStyle(palette.textSecondary)
+                            Text(ingredient)
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(palette.textSecondary)
+                                .lineLimit(2)
+                                .minimumScaleFactor(0.82)
+
+                            Spacer(minLength: 0)
+                        }
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 9)
+                        .background(
+                            Capsule()
+                                .fill(palette.elevatedCard)
+                        )
+                        .overlay(
+                            Capsule()
+                                .stroke(palette.stroke, lineWidth: 1)
+                        )
+                    }
                 }
             }
         }
@@ -230,7 +484,7 @@ struct MenuItemDetailView: View {
             BrandSectionHeader(
                 theme: .restaurant,
                 title: "Precio",
-                subtitle: item.hasOffer ? "Oferta especial disponible." : "Precio regular actual."
+                subtitle: priceSubtitle
             )
 
             HStack(alignment: .lastTextBaseline, spacing: 10) {
@@ -241,7 +495,7 @@ struct MenuItemDetailView: View {
                         .strikethrough()
 
                     Text(displayedPrice.priceText)
-                        .font(.system(size: 28, weight: .bold, design: .rounded))
+                        .font(.system(size: 30, weight: .bold, design: .rounded))
                         .foregroundStyle(palette.success)
                 } else if item.hasOffer, let offerPrice = item.offerPrice {
                     Text((item.price * Double(quantity)).priceText)
@@ -250,16 +504,36 @@ struct MenuItemDetailView: View {
                         .strikethrough()
 
                     Text((offerPrice * Double(quantity)).priceText)
-                        .font(.system(size: 28, weight: .bold, design: .rounded))
+                        .font(.system(size: 30, weight: .bold, design: .rounded))
                         .foregroundStyle(palette.textPrimary)
                 } else {
                     Text(baseSubtotal.priceText)
-                        .font(.system(size: 28, weight: .bold, design: .rounded))
+                        .font(.system(size: 30, weight: .bold, design: .rounded))
                         .foregroundStyle(palette.textPrimary)
                 }
+
+                Spacer()
+            }
+
+            if quantity > 1 {
+                Text("Unitario: \(item.finalPrice.priceText)")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(palette.textSecondary)
             }
         }
         .appCardStyle(.restaurant)
+    }
+
+    private var priceSubtitle: String {
+        if incrementalDiscount > 0 {
+            return "Incluye el beneficio aplicado por Murco Loyalty."
+        }
+
+        if item.hasOffer {
+            return "Oferta especial disponible."
+        }
+
+        return "Precio regular actual."
     }
 
     private var quantityCard: some View {
@@ -277,7 +551,7 @@ struct MenuItemDetailView: View {
                 minimum: 1,
                 maximum: max(1, item.remainingQuantity)
             )
-            .opacity(item.isAvailable ? 1 : 0.55)
+            .opacity(item.canBeOrdered ? 1 : 0.55)
         }
         .appCardStyle(.restaurant)
     }
@@ -293,8 +567,8 @@ struct MenuItemDetailView: View {
             TextField("Agrega alguna nota especial (opcional)", text: $notesText, axis: .vertical)
                 .appTextFieldStyle(.restaurant)
                 .lineLimit(3, reservesSpace: true)
-                .disabled(!item.isAvailable)
-                .opacity(item.isAvailable ? 1 : 0.55)
+                .disabled(!item.canBeOrdered)
+                .opacity(item.canBeOrdered ? 1 : 0.55)
         }
         .appCardStyle(.restaurant)
     }
@@ -315,9 +589,9 @@ struct MenuItemDetailView: View {
             }
 
             VStack(spacing: 14) {
-                HStack {
+                HStack(alignment: .center) {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("Total")
+                        Text(item.canBeOrdered ? "Total" : "No disponible")
                             .font(.subheadline.weight(.medium))
                             .foregroundStyle(palette.textSecondary)
 
@@ -334,12 +608,26 @@ struct MenuItemDetailView: View {
                                 .strikethrough()
                         }
 
-                        Text((incrementalDiscount > 0 ? displayedPrice : baseSubtotal).priceText)
+                        Text(currentTotal.priceText)
                             .font(.title3.bold())
-                            .foregroundStyle(palette.textPrimary)
+                            .foregroundStyle(item.canBeOrdered ? palette.textPrimary : palette.textTertiary)
                     }
 
                     Spacer()
+
+                    Text("\(quantity)x")
+                        .font(.caption.bold())
+                        .foregroundStyle(palette.textSecondary)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 7)
+                        .background(
+                            Capsule()
+                                .fill(palette.elevatedCard)
+                        )
+                        .overlay(
+                            Capsule()
+                                .stroke(palette.stroke, lineWidth: 1)
+                        )
                 }
 
                 Button {
@@ -353,7 +641,6 @@ struct MenuItemDetailView: View {
                     )
 
                     guard didAdd else {
-                        // Use your existing alert/toast state if this view has one.
                         return
                     }
 
@@ -365,6 +652,7 @@ struct MenuItemDetailView: View {
                         withAnimation(.easeInOut(duration: 0.25)) {
                             showAddedMessage = false
                         }
+
                         dismiss()
                     }
                 } label: {
