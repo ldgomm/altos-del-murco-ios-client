@@ -16,18 +16,19 @@ final class FeaturedFeedViewModel: ObservableObject {
     @Published private(set) var hasMore = true
     @Published var errorMessage: String?
 
-    private let fetchNextPageUseCase: FetchFeaturedPostsPageUseCase
     private let observeLatestUseCase: ObserveLatestFeaturedPostsUseCase
 
     private var latestListener: ListenerRegistration?
-    private var lastSnapshot: DocumentSnapshot?
     private let pageSize = 5
+    private var observedLimit = 5
 
     init(
         fetchNextPageUseCase: FetchFeaturedPostsPageUseCase,
         observeLatestUseCase: ObserveLatestFeaturedPostsUseCase
     ) {
-        self.fetchNextPageUseCase = fetchNextPageUseCase
+        // Kept in the initializer so FeaturedFeedModule does not need changes.
+        // Pagination is now handled by increasing the live listener limit.
+        _ = fetchNextPageUseCase
         self.observeLatestUseCase = observeLatestUseCase
     }
 
@@ -37,18 +38,26 @@ final class FeaturedFeedViewModel: ObservableObject {
 
     func start() {
         guard latestListener == nil else { return }
-        isLoadingInitial = true
-        observeLatest()
+
+        observedLimit = max(pageSize, posts.count)
+        isLoadingInitial = posts.isEmpty
+        errorMessage = nil
+
+        observeCurrentWindow()
     }
 
     func refresh() {
         latestListener?.remove()
         latestListener = nil
+
         posts = []
-        lastSnapshot = nil
+        observedLimit = pageSize
         hasMore = true
         errorMessage = nil
-        start()
+        isLoadingInitial = true
+        isLoadingMore = false
+
+        observeCurrentWindow()
     }
 
     func loadMoreIfNeeded(currentPost post: FeaturedPost?) {
@@ -56,71 +65,61 @@ final class FeaturedFeedViewModel: ObservableObject {
         guard let last = posts.last, last.id == post.id else { return }
         guard !isLoadingInitial, !isLoadingMore, hasMore else { return }
 
-        Task {
-            await loadMore()
-        }
+        observedLimit += pageSize
+        isLoadingMore = true
+
+        restartObservationKeepingCurrentPosts()
     }
 
-    private func observeLatest() {
-        latestListener = observeLatestUseCase.execute(limit: pageSize) { [weak self] result in
+    private func restartObservationKeepingCurrentPosts() {
+        latestListener?.remove()
+        latestListener = nil
+        observeCurrentWindow()
+    }
+
+    private func observeCurrentWindow() {
+        latestListener = observeLatestUseCase.execute(limit: observedLimit) { [weak self] result in
             guard let self else { return }
 
             Task { @MainActor in
                 switch result {
                 case .success(let page):
-                    self.posts = self.mergeKeepingNewest(current: self.posts, incomingTopPage: page.posts)
-                    self.lastSnapshot = page.lastSnapshot
-                    self.hasMore = page.hasMore || self.posts.count > page.posts.count
+                    // Important:
+                    // The observed Firestore page is now the source of truth.
+                    // Do NOT merge with the previous local posts.
+                    // If Firebase deletes/hides/expires a post, it disappears here immediately.
+                    self.posts = self.normalizedPosts(page.posts)
+                    self.hasMore = page.hasMore
                     self.isLoadingInitial = false
+                    self.isLoadingMore = false
 
                 case .failure(let error):
                     self.errorMessage = error.localizedDescription
                     self.isLoadingInitial = false
+                    self.isLoadingMore = false
                 }
             }
         }
     }
 
-    private func loadMore() async {
-        isLoadingMore = true
-        defer { isLoadingMore = false }
+    private func normalizedPosts(_ incoming: [FeaturedPost]) -> [FeaturedPost] {
+        var seen = Set<String>()
 
-        do {
-            let page = try await fetchNextPageUseCase.execute(limit: pageSize, after: lastSnapshot)
-            lastSnapshot = page.lastSnapshot
-            hasMore = page.hasMore
-            posts = mergeAppendingOlder(current: posts, incomingOlderPage: page.posts)
-        } catch {
-            errorMessage = error.localizedDescription
-        }
-    }
-
-    private func mergeKeepingNewest(current: [FeaturedPost], incomingTopPage: [FeaturedPost]) -> [FeaturedPost] {
-        var map = Dictionary(uniqueKeysWithValues: current.map { ($0.id, $0) })
-        incomingTopPage.forEach { map[$0.id] = $0 }
-
-        let result = Array(map.values)
-            .filter { !$0.isExpired && $0.isVisible }
+        return incoming
+            .filter { post in
+                post.isVisible && !post.isExpired
+            }
+            .filter { post in
+                guard !seen.contains(post.id) else { return false }
+                seen.insert(post.id)
+                return true
+            }
             .sorted { lhs, rhs in
-                if lhs.expiresAt != rhs.expiresAt { return lhs.expiresAt > rhs.expiresAt }
+                if lhs.expiresAt != rhs.expiresAt {
+                    return lhs.expiresAt > rhs.expiresAt
+                }
+
                 return lhs.createdAt > rhs.createdAt
             }
-
-        return result
-    }
-
-    private func mergeAppendingOlder(current: [FeaturedPost], incomingOlderPage: [FeaturedPost]) -> [FeaturedPost] {
-        var seen = Set(current.map(\.id))
-        var merged = current
-
-        for post in incomingOlderPage where !seen.contains(post.id) && !post.isExpired && post.isVisible {
-            merged.append(post)
-            seen.insert(post.id)
-        }
-
-        return merged.sorted { lhs, rhs in
-            if lhs.expiresAt != rhs.expiresAt { return lhs.expiresAt > rhs.expiresAt }
-            return lhs.createdAt > rhs.createdAt
-        }
     }
 }

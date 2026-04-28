@@ -907,7 +907,7 @@ private struct HomePackageCard: View {
                     }
 
                     if comboDiscount > 0 {
-                        BrandBadge(theme: .adventure, title: "Combo", selected: true)
+                        BrandBadge(theme: .adventure, title: "Oferta", selected: true)
                     }
                 }
 

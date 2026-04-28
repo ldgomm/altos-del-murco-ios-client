@@ -20,8 +20,11 @@ final class FeaturedFeedRepository: FeaturedFeedRepositoriable {
         limit: Int,
         onChange: @escaping (Result<FeaturedFeedPage, Error>) -> Void
     ) -> ListenerRegistration {
-        baseActiveQuery()
-            .limit(to: limit)
+        let safeLimit = max(1, limit)
+
+        return baseActiveQuery()
+            // Fetch one extra document so hasMore is accurate.
+            .limit(to: safeLimit + 1)
             .addSnapshotListener { snapshot, error in
                 if let error {
                     onChange(.failure(error))
@@ -29,43 +32,64 @@ final class FeaturedFeedRepository: FeaturedFeedRepositoriable {
                 }
 
                 guard let snapshot else {
-                    onChange(.success(FeaturedFeedPage(posts: [], lastSnapshot: nil, hasMore: false)))
+                    onChange(
+                        .success(
+                            FeaturedFeedPage(
+                                posts: [],
+                                lastSnapshot: nil,
+                                hasMore: false
+                            )
+                        )
+                    )
                     return
                 }
 
                 do {
-                    let posts = try snapshot.documents.compactMap { document in
+                    let visibleDocuments = Array(snapshot.documents.prefix(safeLimit))
+
+                    let posts = try visibleDocuments.compactMap { document in
                         try document.data(as: FeaturedPostDto.self).toDomain()
                     }
 
-                    let page = FeaturedFeedPage(
-                        posts: posts,
-                        lastSnapshot: snapshot.documents.last,
-                        hasMore: snapshot.documents.count == limit
+                    onChange(
+                        .success(
+                            FeaturedFeedPage(
+                                posts: posts,
+                                lastSnapshot: visibleDocuments.last,
+                                hasMore: snapshot.documents.count > safeLimit
+                            )
+                        )
                     )
-                    onChange(.success(page))
                 } catch {
                     onChange(.failure(error))
                 }
             }
     }
 
-    func fetchNextPage(limit: Int, after lastSnapshot: DocumentSnapshot?) async throws -> FeaturedFeedPage {
-        var query: Query = baseActiveQuery().limit(to: limit)
+    func fetchNextPage(
+        limit: Int,
+        after lastSnapshot: DocumentSnapshot?
+    ) async throws -> FeaturedFeedPage {
+        let safeLimit = max(1, limit)
+
+        var query: Query = baseActiveQuery()
+            .limit(to: safeLimit + 1)
 
         if let lastSnapshot {
             query = query.start(afterDocument: lastSnapshot)
         }
 
         let snapshot = try await query.getDocuments()
-        let posts = try snapshot.documents.compactMap { document in
+        let visibleDocuments = Array(snapshot.documents.prefix(safeLimit))
+
+        let posts = try visibleDocuments.compactMap { document in
             try document.data(as: FeaturedPostDto.self).toDomain()
         }
 
         return FeaturedFeedPage(
             posts: posts,
-            lastSnapshot: snapshot.documents.last ?? lastSnapshot,
-            hasMore: snapshot.documents.count == limit
+            lastSnapshot: visibleDocuments.last ?? lastSnapshot,
+            hasMore: snapshot.documents.count > safeLimit
         )
     }
 
