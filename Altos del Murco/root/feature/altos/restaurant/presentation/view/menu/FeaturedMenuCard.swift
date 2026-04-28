@@ -54,34 +54,26 @@ struct FeaturedMenuCard: View {
         if let imageURL = item.imageURL,
            let url = URL(string: imageURL) {
             GeometryReader { proxy in
-                AsyncImage(url: url) { phase in
-                    switch phase {
-                    case .empty:
-                        ZStack {
-                            palette.card
-                            
-                            ProgressView()
-                                .tint(palette.primary)
-                        }
-                        .frame(width: proxy.size.width, height: proxy.size.height)
-                        
-                    case .success(let image):
-                        image
-                            .resizable()
-                            .scaledToFill()
-                            .frame(width: proxy.size.width, height: proxy.size.height)
-                            .clipped()
-                        
-                    case .failure:
-                        placeholder
-                            .frame(width: proxy.size.width, height: proxy.size.height)
-                        
-                    @unknown default:
-                        placeholder
-                            .frame(width: proxy.size.width, height: proxy.size.height)
+                RemoteImageView(
+                    url: url,
+                    contentMode: .fill,
+                    targetPixelSize: CGSize(
+                        width: proxy.size.width,
+                        height: proxy.size.height
+                    )
+                ) {
+                    ZStack {
+                        palette.card
+
+                        ProgressView()
+                            .tint(palette.primary)
                     }
                 }
+                .frame(width: proxy.size.width, height: proxy.size.height)
+                .clipped()
             }
+        } else {
+            placeholder
         }
     }
     

@@ -10,6 +10,6 @@ import Foundation
 extension Double {
     
     var priceText: String {
-        "\(String(format: "%.2f", self))"
+        "$\(String(format: "%.2f", self))"
     }
 }

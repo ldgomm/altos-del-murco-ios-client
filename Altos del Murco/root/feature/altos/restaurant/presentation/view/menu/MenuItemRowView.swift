@@ -61,23 +61,19 @@ struct MenuItemRowView: View {
             .overlay {
                 if let imageURL = item.imageURL,
                    let url = URL(string: imageURL) {
-                    AsyncImage(url: url) { phase in
-                        switch phase {
-                        case .empty:
+                    RemoteImageView(
+                        url: url,
+                        contentMode: .fill,
+                        targetPixelSize: CGSize(width: 88, height: 88)
+                    ) {
+                        ZStack {
+                            palette.elevatedCard
+
                             ProgressView()
                                 .tint(palette.primary)
-                        case .success(let image):
-                            image
-                                .resizable()
-                                .scaledToFill()
-                        case .failure:
-                            Image(systemName: "fork.knife")
-                                .font(.title2)
-                                .foregroundStyle(palette.primary)
-                        @unknown default:
-                            EmptyView()
                         }
                     }
+                    .frame(width: 88, height: 88)
                     .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                 } else {
                     Image(systemName: "fork.knife")

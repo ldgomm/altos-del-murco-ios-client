@@ -120,28 +120,18 @@ struct MenuItemDetailView: View {
         if let imageURL = item.imageURL,
            let url = URL(string: imageURL) {
             GeometryReader { proxy in
-                AsyncImage(url: url) { phase in
-                    switch phase {
-                    case .empty:
-                        heroImageLoadingView
-                            .frame(width: proxy.size.width, height: proxy.size.height)
-
-                    case .success(let image):
-                        image
-                            .resizable()
-                            .scaledToFill()
-                            .frame(width: proxy.size.width, height: proxy.size.height)
-                            .clipped()
-
-                    case .failure:
-                        heroImagePlaceholder
-                            .frame(width: proxy.size.width, height: proxy.size.height)
-
-                    @unknown default:
-                        heroImagePlaceholder
-                            .frame(width: proxy.size.width, height: proxy.size.height)
-                    }
+                RemoteImageView(
+                    url: url,
+                    contentMode: .fill,
+                    targetPixelSize: CGSize(
+                        width: proxy.size.width,
+                        height: proxy.size.height
+                    )
+                ) {
+                    heroImageLoadingView
                 }
+                .frame(width: proxy.size.width, height: proxy.size.height)
+                .clipped()
             }
         } else {
             heroImagePlaceholder

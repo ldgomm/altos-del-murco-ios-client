@@ -48,6 +48,7 @@ struct MainTabView: View {
                 menuViewModel: menuViewModel,
                 adventureComboBuilderViewModel: adventureComboBuilderViewModel
             )
+            
             .tabItem { Label(MainTab.home.title, systemImage: MainTab.home.systemImage) }
             .tag(MainTab.home)
 

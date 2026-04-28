@@ -22,57 +22,95 @@ struct FeaturedPostsSectionView: View {
         }
         .task {
             viewModel.start()
+            prefetchPostImages(viewModel.posts)
         }
-        .alert("No se pudo cargar destacados", isPresented: .constant(viewModel.errorMessage != nil)) {
+        .onChange(of: viewModel.posts) { _, posts in
+            prefetchPostImages(posts)
+        }
+        .alert(
+            "No se pudo cargar destacados",
+            isPresented: Binding(
+                get: { viewModel.errorMessage != nil },
+                set: { isPresented in
+                    if !isPresented {
+                        viewModel.errorMessage = nil
+                    }
+                }
+            )
+        ) {
             Button("Aceptar") {
                 viewModel.errorMessage = nil
             }
         } message: {
             Text(viewModel.errorMessage ?? "")
         }
+        .task {
+            viewModel.start()
+            prefetchPostImages(viewModel.posts)
+        }
+        .onChange(of: viewModel.posts) { _, posts in
+            prefetchPostImages(posts)
+        }
+    }
+    
+    private func prefetchPostImages(_ posts: [FeaturedPost]) {
+        RemoteImageLoader.prefetch(urls: posts.featuredPostImageURLs)
     }
 
     @ViewBuilder
     private var content: some View {
         if viewModel.isLoadingInitial && viewModel.posts.isEmpty {
-            VStack(spacing: 12) {
-                ForEach(0..<2, id: \.self) { _ in
-                    RoundedRectangle(cornerRadius: 28)
-                        .fill(Color.secondary.opacity(0.12))
-                        .frame(height: 320)
-                        .redacted(reason: .placeholder)
-                }
-            }
+            loadingState
         } else if viewModel.posts.isEmpty {
-            VStack(spacing: 10) {
-                Image(systemName: "photo.on.rectangle.angled")
-                    .font(.system(size: 34))
-                    .foregroundStyle(.secondary)
-
-                Text("Aún no hay publicaciones activas.")
-                    .font(.headline)
-
-                Text("Cuando ADM publique nuevas fotos aparecerán aquí automáticamente.")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-            }
-            .frame(maxWidth: .infinity)
-            .appCardStyle(.neutral)
+            emptyState
         } else {
-            LazyVStack(spacing: 16) {
-                ForEach(viewModel.posts) { post in
-                    FeaturedPostCardView(post: post)
-                        .onAppear {
-                            viewModel.loadMoreIfNeeded(currentPost: post)
-                        }
-                }
+            postsList
+        }
+    }
 
-                if viewModel.isLoadingMore {
-                    ProgressView("Cargando más")
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 8)
-                }
+    private var loadingState: some View {
+        VStack(spacing: 12) {
+            ForEach(0..<2, id: \.self) { _ in
+                RoundedRectangle(cornerRadius: 28, style: .continuous)
+                    .fill(Color.secondary.opacity(0.12))
+                    .frame(height: 320)
+                    .redacted(reason: .placeholder)
+            }
+        }
+    }
+
+    private var emptyState: some View {
+        VStack(spacing: 10) {
+            Image(systemName: "photo.on.rectangle.angled")
+                .font(.system(size: 34))
+                .foregroundStyle(.secondary)
+
+            Text("Aún no hay publicaciones activas.")
+                .font(.headline)
+
+            Text("Cuando ADM publique nuevas fotos aparecerán aquí automáticamente.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity)
+        .appCardStyle(.neutral)
+    }
+
+    private var postsList: some View {
+        LazyVStack(spacing: 16) {
+            ForEach(viewModel.posts) { post in
+                FeaturedPostCardView(post: post)
+                    .onAppear {
+                        viewModel.loadMoreIfNeeded(currentPost: post)
+                        prefetchPostImages([post])
+                    }
+            }
+
+            if viewModel.isLoadingMore {
+                ProgressView("Cargando más")
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 8)
             }
         }
     }

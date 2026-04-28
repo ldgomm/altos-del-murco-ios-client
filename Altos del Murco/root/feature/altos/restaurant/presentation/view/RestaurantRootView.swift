@@ -12,9 +12,9 @@ struct RestaurantRootView: View {
     @ObservedObject var checkoutViewModel: CheckoutViewModel
     @ObservedObject var adventureComboBuilderViewModel: AdventureComboBuilderViewModel
     @ObservedObject var menuViewModel: MenuViewModel
-
+    
     @State private var path = NavigationPath()
-
+    
     var body: some View {
         NavigationStack(path: $path) {
             Group {
@@ -31,6 +31,14 @@ struct RestaurantRootView: View {
                     )
                 }
             }
+        }
+        .onAppear {
+            RemoteImageLoader.prefetch(
+                urls: menuViewModel.state.sections.menuImageURLs
+            )
+        }
+        .onChange(of: menuViewModel.state.sections) { _, sections in
+            RemoteImageLoader.prefetch(urls: sections.menuImageURLs)
         }
     }
 }

@@ -41,6 +41,7 @@ struct FeaturedMediaCollageView: View {
 
             default:
                 let displayed = Array(media.prefix(4))
+
                 LazyVGrid(
                     columns: [
                         GridItem(.flexible(), spacing: 8),
@@ -53,7 +54,7 @@ struct FeaturedMediaCollageView: View {
                             itemView(item, index: index)
 
                             if index == 3 && media.count > 4 {
-                                RoundedRectangle(cornerRadius: 18)
+                                RoundedRectangle(cornerRadius: 18, style: .continuous)
                                     .fill(.black.opacity(0.38))
 
                                 Text("+\(media.count - 4)")
@@ -77,11 +78,12 @@ struct FeaturedMediaCollageView: View {
                 RemoteImageView(
                     url: item.downloadURL,
                     contentMode: .fill,
-                    targetPixelSize: CGSize(width: 420, height: 420)
+                    targetPixelSize: CGSize(
+                        width: proxy.size.width,
+                        height: proxy.size.height
+                    )
                 ) {
-                    RoundedRectangle(cornerRadius: 18)
-                        .fill(Color.secondary.opacity(0.12))
-                        .overlay(ProgressView())
+                    placeholder
                 }
                 .frame(width: proxy.size.width, height: proxy.size.height)
                 .clipped()
@@ -89,5 +91,13 @@ struct FeaturedMediaCollageView: View {
         }
         .buttonStyle(.plain)
         .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+    }
+
+    private var placeholder: some View {
+        RoundedRectangle(cornerRadius: 18, style: .continuous)
+            .fill(Color.secondary.opacity(0.12))
+            .overlay {
+                ProgressView()
+            }
     }
 }
