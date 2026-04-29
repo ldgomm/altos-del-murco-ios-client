@@ -83,15 +83,15 @@ struct MainTabView: View {
                 .tag(MainTab.profile)
         }
         .tint(selectedPalette.primary)
-        .safeAreaInset(edge: .bottom) {
-            if routeNavigator.shouldShowGlobalBanner {
-                RouteBottomBanner()
-                    .environmentObject(routeNavigator)
-                    .padding(.horizontal, 14)
-                    .padding(.bottom, 6)
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
-            }
-        }
+//        .safeAreaInset(edge: .leading) {
+//            if routeNavigator.shouldShowGlobalBanner {
+//                RouteBottomBanner()
+//                    .environmentObject(routeNavigator)
+//                    .padding(.horizontal, 14)
+//                    .padding(.bottom, 6)
+//                    .transition(.move(edge: .bottom).combined(with: .opacity))
+//            }
+//        }
         .animation(.spring(response: 0.34, dampingFraction: 0.86), value: routeNavigator.shouldShowGlobalBanner)
 
     }

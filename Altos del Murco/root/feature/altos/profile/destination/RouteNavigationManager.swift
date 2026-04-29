@@ -1,5 +1,5 @@
 //
-//  AltosRouteNavigationManager.swift
+//  RouteNavigationManager.swift
 //  Altos del Murco
 //
 //  Created by José Ruiz on 28/4/26.
@@ -43,7 +43,7 @@ final class RouteNavigationManager: NSObject, ObservableObject {
             case .permissionNeeded: return "Permiso requerido"
             case .locating: return "Buscando tu ubicación"
             case .calculating: return "Calculando ruta"
-            case .previewReady: return "Ruta lista"
+            case .previewReady: return "Ruta lista!"
             case .navigating: return "En camino"
             case .arrived: return "Llegaste"
             case .failed: return "Ruta no disponible"

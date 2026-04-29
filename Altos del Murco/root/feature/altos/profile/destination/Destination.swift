@@ -18,8 +18,8 @@ enum Destination {
     static let phoneDisplay = "WhatsApp Altos del Murco"
 
     static let coordinate = CLLocationCoordinate2D(
-        latitude: -0.43318,
-        longitude: -78.54025
+        latitude: -0.434028,
+        longitude: -78.538800
     )
 
     static var location: CLLocation {

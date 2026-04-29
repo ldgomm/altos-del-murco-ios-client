@@ -577,33 +577,33 @@ struct ProfileView: View {
             }
             .buttonStyle(.plain)
 
-            if routeNavigator.shouldShowGlobalBanner {
-                Button {
-                    routeNavigator.openRouteSheet()
-                } label: {
-                    HStack(spacing: 12) {
-                        BrandIconBubble(theme: .adventure, systemImage: "location.north.circle.fill", size: 42)
-
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text("Ruta activa")
-                                .font(.subheadline.bold())
-                                .foregroundStyle(palette.textPrimary)
-
-                            Text("\(routeNavigator.distanceText) • \(routeNavigator.etaText)")
-                                .font(.caption)
-                                .foregroundStyle(palette.textSecondary)
-                        }
-
-                        Spacer()
-
-                        Image(systemName: "arrow.up.right.circle.fill")
-                            .font(.title3)
-                            .foregroundStyle(palette.primary)
-                    }
-                    .appCardStyle(.adventure)
-                }
-                .buttonStyle(.plain)
-            }
+//            if routeNavigator.shouldShowGlobalBanner {
+//                Button {
+//                    routeNavigator.openRouteSheet()
+//                } label: {
+//                    HStack(spacing: 12) {
+//                        BrandIconBubble(theme: .adventure, systemImage: "location.north.circle.fill", size: 42)
+//
+//                        VStack(alignment: .leading, spacing: 3) {
+//                            Text("Ruta activa")
+//                                .font(.subheadline.bold())
+//                                .foregroundStyle(palette.textPrimary)
+//
+//                            Text("\(routeNavigator.distanceText) • \(routeNavigator.etaText)")
+//                                .font(.caption)
+//                                .foregroundStyle(palette.textSecondary)
+//                        }
+//
+//                        Spacer()
+//
+//                        Image(systemName: "arrow.up.right.circle.fill")
+//                            .font(.title3)
+//                            .foregroundStyle(palette.primary)
+//                    }
+//                    .appCardStyle(.adventure)
+//                }
+//                .buttonStyle(.plain)
+//            }
         }
     }
 
