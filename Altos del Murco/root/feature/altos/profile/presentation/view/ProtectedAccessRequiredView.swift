@@ -73,7 +73,7 @@ struct ProtectedAccessRequiredView<Content: View>: View {
                                 .frame(maxWidth: 340)
                         }
                     }
-                    .appCardStyle(theme, emphasized: true)
+                    .appCardStyle(theme)
 
                     VStack(spacing: 14) {
                         SignInWithAppleButton(
