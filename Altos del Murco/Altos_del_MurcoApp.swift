@@ -36,8 +36,6 @@ struct AltosDelMurcoApp: App {
     @StateObject private var menuViewModel: MenuViewModel
     @StateObject private var adventureComboBuilderViewModel: AdventureComboBuilderViewModel
     
-    @StateObject private var routeNavigator: RouteNavigationManager
-
     private let adventureModuleFactory: AdventureModuleFactory
 
     init() {
@@ -139,8 +137,6 @@ struct AltosDelMurcoApp: App {
                     loyaltyRewardsService: loyaltyRewardsService
                 )
             )
-            
-            _routeNavigator = StateObject(wrappedValue: RouteNavigationManager())
         } catch {
             fatalError("Failed to create SwiftData container: \(error)")
         }
@@ -161,15 +157,11 @@ struct AltosDelMurcoApp: App {
             .environmentObject(router)
             .environmentObject(sessionViewModel)
             .environmentObject(appPreferences)
-            .environmentObject(routeNavigator)
             .preferredColorScheme(appPreferences.preferredColorScheme)
             .onChange(of: scenePhase) { _, newPhase in
                 if newPhase == .active {
                     sessionViewModel.verifySessionStillValidFromSceneActivation()
                 }
-            }
-            .onOpenURL { url in
-                router.handleDeepLink(url)
             }
         }
         .modelContainer(sharedModelContainer)

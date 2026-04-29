@@ -13,22 +13,9 @@
 		AC3F21EE2F6325DE002ED95D /* FirebaseFirestoreCombine-Community in Frameworks */ = {isa = PBXBuildFile; productRef = AC3F21ED2F6325DE002ED95D /* FirebaseFirestoreCombine-Community */; };
 		AC3F21F02F6325DE002ED95D /* FirebaseStorage in Frameworks */ = {isa = PBXBuildFile; productRef = AC3F21EF2F6325DE002ED95D /* FirebaseStorage */; };
 		AC3F21F22F6325DE002ED95D /* FirebaseStorageCombine-Community in Frameworks */ = {isa = PBXBuildFile; productRef = AC3F21F12F6325DE002ED95D /* FirebaseStorageCombine-Community */; };
-		AC52439F2FA18E2F0006A335 /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = AC52439E2FA18E2F0006A335 /* WidgetKit.framework */; };
-		AC5243A12FA18E2F0006A335 /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = AC5243A02FA18E2F0006A335 /* SwiftUI.framework */; };
-		AC5243B22FA18E300006A335 /* RouteWidgetExtensionExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = AC52439D2FA18E2F0006A335 /* RouteWidgetExtensionExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		AC8E36412F6487C500AD647F /* FirebaseFunctions in Frameworks */ = {isa = PBXBuildFile; productRef = AC8E36402F6487C500AD647F /* FirebaseFunctions */; };
 		AC8E36432F6487CD00AD647F /* FirebaseFunctionsCombine-Community in Frameworks */ = {isa = PBXBuildFile; productRef = AC8E36422F6487CD00AD647F /* FirebaseFunctionsCombine-Community */; };
 /* End PBXBuildFile section */
-
-/* Begin PBXContainerItemProxy section */
-		AC5243B02FA18E300006A335 /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = AC79A5452F5D117F00067833 /* Project object */;
-			proxyType = 1;
-			remoteGlobalIDString = AC52439C2FA18E2F0006A335;
-			remoteInfo = RouteWidgetExtensionExtension;
-		};
-/* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
 		AC5243B72FA18E300006A335 /* Embed Foundation Extensions */ = {
@@ -37,7 +24,6 @@
 			dstPath = "";
 			dstSubfolderSpec = 13;
 			files = (
-				AC5243B22FA18E300006A335 /* RouteWidgetExtensionExtension.appex in Embed Foundation Extensions */,
 			);
 			name = "Embed Foundation Extensions";
 			runOnlyForDeploymentPostprocessing = 0;
@@ -45,59 +31,20 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
-		AC52439D2FA18E2F0006A335 /* RouteWidgetExtensionExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = RouteWidgetExtensionExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		AC52439E2FA18E2F0006A335 /* WidgetKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WidgetKit.framework; path = System/Library/Frameworks/WidgetKit.framework; sourceTree = SDKROOT; };
 		AC5243A02FA18E2F0006A335 /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = System/Library/Frameworks/SwiftUI.framework; sourceTree = SDKROOT; };
 		AC79A54D2F5D117F00067833 /* Altos del Murco.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Altos del Murco.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
-/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
-		AC5243B32FA18E300006A335 /* Exceptions for "RouteWidgetExtension" folder in "RouteWidgetExtensionExtension" target */ = {
-			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
-			membershipExceptions = (
-				Info.plist,
-			);
-			target = AC52439C2FA18E2F0006A335 /* RouteWidgetExtensionExtension */;
-		};
-		AC5246C42FA195110006A335 /* Exceptions for "Altos del Murco" folder in "RouteWidgetExtensionExtension" target */ = {
-			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
-			membershipExceptions = (
-				root/feature/altos/profile/destination/RouteActivityAttributes.swift,
-				root/feature/altos/profile/destination/RouteDeepLink.swift,
-			);
-			target = AC52439C2FA18E2F0006A335 /* RouteWidgetExtensionExtension */;
-		};
-/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
-
 /* Begin PBXFileSystemSynchronizedRootGroup section */
-		AC5243A22FA18E2F0006A335 /* RouteWidgetExtension */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			exceptions = (
-				AC5243B32FA18E300006A335 /* Exceptions for "RouteWidgetExtension" folder in "RouteWidgetExtensionExtension" target */,
-			);
-			path = RouteWidgetExtension;
-			sourceTree = "<group>";
-		};
 		AC79A54F2F5D117F00067833 /* Altos del Murco */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			exceptions = (
-				AC5246C42FA195110006A335 /* Exceptions for "Altos del Murco" folder in "RouteWidgetExtensionExtension" target */,
-			);
 			path = "Altos del Murco";
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
-		AC52439A2FA18E2F0006A335 /* Frameworks */ = {
-			isa = PBXFrameworksBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-				AC5243A12FA18E2F0006A335 /* SwiftUI.framework in Frameworks */,
-				AC52439F2FA18E2F0006A335 /* WidgetKit.framework in Frameworks */,
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
 		AC79A54A2F5D117F00067833 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -120,7 +67,6 @@
 			isa = PBXGroup;
 			children = (
 				AC79A54F2F5D117F00067833 /* Altos del Murco */,
-				AC5243A22FA18E2F0006A335 /* RouteWidgetExtension */,
 				AC8E363F2F6487C500AD647F /* Frameworks */,
 				AC79A54E2F5D117F00067833 /* Products */,
 			);
@@ -130,7 +76,6 @@
 			isa = PBXGroup;
 			children = (
 				AC79A54D2F5D117F00067833 /* Altos del Murco.app */,
-				AC52439D2FA18E2F0006A335 /* RouteWidgetExtensionExtension.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -147,28 +92,6 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		AC52439C2FA18E2F0006A335 /* RouteWidgetExtensionExtension */ = {
-			isa = PBXNativeTarget;
-			buildConfigurationList = AC5243B42FA18E300006A335 /* Build configuration list for PBXNativeTarget "RouteWidgetExtensionExtension" */;
-			buildPhases = (
-				AC5243992FA18E2F0006A335 /* Sources */,
-				AC52439A2FA18E2F0006A335 /* Frameworks */,
-				AC52439B2FA18E2F0006A335 /* Resources */,
-			);
-			buildRules = (
-			);
-			dependencies = (
-			);
-			fileSystemSynchronizedGroups = (
-				AC5243A22FA18E2F0006A335 /* RouteWidgetExtension */,
-			);
-			name = RouteWidgetExtensionExtension;
-			packageProductDependencies = (
-			);
-			productName = RouteWidgetExtensionExtension;
-			productReference = AC52439D2FA18E2F0006A335 /* RouteWidgetExtensionExtension.appex */;
-			productType = "com.apple.product-type.app-extension";
-		};
 		AC79A54C2F5D117F00067833 /* Altos del Murco */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = AC79A5582F5D118000067833 /* Build configuration list for PBXNativeTarget "Altos del Murco" */;
@@ -181,7 +104,6 @@
 			buildRules = (
 			);
 			dependencies = (
-				AC5243B12FA18E300006A335 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				AC79A54F2F5D117F00067833 /* Altos del Murco */,
@@ -211,9 +133,6 @@
 				LastSwiftUpdateCheck = 2620;
 				LastUpgradeCheck = 2620;
 				TargetAttributes = {
-					AC52439C2FA18E2F0006A335 = {
-						CreatedOnToolsVersion = 26.2;
-					};
 					AC79A54C2F5D117F00067833 = {
 						CreatedOnToolsVersion = 26.2;
 					};
@@ -237,19 +156,11 @@
 			projectRoot = "";
 			targets = (
 				AC79A54C2F5D117F00067833 /* Altos del Murco */,
-				AC52439C2FA18E2F0006A335 /* RouteWidgetExtensionExtension */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
-		AC52439B2FA18E2F0006A335 /* Resources */ = {
-			isa = PBXResourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
 		AC79A54B2F5D117F00067833 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -260,13 +171,6 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
-		AC5243992FA18E2F0006A335 /* Sources */ = {
-			isa = PBXSourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
 		AC79A5492F5D117F00067833 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -276,75 +180,7 @@
 		};
 /* End PBXSourcesBuildPhase section */
 
-/* Begin PBXTargetDependency section */
-		AC5243B12FA18E300006A335 /* PBXTargetDependency */ = {
-			isa = PBXTargetDependency;
-			target = AC52439C2FA18E2F0006A335 /* RouteWidgetExtensionExtension */;
-			targetProxy = AC5243B02FA18E300006A335 /* PBXContainerItemProxy */;
-		};
-/* End PBXTargetDependency section */
-
 /* Begin XCBuildConfiguration section */
-		AC5243B52FA18E300006A335 /* Debug */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = 5KDK28ZYPD;
-				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = RouteWidgetExtension/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = RouteWidgetExtension;
-				INFOPLIST_KEY_NSHumanReadableCopyright = "";
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/Frameworks",
-					"@executable_path/../../Frameworks",
-				);
-				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "com.premierdarkcoffee.tourism.Altos-del-Murco.RouteWidgetExtension";
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SKIP_INSTALL = YES;
-				STRING_CATALOG_GENERATE_SYMBOLS = YES;
-				SWIFT_APPROACHABLE_CONCURRENCY = YES;
-				SWIFT_EMIT_LOC_STRINGS = YES;
-				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
-				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
-			};
-			name = Debug;
-		};
-		AC5243B62FA18E300006A335 /* Release */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = 5KDK28ZYPD;
-				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = RouteWidgetExtension/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = RouteWidgetExtension;
-				INFOPLIST_KEY_NSHumanReadableCopyright = "";
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/Frameworks",
-					"@executable_path/../../Frameworks",
-				);
-				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "com.premierdarkcoffee.tourism.Altos-del-Murco.RouteWidgetExtension";
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SKIP_INSTALL = YES;
-				STRING_CATALOG_GENERATE_SYMBOLS = YES;
-				SWIFT_APPROACHABLE_CONCURRENCY = YES;
-				SWIFT_EMIT_LOC_STRINGS = YES;
-				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
-				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
-			};
-			name = Release;
-		};
 		AC79A5562F5D118000067833 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -478,9 +314,6 @@
 				INFOPLIST_FILE = "Altos-del-Murco-Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = "Altos del Murco";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.shopping";
-				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = "Usamos tu ubicación durante una ruta activa para mantener visible el progreso hacia Altos del Murco incluso si cambias de pantalla o bloqueas el iPhone.";
-				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Usamos tu ubicación para calcular la ruta hasta Altos del Murco, mostrar tu posición en el mapa y actualizar el progreso mientras viajas.";
-				INFOPLIST_KEY_NSSupportsLiveActivities = YES;
 				INFOPLIST_KEY_NSSupportsLiveActivitiesFrequentUpdates = YES;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -523,9 +356,6 @@
 				INFOPLIST_FILE = "Altos-del-Murco-Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = "Altos del Murco";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.shopping";
-				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = "Usamos tu ubicación durante una ruta activa para mantener visible el progreso hacia Altos del Murco incluso si cambias de pantalla o bloqueas el iPhone.";
-				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Usamos tu ubicación para calcular la ruta hasta Altos del Murco, mostrar tu posición en el mapa y actualizar el progreso mientras viajas.";
-				INFOPLIST_KEY_NSSupportsLiveActivities = YES;
 				INFOPLIST_KEY_NSSupportsLiveActivitiesFrequentUpdates = YES;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -557,15 +387,6 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		AC5243B42FA18E300006A335 /* Build configuration list for PBXNativeTarget "RouteWidgetExtensionExtension" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				AC5243B52FA18E300006A335 /* Debug */,
-				AC5243B62FA18E300006A335 /* Release */,
-			);
-			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
-		};
 		AC79A5482F5D117F00067833 /* Build configuration list for PBXProject "Altos del Murco" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (

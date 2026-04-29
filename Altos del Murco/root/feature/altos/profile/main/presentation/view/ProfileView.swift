@@ -11,7 +11,6 @@ import SwiftUI
 struct ProfileView: View {
     @Environment(\.openURL) private var openURL
     @Environment(\.colorScheme) private var colorScheme
-    @EnvironmentObject private var routeNavigator: RouteNavigationManager
     
     @StateObject private var viewModel: ProfileViewModel
     @State private var selectedPhotoItem: PhotosPickerItem?
@@ -33,7 +32,6 @@ struct ProfileView: View {
                     headerSection
                     statsSection
                     mainMenuSection
-                    visitAltosSection
                     socialCompactSection
                     aboutSection
                 }
@@ -533,80 +531,6 @@ struct ProfileView: View {
             .buttonStyle(.plain)
         }
     }
-    
-    private var visitAltosSection: some View {
-        VStack(spacing: 12) {
-            sectionHeader("Cómo llegar")
-
-            NavigationLink {
-                DirectionsView()
-            } label: {
-                VStack(alignment: .leading, spacing: 14) {
-                    HStack(alignment: .top, spacing: 14) {
-                        BrandIconBubble(theme: .adventure, systemImage: "map.fill", size: 50)
-
-                        VStack(alignment: .leading, spacing: 5) {
-                            Text("Visita Altos del Murco")
-                                .font(.headline)
-                                .foregroundStyle(palette.textPrimary)
-
-                            Text("Ubica el restaurante, calcula la ruta, revisa indicaciones y mantén el progreso visible en toda la app.")
-                                .font(.subheadline)
-                                .foregroundStyle(palette.textSecondary)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-
-                        Spacer()
-
-                        Image(systemName: "chevron.right")
-                            .font(.caption.bold())
-                            .foregroundStyle(palette.textTertiary)
-                    }
-
-                    HStack(spacing: 8) {
-                        Label("Mapa interno", systemImage: "map")
-                        Label("Ruta viva", systemImage: "location.north.line")
-                        Label("Dynamic Island", systemImage: "sparkles")
-                    }
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(palette.primary)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.75)
-                }
-                .appCardStyle(.adventure, emphasized: false)
-            }
-            .buttonStyle(.plain)
-
-//            if routeNavigator.shouldShowGlobalBanner {
-//                Button {
-//                    routeNavigator.openRouteSheet()
-//                } label: {
-//                    HStack(spacing: 12) {
-//                        BrandIconBubble(theme: .adventure, systemImage: "location.north.circle.fill", size: 42)
-//
-//                        VStack(alignment: .leading, spacing: 3) {
-//                            Text("Ruta activa")
-//                                .font(.subheadline.bold())
-//                                .foregroundStyle(palette.textPrimary)
-//
-//                            Text("\(routeNavigator.distanceText) • \(routeNavigator.etaText)")
-//                                .font(.caption)
-//                                .foregroundStyle(palette.textSecondary)
-//                        }
-//
-//                        Spacer()
-//
-//                        Image(systemName: "arrow.up.right.circle.fill")
-//                            .font(.title3)
-//                            .foregroundStyle(palette.primary)
-//                    }
-//                    .appCardStyle(.adventure)
-//                }
-//                .buttonStyle(.plain)
-//            }
-        }
-    }
-
 
     private var socialCompactSection: some View {
         VStack(spacing: 12) {

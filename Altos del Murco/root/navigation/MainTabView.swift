@@ -14,11 +14,9 @@ import SwiftUI
 
 struct MainTabView: View {
     @Environment(\.colorScheme) private var colorScheme
-    
-    @EnvironmentObject private var routeNavigator: RouteNavigationManager
-    @EnvironmentObject private var router: AppRouter
-    
+        
     @State private var selectedTab: MainTab = .home
+    @EnvironmentObject private var router: AppRouter
 
     @ObservedObject var ordersViewModel: OrdersViewModel
     @ObservedObject var checkoutViewModel: CheckoutViewModel
@@ -84,28 +82,6 @@ struct MainTabView: View {
                 .tag(MainTab.profile)
         }
         .tint(selectedPalette.primary)
-        .fullScreenCover(item: $router.presentation) { presentation in
-            switch presentation {
-            case .directions:
-                NavigationStack {
-                    DirectionsView()
-                        .toolbar {
-                            ToolbarItem(placement: .topBarLeading) {
-                                Button {
-                                    router.dismissPresentation()
-                                } label: {
-                                    Label("Cerrar", systemImage: "xmark")
-                                }
-                            }
-                        }
-                }
-            }
-        }
-        .animation(
-            .spring(response: 0.34, dampingFraction: 0.86),
-            value: routeNavigator.shouldShowGlobalBanner
-        )
-
     }
 }
 
