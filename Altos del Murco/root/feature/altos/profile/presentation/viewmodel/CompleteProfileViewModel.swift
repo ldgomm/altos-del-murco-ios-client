@@ -54,17 +54,14 @@ final class CompleteProfileViewModel: ObservableObject {
 
     var canSubmit: Bool {
         !fullName.trimmed.isEmpty &&
-        nationalId.digitsOnly.count >= 8 &&
-        phoneNumber.digitsOnly.count >= 8 &&
-        !address.trimmed.isEmpty &&
-        !emergencyContactName.trimmed.isEmpty &&
-        emergencyContactPhone.digitsOnly.count >= 8 &&
-        birthday <= Date()
+        optionalDigitsAreValid(nationalId, allowedCounts: [0, 10, 13]) &&
+        optionalDigitsAreValid(phoneNumber, minimumCount: 0, validCountWhenPresent: 8) &&
+        optionalDigitsAreValid(emergencyContactPhone, minimumCount: 0, validCountWhenPresent: 8)
     }
 
     func saveProfile() {
         guard canSubmit else {
-            errorMessage = "Please complete all required fields correctly."
+            errorMessage = "Revisa los campos ingresados. Solo el nombre es obligatorio en el perfil."
             return
         }
 
@@ -72,18 +69,20 @@ final class CompleteProfileViewModel: ObservableObject {
         isSaving = true
 
         let now = Date()
+        let cleanName = fullName.trimmed
+
         let profile = ClientProfile(
             id: authenticatedUser.uid,
             email: authenticatedUser.email,
             appleUserIdentifier: authenticatedUser.appleUserIdentifier,
-            fullName: fullName.trimmed,
+            fullName: cleanName,
             nationalId: nationalId.digitsOnly,
             phoneNumber: phoneNumber.digitsOnly,
             birthday: birthday,
             address: address.trimmed,
             emergencyContactName: emergencyContactName.trimmed,
             emergencyContactPhone: emergencyContactPhone.digitsOnly,
-            isProfileComplete: true,
+            isProfileComplete: !cleanName.isEmpty,
             createdAt: existingProfile?.createdAt ?? now,
             updatedAt: now,
             profileCompletedAt: existingProfile?.profileCompletedAt ?? now,
@@ -101,5 +100,21 @@ final class CompleteProfileViewModel: ObservableObject {
                 errorMessage = error.localizedDescription
             }
         }
+    }
+
+    private func optionalDigitsAreValid(
+        _ value: String,
+        allowedCounts: [Int]
+    ) -> Bool {
+        allowedCounts.contains(value.digitsOnly.count)
+    }
+
+    private func optionalDigitsAreValid(
+        _ value: String,
+        minimumCount: Int,
+        validCountWhenPresent: Int
+    ) -> Bool {
+        let count = value.digitsOnly.count
+        return count == 0 || count >= validCountWhenPresent
     }
 }

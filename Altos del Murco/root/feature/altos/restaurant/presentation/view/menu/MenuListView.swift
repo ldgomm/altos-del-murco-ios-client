@@ -115,7 +115,14 @@ struct MenuListView: View {
         .toolbar {
             ToolbarItemGroup(placement: .topBarTrailing) {
                 NavigationLink {
-                    OrdersView(viewModel: ordersViewModel)
+                    ProtectedAccessRequiredView(
+                        title: "Inicia sesión para ver tus pedidos",
+                        message: "El historial de pedidos pertenece a tu cuenta. Puedes seguir explorando el menú sin iniciar sesión.",
+                        systemImage: "list.bullet.clipboard.fill",
+                        theme: .restaurant
+                    ) {
+                        OrdersView(viewModel: ordersViewModel)
+                    }
                 } label: {
                     ZStack {
                         Circle()
@@ -178,15 +185,29 @@ struct MenuListView: View {
                 )
 
             case .checkout:
-                CheckoutView(viewModel: checkoutViewModel, path: $path)
+                ProtectedAccessRequiredView(
+                    title: "Inicia sesión para finalizar tu pedido",
+                    message: "Puedes ver el menú y agregar productos sin cuenta. Para crear un pedido real necesitamos verificar tu sesión y solicitar los datos obligatorios del pedido.",
+                    systemImage: "cart.fill",
+                    theme: .restaurant
+                ) {
+                    CheckoutView(viewModel: checkoutViewModel, path: $path)
+                }
 
             case .reservationBuilder:
-                AdventureComboBuilderView(
-                    adventureComboBuilderViewModel: adventureComboBuilderViewModel,
-                    menuViewModel: menuViewModel
-                )
-                .onAppear {
-                    adventureComboBuilderViewModel.prepareFoodOnlyDraftIfNeeded()
+                ProtectedAccessRequiredView(
+                    title: "Inicia sesión para reservar comida",
+                    message: "Puedes explorar el menú sin cuenta. Para crear una reserva real necesitamos tu sesión y los datos del servicio.",
+                    systemImage: "calendar.badge.plus",
+                    theme: .restaurant
+                ) {
+                    AdventureComboBuilderView(
+                        adventureComboBuilderViewModel: adventureComboBuilderViewModel,
+                        menuViewModel: menuViewModel
+                    )
+                    .onAppear {
+                        adventureComboBuilderViewModel.prepareFoodOnlyDraftIfNeeded()
+                    }
                 }
 
             case let .orderSuccess(order):

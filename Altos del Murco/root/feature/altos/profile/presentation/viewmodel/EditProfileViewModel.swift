@@ -55,34 +55,33 @@ final class EditProfileViewModel: ObservableObject {
 
     var canSave: Bool {
         !fullName.trimmed.isEmpty &&
-        nationalId.digitsOnly.count >= 8 &&
-        phoneNumber.digitsOnly.count >= 8 &&
-        !address.trimmed.isEmpty &&
-        !emergencyContactName.trimmed.isEmpty &&
-        emergencyContactPhone.digitsOnly.count >= 8
+        optionalNationalIdIsValid &&
+        optionalPhoneIsValid(phoneNumber) &&
+        optionalPhoneIsValid(emergencyContactPhone)
     }
 
     func saveChanges() {
         guard canSave else {
-            errorMessage = "Please complete all required fields correctly."
+            errorMessage = "Solo el nombre es obligatorio. Si agregas cédula o teléfono, revisa que tengan un formato válido."
             return
         }
 
         errorMessage = nil
         isSaving = true
 
+        let cleanName = fullName.trimmed
         let updatedProfile = ClientProfile(
             id: originalProfile.id,
             email: originalProfile.email,
             appleUserIdentifier: originalProfile.appleUserIdentifier,
-            fullName: fullName.trimmed,
+            fullName: cleanName,
             nationalId: nationalId.digitsOnly,
             phoneNumber: phoneNumber.digitsOnly,
             birthday: birthday,
             address: address.trimmed,
             emergencyContactName: emergencyContactName.trimmed,
             emergencyContactPhone: emergencyContactPhone.digitsOnly,
-            isProfileComplete: true,
+            isProfileComplete: !cleanName.isEmpty,
             createdAt: originalProfile.createdAt,
             updatedAt: Date(),
             profileCompletedAt: originalProfile.profileCompletedAt ?? Date(),
@@ -100,5 +99,15 @@ final class EditProfileViewModel: ObservableObject {
                 errorMessage = error.localizedDescription
             }
         }
+    }
+
+    private var optionalNationalIdIsValid: Bool {
+        let count = nationalId.digitsOnly.count
+        return count == 0 || count == 10 || count == 13
+    }
+
+    private func optionalPhoneIsValid(_ value: String) -> Bool {
+        let count = value.digitsOnly.count
+        return count == 0 || count >= 8
     }
 }

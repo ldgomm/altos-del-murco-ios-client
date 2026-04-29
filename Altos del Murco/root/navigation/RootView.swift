@@ -18,20 +18,7 @@ struct RootView<Home: View>: View {
                 SessionLoadingView()
                     .transition(.opacity)
 
-            case .signedOut:
-                AuthenticationView(viewModel: viewModel)
-                    .transition(.opacity)
-
-            case .needsProfile(let user, let existingProfile):
-                CompleteProfileView {
-                    viewModel.makeCompleteProfileViewModel(
-                        user: user,
-                        existingProfile: existingProfile
-                    )
-                }
-                .transition(.opacity)
-
-            case .authenticated:
+            case .signedOut, .needsProfile, .authenticated:
                 home()
                     .transition(.opacity)
 
@@ -54,10 +41,10 @@ struct RootView<Home: View>: View {
 
 private struct SessionLoadingView: View {
     @Environment(\.colorScheme) private var colorScheme
-    
+
     var body: some View {
         let palette = AppTheme.palette(for: .restaurant, scheme: colorScheme)
-        
+
         ZStack {
             BrandScreenBackground(theme: .restaurant)
             LinearGradient(
@@ -81,7 +68,7 @@ private struct SessionLoadingView: View {
                     .font(.headline)
                     .foregroundStyle(palette.textPrimary)
 
-                Text("Validando sesión segura...")
+                Text("Preparando la experiencia...")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(palette.textSecondary)
             }
@@ -96,12 +83,12 @@ private struct SessionErrorView: View {
     let message: String
     let retryAction: () -> Void
     let signOutAction: () -> Void
-    
+
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         let palette = AppTheme.palette(for: .neutral, scheme: colorScheme)
-        
+
         ZStack {
             BrandScreenBackground(theme: .neutral)
 
@@ -110,7 +97,7 @@ private struct SessionErrorView: View {
                     Circle()
                         .fill(palette.destructive.opacity(colorScheme == .dark ? 0.22 : 0.12))
                         .frame(width: 72, height: 72)
-                    
+
                     Image(systemName: "exclamationmark.triangle.fill")
                         .font(.system(size: 30, weight: .semibold))
                         .foregroundStyle(palette.destructive)
@@ -125,10 +112,6 @@ private struct SessionErrorView: View {
                         .font(.body)
                         .multilineTextAlignment(.center)
                         .foregroundStyle(palette.textSecondary)
-                    
-                    Text("Please contact administrator")
-                        .font(.caption)
-                        .foregroundStyle(palette.warning)
                 }
 
                 VStack(spacing: 12) {

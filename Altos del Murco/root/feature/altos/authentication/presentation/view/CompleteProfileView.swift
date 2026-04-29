@@ -37,7 +37,7 @@ struct CompleteProfileView: View {
                         .appCardStyle(theme)
                 }
 
-                Text("This step is required before entering the app.")
+                Text("You can browse the app without completing optional profile fields.")
                     .font(.footnote)
                     .foregroundStyle(palette.textSecondary)
                     .multilineTextAlignment(.center)
@@ -67,7 +67,7 @@ struct CompleteProfileView: View {
                 .font(.system(size: 28, weight: .bold, design: .rounded))
                 .foregroundStyle(palette.textPrimary)
 
-            Text("We need a few details before you can continue to Altos del Murco.")
+            Text("Only your name is required here. Other details are optional or requested later when needed.")
                 .font(.subheadline)
                 .multilineTextAlignment(.center)
                 .foregroundStyle(palette.textSecondary)
@@ -82,7 +82,7 @@ struct CompleteProfileView: View {
             BrandSectionHeader(
                 theme: theme,
                 title: "Personal information",
-                subtitle: "Basic identity and contact details."
+                subtitle: "Only your name is required. National ID is requested later for real orders or services."
             )
 
             ProfileInputField(
@@ -96,7 +96,7 @@ struct CompleteProfileView: View {
 
             ProfileInputField(
                 theme: theme,
-                title: "National unique number",
+                title: "National unique number (optional here)",
                 placeholder: "Example: 0501234567",
                 text: $viewModel.nationalId,
                 keyboardType: .numberPad,
@@ -105,7 +105,7 @@ struct CompleteProfileView: View {
 
             ProfileInputField(
                 theme: theme,
-                title: "Phone number",
+                title: "Phone number (optional here)",
                 placeholder: "Example: 0987654321",
                 text: $viewModel.phoneNumber,
                 keyboardType: .phonePad,
@@ -146,8 +146,8 @@ struct CompleteProfileView: View {
         VStack(spacing: 14) {
             BrandSectionHeader(
                 theme: theme,
-                title: "Address",
-                subtitle: "Where you live or where we can identify your location."
+                title: "Address (optional)",
+                subtitle: "Optional. Use only if relevant to a future service."
             )
 
             VStack(alignment: .leading, spacing: 8) {
@@ -180,12 +180,12 @@ struct CompleteProfileView: View {
             BrandSectionHeader(
                 theme: theme,
                 title: "Emergency contact",
-                subtitle: "Someone we can reach if needed."
+                subtitle: "Optional. Request only when directly relevant to a service."
             )
 
             ProfileInputField(
                 theme: theme,
-                title: "Emergency contact name",
+                title: "Emergency contact name (optional)",
                 placeholder: "Who should we contact if needed?",
                 text: $viewModel.emergencyContactName,
                 keyboardType: .default,
@@ -194,7 +194,7 @@ struct CompleteProfileView: View {
 
             ProfileInputField(
                 theme: theme,
-                title: "Emergency contact phone",
+                title: "Emergency contact phone (optional)",
                 placeholder: "Example: 0999999999",
                 text: $viewModel.emergencyContactPhone,
                 keyboardType: .phonePad,
@@ -216,7 +216,7 @@ struct CompleteProfileView: View {
                             .font(.headline)
                     }
 
-                    Text(viewModel.isSaving ? "Saving profile..." : "Save and continue")
+                    Text(viewModel.isSaving ? "Saving profile..." : "Save profile")
                         .font(.headline)
                 }
             }
@@ -225,7 +225,7 @@ struct CompleteProfileView: View {
             .padding(.horizontal, 16)
             .padding(.top, 10)
 
-            Text("You cannot skip this step.")
+            Text("Public browsing is available without completing these optional fields.")
                 .font(.caption)
                 .foregroundStyle(palette.textSecondary)
                 .padding(.bottom, 6)
@@ -263,3 +263,4 @@ private struct ProfileInputField: View {
         }
     }
 }
+ 

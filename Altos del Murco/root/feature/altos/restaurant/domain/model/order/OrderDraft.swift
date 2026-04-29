@@ -7,8 +7,6 @@
 
 import Foundation
 
-import Foundation
-
 struct OrderDraft: Identifiable, Hashable {
     let id: UUID
     var clientId: String?
@@ -89,8 +87,16 @@ extension OrderDraft {
         !tableNumber.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
+    var hasValidNationalId: Bool {
+        let digits = nationalId?.filter(\.isNumber) ?? ""
+        return digits.count >= 8
+    }
+
     var canSubmit: Bool {
-        !isEmpty && hasValidClientName && (hasValidTableNumber || isScheduledForLater)
+        !isEmpty &&
+        hasValidClientName &&
+        hasValidNationalId &&
+        (hasValidTableNumber || isScheduledForLater)
     }
 
     func normalizedForSubmit(now: Date = Date()) -> OrderDraft {

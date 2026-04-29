@@ -5,16 +5,11 @@
 //  Created by José Ruiz on 31/3/26.
 //
 
-//
-//  MainTabView.swift
-//  Altos del Murco
-//
-
 import SwiftUI
 
 struct MainTabView: View {
     @Environment(\.colorScheme) private var colorScheme
-        
+
     @State private var selectedTab: MainTab = .home
     @EnvironmentObject private var router: AppRouter
 
@@ -50,7 +45,6 @@ struct MainTabView: View {
                 menuViewModel: menuViewModel,
                 adventureComboBuilderViewModel: adventureComboBuilderViewModel
             )
-            
             .tabItem { Label(MainTab.home.title, systemImage: MainTab.home.systemImage) }
             .tag(MainTab.home)
 
@@ -70,16 +64,32 @@ struct MainTabView: View {
             .tabItem { Label(MainTab.experiences.title, systemImage: MainTab.experiences.systemImage) }
             .tag(MainTab.experiences)
 
-            BookingsView(
-                ordersViewModel: ordersViewModel,
-                adventureModuleFactory: adventureModuleFactory
-            )
+            ProtectedAccessRequiredView(
+                title: "Inicia sesión para ver tus reservas",
+                message: "Tus pedidos, reservas y servicios son información de cuenta. El menú y catálogo siguen disponibles sin iniciar sesión.",
+                systemImage: "calendar.badge.clock",
+                theme: .neutral,
+                onContinueBrowsing: { selectedTab = .restaurant }
+            ) {
+                BookingsView(
+                    ordersViewModel: ordersViewModel,
+                    adventureModuleFactory: adventureModuleFactory
+                )
+            }
             .tabItem { Label(MainTab.bookings.title, systemImage: MainTab.bookings.systemImage) }
             .tag(MainTab.bookings)
 
-            ProfileContainerView()
-                .tabItem { Label(MainTab.profile.title, systemImage: MainTab.profile.systemImage) }
-                .tag(MainTab.profile)
+            ProtectedAccessRequiredView(
+                title: "Inicia sesión para administrar tu perfil",
+                message: "El perfil, recompensas e historial pertenecen a tu cuenta. Puedes seguir viendo el menú y catálogo sin iniciar sesión.",
+                systemImage: "person.crop.circle",
+                theme: .neutral,
+                onContinueBrowsing: { selectedTab = .restaurant }
+            ) {
+                ProfileContainerView()
+            }
+            .tabItem { Label(MainTab.profile.title, systemImage: MainTab.profile.systemImage) }
+            .tag(MainTab.profile)
         }
         .tint(selectedPalette.primary)
     }

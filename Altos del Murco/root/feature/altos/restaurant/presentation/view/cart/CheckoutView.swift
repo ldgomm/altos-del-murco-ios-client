@@ -82,28 +82,28 @@ struct CheckoutView: View {
         VStack(alignment: .leading, spacing: 16) {
             BrandSectionHeader(
                 theme: .restaurant,
-                title: "Datos del cliente",
-                subtitle: "La información de tu perfil se utiliza automáticamente para este pedido."
+                title: "Datos para confirmar",
+                subtitle: "Estos datos solo se solicitan cuando vas a crear un pedido o reserva real."
             )
 
             VStack(spacing: 14) {
                 themedField(
-                    title: "Cédula",
+                    title: "Cédula / número único nacional",
                     text: Binding(
-                        get: { authenticatedProfile?.nationalId ?? cartManager.clientId ?? "" },
-                        set: { _ in }
+                        get: { cartManager.nationalId ?? "" },
+                        set: { cartManager.updateClientId($0) }
                     )
                 )
-                .disabled(true)
+                .keyboardType(.numberPad)
 
                 themedField(
                     title: "Nombre",
                     text: Binding(
-                        get: { authenticatedProfile?.fullName ?? cartManager.clientName },
-                        set: { _ in }
+                        get: { cartManager.clientName },
+                        set: { cartManager.updateClientName($0) }
                     )
                 )
-                .disabled(true)
+                .textInputAutocapitalization(.words)
 
                 themedField(
                     title: cartManager.isScheduledForLater ? "Mesa o referencia" : "Número de mesa",
@@ -118,6 +118,10 @@ struct CheckoutView: View {
                      ? "Para una reserva posterior puedes dejar la mesa vacía; ADM la verá como Por asignar."
                      : "Para pedidos inmediatos, indica la mesa donde debe llegar la comida.")
                     .font(.caption)
+                    .foregroundStyle(palette.textSecondary)
+
+                Text("La cédula es obligatoria solo para confirmar el pedido o servicio. No se requiere para ver el menú.")
+                    .font(.caption.weight(.semibold))
                     .foregroundStyle(palette.textSecondary)
             }
         }
@@ -327,11 +331,12 @@ struct CheckoutView: View {
     private func syncProfileFieldsFromSession() {
         guard let profile = authenticatedProfile else { return }
 
-        if cartManager.clientId != profile.nationalId {
-            cartManager.clientId = profile.nationalId
+        let profileNationalId = profile.nationalId.digitsOnly
+        if (cartManager.nationalId ?? "").isEmpty && !profileNationalId.isEmpty {
+            cartManager.nationalId = profileNationalId
         }
 
-        if cartManager.clientName != profile.fullName {
+        if cartManager.clientName.trimmed.isEmpty && !profile.fullName.trimmed.isEmpty {
             cartManager.clientName = profile.fullName
         }
     }

@@ -59,6 +59,10 @@ final class AppSessionViewModel: ObservableObject {
         }
     }
 
+    var isAuthenticated: Bool {
+        authenticatedProfile != nil
+    }
+
     var authenticatedProfile: ClientProfile? {
         guard case .authenticated(let profile) = state else { return nil }
         return profile
@@ -203,6 +207,7 @@ final class AppSessionViewModel: ObservableObject {
 
             let destination = try await resolveSessionUseCase.execute(for: user)
             state = map(destination)
+
             if case .authenticated = state {
                 startSessionGuardIfNeeded()
             }
@@ -215,13 +220,16 @@ final class AppSessionViewModel: ObservableObject {
         switch destination {
         case .signedOut:
             return .signedOut
+
         case .needsProfile(let user, let existingProfile):
-            return .needsProfile(user, existingProfile)
+            // Legacy path only. Do not block entry anymore.
+            return .authenticated(ClientProfile.starter(from: user, existingProfile: existingProfile))
+
         case .authenticated(let profile):
             return .authenticated(profile)
         }
     }
-    
+
     func verifySessionStillValidFromSceneActivation() {
         Task {
             await verifySessionStillValid()
@@ -287,7 +295,10 @@ final class AppSessionViewModel: ObservableObject {
 enum AppSessionState {
     case loading
     case signedOut
+
+    /// Kept only so existing code compiles. RootView no longer shows CompleteProfileView.
     case needsProfile(AuthenticatedUser, ClientProfile?)
+
     case authenticated(ClientProfile)
     case error(String)
 }

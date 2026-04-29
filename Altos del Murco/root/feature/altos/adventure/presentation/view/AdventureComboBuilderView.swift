@@ -122,9 +122,17 @@ struct AdventureComboBuilderView: View {
     private func syncProfileFieldsFromSession() {
         guard let profile = authenticatedProfile else { return }
 
-        adventureComboBuilderViewModel.setClientName(profile.fullName)
-        adventureComboBuilderViewModel.setWhatsapp(profile.phoneNumber)
-        adventureComboBuilderViewModel.setNationalId(profile.nationalId)
+        if adventureComboBuilderViewModel.state.clientName.trimmed.isEmpty {
+            adventureComboBuilderViewModel.setClientName(profile.fullName)
+        }
+
+        if adventureComboBuilderViewModel.state.whatsappNumber.digitsOnly.isEmpty {
+            adventureComboBuilderViewModel.setWhatsapp(profile.phoneNumber)
+        }
+
+        if adventureComboBuilderViewModel.state.nationalId.digitsOnly.isEmpty {
+            adventureComboBuilderViewModel.setNationalId(profile.nationalId)
+        }
     }
 
     private var schedulingSection: some View {
@@ -552,46 +560,44 @@ struct AdventureComboBuilderView: View {
                         TextField(
                             "",
                             text: Binding(
-                                get: { authenticatedProfile?.nationalId ?? adventureComboBuilderViewModel.state.nationalId },
-                                set: { _ in }
+                                get: { adventureComboBuilderViewModel.state.nationalId },
+                                set: { adventureComboBuilderViewModel.setNationalId($0) }
                             ),
-                            prompt: Text("Cédula")
+                            prompt: Text("Cédula / número único nacional")
                         )
-                        .disabled(true)
                         .keyboardType(.numberPad)
                         .appTextFieldStyle(.adventure)
 
                         TextField(
                             "",
                             text: Binding(
-                                get: { authenticatedProfile?.fullName ?? adventureComboBuilderViewModel.state.clientName },
-                                set: { _ in }
+                                get: { adventureComboBuilderViewModel.state.clientName },
+                                set: { adventureComboBuilderViewModel.setClientName($0) }
                             ),
                             prompt: Text("Nombre")
                         )
-                        .disabled(true)
+                        .textInputAutocapitalization(.words)
                         .appTextFieldStyle(.adventure)
 
                         TextField(
                             "",
                             text: Binding(
-                                get: { authenticatedProfile?.phoneNumber ?? adventureComboBuilderViewModel.state.whatsappNumber },
-                                set: { _ in }
+                                get: { adventureComboBuilderViewModel.state.whatsappNumber },
+                                set: { adventureComboBuilderViewModel.setWhatsapp($0) }
                             ),
                             prompt: Text("WhatsApp")
                         )
-                        .disabled(true)
                         .keyboardType(.phonePad)
                         .appTextFieldStyle(.adventure)
 
                         HStack(alignment: .top, spacing: 12) {
-                            BrandIconBubble(theme: .adventure, systemImage: "person.crop.circle.badge.checkmark", size: 38)
+                            BrandIconBubble(theme: .adventure, systemImage: "person.text.rectangle", size: 38)
 
                             VStack(alignment: .leading, spacing: 4) {
-                                Text("¿Necesitas actualizar tu información?")
+                                Text("Datos requeridos solo para crear la reserva")
                                     .font(.subheadline.weight(.semibold))
 
-                                Text("Por favor, cambia tus datos personales desde la página Editar perfil.")
+                                Text("Puedes explorar las experiencias sin ingresar estos datos. La cédula y WhatsApp se solicitan únicamente para confirmar un servicio real.")
                                     .font(.subheadline)
                                     .foregroundStyle(.secondary)
                             }
@@ -716,7 +722,15 @@ struct AdventureComboBuilderView: View {
     private var confirmSection: some View {
         Section {
             VStack(spacing: 12) {
-                if showAddedMessage {
+                if !sessionViewModel.isAuthenticated {
+                    ProtectedAccessRequiredView(
+                        title: "Inicia sesión para confirmar la reserva",
+                        message: "Puedes explorar experiencias sin cuenta. Para solicitar un servicio real necesitamos verificar tu sesión y pedir los datos obligatorios de la reserva.",
+                        systemImage: "calendar.badge.plus",
+                        theme: .adventure
+                    )
+                    .frame(maxWidth: .infinity)
+                } else if showAddedMessage {
                     Text("Reserva agregada")
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(.white)
@@ -769,7 +783,8 @@ struct AdventureComboBuilderView: View {
                 }
                 .buttonStyle(BrandPrimaryButtonStyle(theme: .adventure))
                 .disabled(
-                    adventureComboBuilderViewModel.state.isSubmitting
+                    !sessionViewModel.isAuthenticated
+                    || adventureComboBuilderViewModel.state.isSubmitting
                     || adventureComboBuilderViewModel.state.selectedSlot == nil
                 )
                 .listRowInsets(EdgeInsets(top: 10, leading: 16, bottom: 28, trailing: 16))
