@@ -210,6 +210,8 @@ final class AppSessionViewModel: ObservableObject {
 
             if case .authenticated = state {
                 startSessionGuardIfNeeded()
+            } else {
+                stopSessionGuard()
             }
         } catch {
             state = .error(error.localizedDescription)
@@ -222,8 +224,10 @@ final class AppSessionViewModel: ObservableObject {
             return .signedOut
 
         case .needsProfile(let user, let existingProfile):
-            // Legacy path only. Do not block entry anymore.
-            return .authenticated(ClientProfile.starter(from: user, existingProfile: existingProfile))
+            // IMPORTANT:
+            // Do not create ClientProfile.starter here.
+            // That bypasses the mandatory form and is exactly what we do not want.
+            return .needsProfile(user, existingProfile)
 
         case .authenticated(let profile):
             return .authenticated(profile)
@@ -286,19 +290,7 @@ final class AppSessionViewModel: ObservableObject {
             try signOutUseCase.execute()
         } catch { }
 
-        currentNonce = nil
         rewardWalletSnapshot = .empty(nationalId: "")
         state = .signedOut
     }
-}
-
-enum AppSessionState {
-    case loading
-    case signedOut
-
-    /// Kept only so existing code compiles. RootView no longer shows CompleteProfileView.
-    case needsProfile(AuthenticatedUser, ClientProfile?)
-
-    case authenticated(ClientProfile)
-    case error(String)
 }

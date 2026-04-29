@@ -9,9 +9,7 @@ import Foundation
 
 enum SessionDestination {
     case signedOut
-
     case needsProfile(AuthenticatedUser, ClientProfile?)
-
     case authenticated(ClientProfile)
 }
 
@@ -38,10 +36,14 @@ final class ResolveSessionUseCase {
     func execute(for user: AuthenticatedUser) async throws -> SessionDestination {
         let profile = try await clientProfileRepository.fetchProfile(uid: user.uid)
 
-        if let profile {
-            return .authenticated(profile)
+        guard let profile else {
+            return .needsProfile(user, nil)
         }
 
-        return .authenticated(ClientProfile.starter(from: user))
+        guard profile.isComplete else {
+            return .needsProfile(user, profile)
+        }
+
+        return .authenticated(profile)
     }
 }

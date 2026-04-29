@@ -37,7 +37,7 @@ struct CompleteProfileView: View {
                         .appCardStyle(theme)
                 }
 
-                Text("You can browse the app without completing optional profile fields.")
+                Text("Puedes explorar la app sin iniciar sesión. Cuando inicies sesión para realizar pedidos o solicitar servicios, estos datos serán obligatorios.")
                     .font(.footnote)
                     .foregroundStyle(palette.textSecondary)
                     .multilineTextAlignment(.center)
@@ -63,32 +63,32 @@ struct CompleteProfileView: View {
                 size: 62
             )
 
-            Text("Complete your profile")
+            Text("Completa tu perfil")
                 .font(.system(size: 28, weight: .bold, design: .rounded))
                 .foregroundStyle(palette.textPrimary)
 
-            Text("Only your name is required here. Other details are optional or requested later when needed.")
+            Text("Para realizar pedidos o solicitar servicios necesitamos estos datos completos. Podrás continuar cuando guardes el formulario.")
                 .font(.subheadline)
                 .multilineTextAlignment(.center)
                 .foregroundStyle(palette.textSecondary)
                 .padding(.horizontal, 12)
         }
         .frame(maxWidth: .infinity)
-        .appCardStyle(theme, emphasized: true)
+        .appCardStyle(theme)
     }
 
     private var personalInfoSection: some View {
         VStack(spacing: 14) {
             BrandSectionHeader(
                 theme: theme,
-                title: "Personal information",
-                subtitle: "Only your name is required. National ID is requested later for real orders or services."
+                title: "Información personal",
+                subtitle: "Estos datos son necesarios para identificarte en pedidos, reservas y servicios reales."
             )
 
             ProfileInputField(
                 theme: theme,
-                title: "Full name",
-                placeholder: "Enter your full name",
+                title: "Nombre completo",
+                placeholder: "Ingresa tu nombre completo",
                 text: $viewModel.fullName,
                 keyboardType: .default,
                 autocapitalization: .words
@@ -96,8 +96,8 @@ struct CompleteProfileView: View {
 
             ProfileInputField(
                 theme: theme,
-                title: "National unique number (optional here)",
-                placeholder: "Example: 0501234567",
+                title: "Número único nacional / cédula",
+                placeholder: "Ejemplo: 0501234567",
                 text: $viewModel.nationalId,
                 keyboardType: .numberPad,
                 autocapitalization: .never
@@ -105,15 +105,15 @@ struct CompleteProfileView: View {
 
             ProfileInputField(
                 theme: theme,
-                title: "Phone number (optional here)",
-                placeholder: "Example: 0987654321",
+                title: "Número de teléfono / WhatsApp",
+                placeholder: "Ejemplo: 0987654321",
                 text: $viewModel.phoneNumber,
                 keyboardType: .phonePad,
                 autocapitalization: .never
             )
 
             VStack(alignment: .leading, spacing: 8) {
-                Text("Birthday")
+                Text("Fecha de nacimiento")
                     .font(.subheadline.bold())
                     .foregroundStyle(palette.textPrimary)
 
@@ -146,16 +146,16 @@ struct CompleteProfileView: View {
         VStack(spacing: 14) {
             BrandSectionHeader(
                 theme: theme,
-                title: "Address (optional)",
-                subtitle: "Optional. Use only if relevant to a future service."
+                title: "Dirección",
+                subtitle: "Se utiliza como referencia de contacto y coordinación de servicios."
             )
 
             VStack(alignment: .leading, spacing: 8) {
-                Text("Address")
+                Text("Dirección")
                     .font(.subheadline.bold())
                     .foregroundStyle(palette.textPrimary)
 
-                TextField("Street, reference, sector...", text: $viewModel.address, axis: .vertical)
+                TextField("Calle, referencia, sector...", text: $viewModel.address, axis: .vertical)
                     .textInputAutocapitalization(.words)
                     .autocorrectionDisabled()
                     .foregroundStyle(palette.textPrimary)
@@ -179,14 +179,14 @@ struct CompleteProfileView: View {
         VStack(spacing: 14) {
             BrandSectionHeader(
                 theme: theme,
-                title: "Emergency contact",
-                subtitle: "Optional. Request only when directly relevant to a service."
+                title: "Contacto de emergencia",
+                subtitle: "Requerido para coordinación y seguridad en servicios o experiencias."
             )
 
             ProfileInputField(
                 theme: theme,
-                title: "Emergency contact name (optional)",
-                placeholder: "Who should we contact if needed?",
+                title: "Nombre del contacto de emergencia",
+                placeholder: "¿A quién debemos contactar si es necesario?",
                 text: $viewModel.emergencyContactName,
                 keyboardType: .default,
                 autocapitalization: .words
@@ -194,8 +194,8 @@ struct CompleteProfileView: View {
 
             ProfileInputField(
                 theme: theme,
-                title: "Emergency contact phone (optional)",
-                placeholder: "Example: 0999999999",
+                title: "Teléfono del contacto de emergencia",
+                placeholder: "Ejemplo: 0999999999",
                 text: $viewModel.emergencyContactPhone,
                 keyboardType: .phonePad,
                 autocapitalization: .never
@@ -216,7 +216,7 @@ struct CompleteProfileView: View {
                             .font(.headline)
                     }
 
-                    Text(viewModel.isSaving ? "Saving profile..." : "Save profile")
+                    Text(viewModel.isSaving ? "Guardando perfil..." : "Guardar perfil")
                         .font(.headline)
                 }
             }
@@ -225,7 +225,7 @@ struct CompleteProfileView: View {
             .padding(.horizontal, 16)
             .padding(.top, 10)
 
-            Text("Public browsing is available without completing these optional fields.")
+            Text("Completa todos los datos obligatorios para continuar usando los servicios de la app.")
                 .font(.caption)
                 .foregroundStyle(palette.textSecondary)
                 .padding(.bottom, 6)
@@ -263,4 +263,3 @@ private struct ProfileInputField: View {
         }
     }
 }
- 

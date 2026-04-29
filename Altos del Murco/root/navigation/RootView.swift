@@ -18,7 +18,24 @@ struct RootView<Home: View>: View {
                 SessionLoadingView()
                     .transition(.opacity)
 
-            case .signedOut, .needsProfile, .authenticated:
+            case .signedOut:
+                // Public browsing is allowed without login.
+                // This is the important App Store Review fix: menu/catalog are not behind auth.
+                home()
+                    .transition(.opacity)
+
+            case .needsProfile(let user, let existingProfile):
+                // Signed-in users with incomplete profile cannot continue to services.
+                // No skip, no guest escape, no normal tab UI until the mandatory form is saved.
+                CompleteProfileView {
+                    viewModel.makeCompleteProfileViewModel(
+                        user: user,
+                        existingProfile: existingProfile
+                    )
+                }
+                .transition(.opacity)
+
+            case .authenticated:
                 home()
                     .transition(.opacity)
 
@@ -47,6 +64,7 @@ private struct SessionLoadingView: View {
 
         ZStack {
             BrandScreenBackground(theme: .restaurant)
+
             LinearGradient(
                 colors: [
                     Color(.systemBackground),
@@ -103,30 +121,32 @@ private struct SessionErrorView: View {
                         .foregroundStyle(palette.destructive)
                 }
 
-                VStack(spacing: 10) {
-                    Text("Something went wrong")
+                VStack(spacing: 8) {
+                    Text("No pudimos preparar la sesión")
                         .font(.title3.bold())
                         .foregroundStyle(palette.textPrimary)
 
                     Text(message)
-                        .font(.body)
-                        .multilineTextAlignment(.center)
+                        .font(.subheadline)
                         .foregroundStyle(palette.textSecondary)
+                        .multilineTextAlignment(.center)
                 }
 
-                VStack(spacing: 12) {
+                VStack(spacing: 10) {
                     Button(action: retryAction) {
-                        Text("Try again")
+                        Label("Intentar nuevamente", systemImage: "arrow.clockwise")
+                            .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(BrandPrimaryButtonStyle(theme: .neutral))
 
                     Button(action: signOutAction) {
-                        Text("Sign out")
+                        Text("Cerrar sesión")
+                            .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(BrandSecondaryButtonStyle(theme: .neutral))
                 }
             }
-            .frame(maxWidth: 420)
+            .frame(maxWidth: 380)
             .appCardStyle(.neutral)
             .padding(24)
         }
