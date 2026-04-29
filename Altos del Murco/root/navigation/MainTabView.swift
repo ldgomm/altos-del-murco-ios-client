@@ -14,6 +14,9 @@ import SwiftUI
 
 struct MainTabView: View {
     @Environment(\.colorScheme) private var colorScheme
+    
+    @EnvironmentObject private var routeNavigator: RouteNavigationManager
+    
     @State private var selectedTab: MainTab = .home
 
     @ObservedObject var ordersViewModel: OrdersViewModel
@@ -80,6 +83,17 @@ struct MainTabView: View {
                 .tag(MainTab.profile)
         }
         .tint(selectedPalette.primary)
+        .safeAreaInset(edge: .bottom) {
+            if routeNavigator.shouldShowGlobalBanner {
+                RouteBottomBanner()
+                    .environmentObject(routeNavigator)
+                    .padding(.horizontal, 14)
+                    .padding(.bottom, 6)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+        .animation(.spring(response: 0.34, dampingFraction: 0.86), value: routeNavigator.shouldShowGlobalBanner)
+
     }
 }
 
