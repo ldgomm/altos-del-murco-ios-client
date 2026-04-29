@@ -107,18 +107,49 @@ final class RouteNavigationManager: NSObject, ObservableObject {
         Self.distanceFormatter.string(fromDistance: remainingDistanceMeters)
     }
 
-    var etaText: String {
-        let seconds: TimeInterval
-
+    var etaSeconds: TimeInterval {
         if let route {
             let remainingRatio = max(0.08, 1 - progress)
-            seconds = max(60, route.expectedTravelTime * remainingRatio)
+            return max(60, route.expectedTravelTime * remainingRatio)
         } else {
-            let estimatedMetersPerSecond: Double = 8.3 // ~30 km/h, safer for rural/local roads.
-            seconds = max(60, remainingDistanceMeters / estimatedMetersPerSecond)
+            let estimatedMetersPerSecond: Double = 8.3
+            return max(60, remainingDistanceMeters / estimatedMetersPerSecond)
+        }
+    }
+
+    var etaText: String {
+        Self.timeFormatter.string(from: etaSeconds) ?? "—"
+    }
+
+    var arrivalText: String {
+        guard remainingDistanceMeters > arrivalThresholdMeters else {
+            return "Ahora"
         }
 
-        return Self.timeFormatter.string(from: seconds) ?? "—"
+        return Date()
+            .addingTimeInterval(etaSeconds)
+            .formatted(date: .omitted, time: .shortened)
+    }
+
+    var liveActivityInstructionText: String {
+        switch state {
+        case .arrived:
+            return "Bienvenido a Altos del Murco."
+        case .failed(let message):
+            return message
+        case .locating:
+            return "Buscando tu ubicación actual."
+        case .calculating:
+            return "Calculando la mejor ruta disponible."
+        case .previewReady:
+            return "Ruta lista. Inicia la navegación cuando estés listo."
+        case .navigating:
+            return primaryInstruction
+        case .idle:
+            return "Abre la ruta para llegar a Altos del Murco."
+        case .permissionNeeded:
+            return "Activa ubicación para calcular tu ruta."
+        }
     }
 
     var statusText: String {
@@ -251,7 +282,16 @@ final class RouteNavigationManager: NSObject, ObservableObject {
             manager.stopUpdatingLocation()
             manager.allowsBackgroundLocationUpdates = false
             manager.showsBackgroundLocationIndicator = false
-            Task { await liveActivityService.end(distanceText: "Llegaste", etaText: "0 min", progress: 1, statusText: "Llegaste") }
+            Task {
+                await liveActivityService.end(
+                    distanceText: "Llegaste",
+                    etaText: "0 min",
+                    arrivalText: "Ahora",
+                    progress: 1,
+                    statusText: "Llegaste",
+                    instructionText: "Bienvenido a Altos del Murco."
+                )
+            }
             return
         }
 
@@ -262,14 +302,7 @@ final class RouteNavigationManager: NSObject, ObservableObject {
         }
 
         if state.isActivelyNavigating {
-            Task {
-                await liveActivityService.update(
-                    distanceText: distanceText,
-                    etaText: etaText,
-                    progress: progress,
-                    statusText: statusText
-                )
-            }
+            updateLiveActivity()
         }
     }
 
@@ -307,12 +340,7 @@ final class RouteNavigationManager: NSObject, ObservableObject {
                     self.state = startNavigation ? .navigating : .previewReady
 
                     if startNavigation {
-                        self.liveActivityService.start(
-                            distanceText: self.distanceText,
-                            etaText: self.etaText,
-                            progress: self.progress,
-                            statusText: self.statusText
-                        )
+                        self.startLiveActivity()
                     }
                 }
             } catch {
@@ -369,6 +397,30 @@ extension RouteNavigationManager: CLLocationManagerDelegate {
     nonisolated func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
         Task { @MainActor [weak self] in
             self?.state = .failed("No pudimos actualizar tu ubicación: \(error.localizedDescription)")
+        }
+    }
+    
+    private func startLiveActivity() {
+        liveActivityService.start(
+            distanceText: distanceText,
+            etaText: etaText,
+            arrivalText: arrivalText,
+            progress: progress,
+            statusText: statusText,
+            instructionText: liveActivityInstructionText
+        )
+    }
+
+    private func updateLiveActivity() {
+        Task {
+            await liveActivityService.update(
+                distanceText: distanceText,
+                etaText: etaText,
+                arrivalText: arrivalText,
+                progress: progress,
+                statusText: statusText,
+                instructionText: liveActivityInstructionText
+            )
         }
     }
 }

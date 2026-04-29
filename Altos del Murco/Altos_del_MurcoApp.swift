@@ -168,6 +168,9 @@ struct AltosDelMurcoApp: App {
                     sessionViewModel.verifySessionStillValidFromSceneActivation()
                 }
             }
+            .onOpenURL { url in
+                router.handleDeepLink(url)
+            }
         }
         .modelContainer(sharedModelContainer)
     }

@@ -16,16 +16,20 @@ struct RouteActivityAttributes: ActivityAttributes {
         var destinationName: String
         var distanceText: String
         var etaText: String
+        var arrivalText: String
         var progress: Double
         var statusText: String
+        var instructionText: String
         var updatedAt: Date
 
         static let preview = ContentState(
             destinationName: "Altos del Murco",
             distanceText: "4.2 km",
             etaText: "12 min",
+            arrivalText: "14:35",
             progress: 0.42,
             statusText: "En camino",
+            instructionText: "Sigue la ruta hacia Altos del Murco.",
             updatedAt: Date()
         )
     }

@@ -18,25 +18,44 @@ final class RouteLiveActivityService {
     private var activity: Activity<RouteActivityAttributes>?
     #endif
 
-    func start(distanceText: String, etaText: String, progress: Double, statusText: String) {
+    func start(
+        distanceText: String,
+        etaText: String,
+        arrivalText: String,
+        progress: Double,
+        statusText: String,
+        instructionText: String
+    ) {
         #if canImport(ActivityKit)
         guard #available(iOS 16.2, *) else { return }
         guard ActivityAuthorizationInfo().areActivitiesEnabled else { return }
+
         guard activity == nil else {
-            Task { await update(distanceText: distanceText, etaText: etaText, progress: progress, statusText: statusText) }
+            Task {
+                await update(
+                    distanceText: distanceText,
+                    etaText: etaText,
+                    arrivalText: arrivalText,
+                    progress: progress,
+                    statusText: statusText,
+                    instructionText: instructionText
+                )
+            }
             return
         }
 
         let attributes = RouteActivityAttributes(routeName: "Ruta a Altos")
-        let state = RouteActivityAttributes.ContentState(
-            destinationName: Destination.name,
-            distanceText: distanceText,
-            etaText: etaText,
-            progress: progress,
-            statusText: statusText,
-            updatedAt: Date()
+        let content = ActivityContent(
+            state: makeState(
+                distanceText: distanceText,
+                etaText: etaText,
+                arrivalText: arrivalText,
+                progress: progress,
+                statusText: statusText,
+                instructionText: instructionText
+            ),
+            staleDate: Date().addingTimeInterval(5 * 60)
         )
-        let content = ActivityContent(state: state, staleDate: Date().addingTimeInterval(5 * 60))
 
         do {
             activity = try Activity<RouteActivityAttributes>.request(
@@ -50,40 +69,87 @@ final class RouteLiveActivityService {
         #endif
     }
 
-    func update(distanceText: String, etaText: String, progress: Double, statusText: String) async {
+    func update(
+        distanceText: String,
+        etaText: String,
+        arrivalText: String,
+        progress: Double,
+        statusText: String,
+        instructionText: String
+    ) async {
         #if canImport(ActivityKit)
         guard #available(iOS 16.2, *) else { return }
         guard let activity else { return }
 
-        let state = RouteActivityAttributes.ContentState(
-            destinationName: Destination.name,
-            distanceText: distanceText,
-            etaText: etaText,
-            progress: progress,
-            statusText: statusText,
-            updatedAt: Date()
+        let content = ActivityContent(
+            state: makeState(
+                distanceText: distanceText,
+                etaText: etaText,
+                arrivalText: arrivalText,
+                progress: progress,
+                statusText: statusText,
+                instructionText: instructionText
+            ),
+            staleDate: Date().addingTimeInterval(5 * 60)
         )
-        let content = ActivityContent(state: state, staleDate: Date().addingTimeInterval(5 * 60))
+
         await activity.update(content)
         #endif
     }
 
-    func end(distanceText: String = "Llegaste", etaText: String = "0 min", progress: Double = 1, statusText: String = "Ruta finalizada") async {
+    func end(
+        distanceText: String = "Llegaste",
+        etaText: String = "0 min",
+        arrivalText: String = "Ahora",
+        progress: Double = 1,
+        statusText: String = "Ruta finalizada",
+        instructionText: String = "Bienvenido a Altos del Murco."
+    ) async {
         #if canImport(ActivityKit)
         guard #available(iOS 16.2, *) else { return }
         guard let activity else { return }
 
-        let state = RouteActivityAttributes.ContentState(
-            destinationName: Destination.name,
-            distanceText: distanceText,
-            etaText: etaText,
-            progress: progress,
-            statusText: statusText,
-            updatedAt: Date()
+        let content = ActivityContent(
+            state: makeState(
+                distanceText: distanceText,
+                etaText: etaText,
+                arrivalText: arrivalText,
+                progress: progress,
+                statusText: statusText,
+                instructionText: instructionText
+            ),
+            staleDate: nil
         )
-        let content = ActivityContent(state: state, staleDate: nil)
-        await activity.end(content, dismissalPolicy: .after(Date().addingTimeInterval(10)))
+
+        await activity.end(
+            content,
+            dismissalPolicy: .after(Date().addingTimeInterval(10))
+        )
+
         self.activity = nil
         #endif
     }
+
+    #if canImport(ActivityKit)
+    @available(iOS 16.2, *)
+    private func makeState(
+        distanceText: String,
+        etaText: String,
+        arrivalText: String,
+        progress: Double,
+        statusText: String,
+        instructionText: String
+    ) -> RouteActivityAttributes.ContentState {
+        RouteActivityAttributes.ContentState(
+            destinationName: Destination.name,
+            distanceText: distanceText,
+            etaText: etaText,
+            arrivalText: arrivalText,
+            progress: min(1, max(0, progress)),
+            statusText: statusText,
+            instructionText: instructionText,
+            updatedAt: Date()
+        )
+    }
+    #endif
 }

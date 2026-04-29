@@ -63,6 +63,7 @@
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				root/feature/altos/profile/destination/RouteActivityAttributes.swift,
+				root/feature/altos/profile/destination/RouteDeepLink.swift,
 			);
 			target = AC52439C2FA18E2F0006A335 /* RouteWidgetExtensionExtension */;
 		};
