@@ -42,7 +42,7 @@ final class AdventureBookingsService: AdventureBookingsServiceable {
         }
 
         let registration = db.collection(bookingsCollection)
-            .whereField("clientId", isEqualTo: uid)
+            .whereField("nationalId", isEqualTo: nationalId)
             .order(by: "startAt", descending: false)
             .addSnapshotListener { snapshot, error in
                 if let error {

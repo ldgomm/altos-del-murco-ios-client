@@ -169,7 +169,7 @@ final class OrdersService: OrdersServiceable {
 
             let listener = db
                 .collection(FirestoreConstants.restaurant_orders)
-                .whereField("clientId", isEqualTo: uid)
+                .whereField("nationalId", isEqualTo: nationalId)
                 .order(by: "scheduledAt", descending: true)
                 .addSnapshotListener { snapshot, error in
                     if let error {

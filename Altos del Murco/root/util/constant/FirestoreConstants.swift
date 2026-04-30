@@ -10,7 +10,6 @@ import Foundation
 enum FirestoreConstants {
     static let restaurant_orders = "restaurant_orders"
     static let adventure_bookings = "adventure_bookings"
-    static let loyalty_transactions = "loyalty_transactions"
     static let posts = "posts"
     static let restaurant_menu_items = "restaurant_menu_items"
     static let client_loyalty_wallets = "client_loyalty_wallets"
