@@ -42,7 +42,7 @@ final class AdventureBookingsService: AdventureBookingsServiceable {
         }
 
         let registration = db.collection(bookingsCollection)
-            .whereField("nationalId", isEqualTo: nationalId)
+            .whereField("userId", isEqualTo: uid)
             .order(by: "startAt", descending: false)
             .addSnapshotListener { snapshot, error in
                 if let error {
@@ -89,11 +89,6 @@ final class AdventureBookingsService: AdventureBookingsServiceable {
 
     func createBooking(_ request: AdventureBookingRequest) async throws -> AdventureBooking {
         let uid = try requireCurrentUid()
-        let cleanNationalId = request.nationalId.filter(\.isNumber)
-
-        guard !cleanNationalId.isEmpty else {
-            throw makeError("No se encontró una cédula asociada a esta cuenta.")
-        }
 
         let catalog = try await catalogService.fetchCatalog()
 
@@ -109,7 +104,7 @@ final class AdventureBookingsService: AdventureBookingsServiceable {
         }
 
         let rewardPreview = try await loyaltyRewardsService.previewAdventureRewards(
-            for: cleanNationalId,
+            for: uid,
             activityItems: request.items,
             foodItems: request.foodReservation?.items ?? [],
             catalog: catalog
@@ -131,10 +126,11 @@ final class AdventureBookingsService: AdventureBookingsServiceable {
         )
 
         let normalizedRequest = AdventureBookingRequest(
+            userId: uid,
             clientId: uid,
             clientName: request.clientName,
             whatsappNumber: request.whatsappNumber,
-            nationalId: cleanNationalId,
+            nationalId: nil,
             date: request.date,
             selectedStartAt: request.selectedStartAt,
             guestCount: request.guestCount,
@@ -172,7 +168,7 @@ final class AdventureBookingsService: AdventureBookingsServiceable {
         }
 
         try await loyaltyRewardsService.reserveRewards(
-            nationalId: normalizedRequest.nationalId,
+            nationalId: uid,
             referenceType: .booking,
             referenceId: bookingRef.documentID,
             appliedRewards: normalizedRequest.appliedRewards
@@ -193,7 +189,7 @@ final class AdventureBookingsService: AdventureBookingsServiceable {
         let dto = try snapshot.data(as: AdventureBookingDto.self)
         let booking = dto.toDomain(documentId: id)
 
-        guard booking.clientId == uid else {
+        guard booking.userId == uid || booking.clientId == uid else {
             throw makeError("You are not allowed to cancel this booking.")
         }
 
@@ -217,7 +213,7 @@ final class AdventureBookingsService: AdventureBookingsServiceable {
         }
 
         try await loyaltyRewardsService.releaseRewards(
-            nationalId: dto.nationalId,
+            nationalId: uid,
             referenceId: id
         )
     }

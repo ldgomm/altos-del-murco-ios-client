@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import FirebaseAuth
 import FirebaseFirestore
 
 protocol LoyaltyRewardsListenerToken {
@@ -92,8 +93,12 @@ private final class LoyaltyWalletObservationCoordinator {
 }
 
 protocol LoyaltyRewardsServiceable {
+    /// Legacy parameter name kept to avoid breaking every view immediately.
+    /// The implementation ignores this value and always uses Firebase Auth uid.
     func loadWalletSnapshot(for nationalId: String) async throws -> RewardWalletSnapshot
 
+    /// Legacy parameter name kept to avoid breaking every view immediately.
+    /// The implementation ignores this value and always uses Firebase Auth uid.
     func observeWalletSnapshot(
         for nationalId: String,
         onChange: @escaping (Result<RewardWalletSnapshot, Error>) -> Void
@@ -131,18 +136,24 @@ protocol LoyaltyRewardsServiceable {
 
 final class LoyaltyRewardsService: LoyaltyRewardsServiceable {
     private let db: Firestore
+    private let auth: Auth
 
-    init(db: Firestore = Firestore.firestore()) {
+    init(
+        db: Firestore = Firestore.firestore(),
+        auth: Auth = Auth.auth()
+    ) {
         self.db = db
+        self.auth = auth
     }
 
     func loadWalletSnapshot(for nationalId: String) async throws -> RewardWalletSnapshot {
-        let cleanNationalId = nationalId.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !cleanNationalId.isEmpty else { return .empty(nationalId: "") }
+        guard let uid = currentUserId else {
+            return .empty(userId: "")
+        }
 
         async let templatesTask = fetchTemplates()
-        async let totalsTask = computeTotals(for: cleanNationalId)
-        async let walletTask = fetchWalletDocument(for: cleanNationalId)
+        async let totalsTask = computeTotals(forUserId: uid)
+        async let walletTask = fetchWalletDocument(userId: uid)
 
         let templates = try await templatesTask
         let totals = try await totalsTask
@@ -170,7 +181,8 @@ final class LoyaltyRewardsService: LoyaltyRewardsServiceable {
         let released = walletDocument.events.filter { $0.status == .released }
 
         return RewardWalletSnapshot(
-            nationalId: cleanNationalId,
+            userId: uid,
+            nationalId: nil,
             currentLevel: currentLevel,
             totalSpent: totals.totalSpent,
             points: Int(totals.totalSpent.rounded(.down)),
@@ -185,26 +197,24 @@ final class LoyaltyRewardsService: LoyaltyRewardsServiceable {
         for nationalId: String,
         onChange: @escaping (Result<RewardWalletSnapshot, Error>) -> Void
     ) -> LoyaltyRewardsListenerToken {
-        let cleanNationalId = nationalId.trimmingCharacters(in: .whitespacesAndNewlines)
-
-        guard !cleanNationalId.isEmpty else {
-            onChange(.success(.empty(nationalId: "")))
+        guard let uid = currentUserId else {
+            onChange(.success(.empty(userId: "")))
             return FirestoreLoyaltyWalletListenerToken(registration: nil)
         }
 
         let walletRef = db
             .collection(FirestoreConstants.client_loyalty_wallets)
-            .document(cleanNationalId)
+            .document(uid)
 
         let templatesRef = db.collection(FirestoreConstants.loyalty_reward_templates)
 
         let ordersQuery = db
             .collection(FirestoreConstants.restaurant_orders)
-            .whereField("nationalId", isEqualTo: cleanNationalId)
+            .whereField("userId", isEqualTo: uid)
 
         let bookingsQuery = db
             .collection(FirestoreConstants.adventure_bookings)
-            .whereField("nationalId", isEqualTo: cleanNationalId)
+            .whereField("userId", isEqualTo: uid)
 
         let coordinator = LoyaltyWalletObservationCoordinator(
             emit: { [weak self] in
@@ -212,7 +222,7 @@ final class LoyaltyRewardsService: LoyaltyRewardsServiceable {
 
                 Task {
                     do {
-                        let snapshot = try await self.loadWalletSnapshot(for: cleanNationalId)
+                        let snapshot = try await self.loadWalletSnapshot(for: uid)
                         await MainActor.run {
                             onChange(.success(snapshot))
                         }
@@ -312,14 +322,12 @@ final class LoyaltyRewardsService: LoyaltyRewardsServiceable {
             )
         }
 
-        let result = LoyaltyRewardEngine.evaluateAdventure(
+        return LoyaltyRewardEngine.evaluateAdventure(
             templates: wallet.availableTemplates,
             wallet: wallet,
             activityLines: activityLines,
             foodLines: foodLines
         )
-        
-        return result
     }
 
     func reserveRewards(
@@ -329,11 +337,9 @@ final class LoyaltyRewardsService: LoyaltyRewardsServiceable {
         appliedRewards: [AppliedReward]
     ) async throws {
         guard !appliedRewards.isEmpty else { return }
+        guard let uid = currentUserId else { return }
 
-        let cleanNationalId = nationalId.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !cleanNationalId.isEmpty else { return }
-
-        let walletRef = db.collection(FirestoreConstants.client_loyalty_wallets).document(cleanNationalId)
+        let walletRef = db.collection(FirestoreConstants.client_loyalty_wallets).document(uid)
 
         _ = try await db.runTransaction { transaction, errorPointer in
             do {
@@ -398,7 +404,7 @@ final class LoyaltyRewardsService: LoyaltyRewardsServiceable {
                 }
 
                 let updated = LoyaltyWalletDocument(
-                    nationalId: cleanNationalId,
+                    userId: uid,
                     updatedAt: Date(),
                     events: events
                 )
@@ -417,7 +423,6 @@ final class LoyaltyRewardsService: LoyaltyRewardsServiceable {
         referenceId: String
     ) async throws {
         try await mutateReferenceStatus(
-            nationalId: nationalId,
             referenceId: referenceId,
             targetStatus: .consumed
         )
@@ -428,21 +433,18 @@ final class LoyaltyRewardsService: LoyaltyRewardsServiceable {
         referenceId: String
     ) async throws {
         try await mutateReferenceStatus(
-            nationalId: nationalId,
             referenceId: referenceId,
             targetStatus: .released
         )
     }
 
     private func mutateReferenceStatus(
-        nationalId: String,
         referenceId: String,
         targetStatus: LoyaltyWalletEventStatus
     ) async throws {
-        let cleanNationalId = nationalId.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !cleanNationalId.isEmpty else { return }
+        guard let uid = currentUserId else { return }
 
-        let walletRef = db.collection(FirestoreConstants.client_loyalty_wallets).document(cleanNationalId)
+        let walletRef = db.collection(FirestoreConstants.client_loyalty_wallets).document(uid)
 
         _ = try await db.runTransaction { transaction, errorPointer in
             do {
@@ -469,7 +471,7 @@ final class LoyaltyRewardsService: LoyaltyRewardsServiceable {
                 }
 
                 let updated = LoyaltyWalletDocument(
-                    nationalId: cleanNationalId,
+                    userId: uid,
                     updatedAt: Date(),
                     events: updatedEvents
                 )
@@ -497,14 +499,14 @@ final class LoyaltyRewardsService: LoyaltyRewardsServiceable {
     }
 
     private func fetchWalletDocument(
-        for nationalId: String
+        userId: String
     ) async throws -> LoyaltyWalletDocument {
-        let ref = db.collection(FirestoreConstants.client_loyalty_wallets).document(nationalId)
+        let ref = db.collection(FirestoreConstants.client_loyalty_wallets).document(userId)
         let snapshot = try await ref.getDocument()
 
         guard snapshot.exists else {
             return LoyaltyWalletDocument(
-                nationalId: nationalId,
+                userId: userId,
                 updatedAt: Date(),
                 events: []
             )
@@ -514,16 +516,16 @@ final class LoyaltyRewardsService: LoyaltyRewardsServiceable {
     }
 
     private func computeTotals(
-        for nationalId: String
+        forUserId userId: String
     ) async throws -> (restaurantSpent: Double, adventureSpent: Double, totalSpent: Double) {
         async let ordersTask = db
             .collection(FirestoreConstants.restaurant_orders)
-            .whereField("nationalId", isEqualTo: nationalId)
+            .whereField("userId", isEqualTo: userId)
             .getDocuments()
 
         async let bookingsTask = db
             .collection(FirestoreConstants.adventure_bookings)
-            .whereField("nationalId", isEqualTo: nationalId)
+            .whereField("userId", isEqualTo: userId)
             .getDocuments()
 
         let orderSnapshot = try await ordersTask
@@ -552,6 +554,11 @@ final class LoyaltyRewardsService: LoyaltyRewardsServiceable {
         )
     }
 
+    private var currentUserId: String? {
+        let value = auth.currentUser?.uid.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return value.isEmpty ? nil : value
+    }
+
     private func usageCount(
         templateId: String,
         inside events: [LoyaltyWalletEvent]
@@ -577,7 +584,7 @@ final class LoyaltyRewardsService: LoyaltyRewardsServiceable {
 
         guard snapshot.exists else {
             return LoyaltyWalletDocument(
-                nationalId: walletRef.documentID,
+                userId: walletRef.documentID,
                 updatedAt: Date(),
                 events: []
             )

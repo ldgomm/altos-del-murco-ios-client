@@ -317,7 +317,7 @@ private enum UnifiedReservation: Identifiable, Hashable {
                 booking.id,
                 booking.clientName,
                 booking.whatsappNumber,
-                booking.nationalId,
+                booking.userId ?? booking.clientId ?? "",
                 booking.eventDisplayTitle,
                 booking.visitTypeTitle,
                 booking.items.map(\.title).joined(separator: " "),
@@ -507,7 +507,7 @@ struct BookingsView: View {
             .onAppear {
                 syncNationalIdFromSession(forceRefresh: false)
             }
-            .onChange(of: profile?.nationalId) { _, _ in
+            .onChange(of: profile?.id) { _, _ in
                 syncNationalIdFromSession(forceRefresh: true)
             }
             .onDisappear {
@@ -565,12 +565,10 @@ struct BookingsView: View {
     }
 
     private func syncNationalIdFromSession(forceRefresh: Bool) {
-        guard let nationalId = profile?.nationalId else {
-            return
-        }
+        let userId = profile?.id ?? ""
 
-        ordersViewModel.setNationalId(nationalId)
-        adventureBookingsViewModel.setNationalId(nationalId)
+        ordersViewModel.setNationalId(userId)
+        adventureBookingsViewModel.setNationalId(userId)
 
         ordersViewModel.onEvent(forceRefresh ? .refresh : .onAppear)
         adventureBookingsViewModel.onAppear()

@@ -131,7 +131,7 @@ struct AdventureComboBuilderView: View {
         }
 
         if adventureComboBuilderViewModel.state.nationalId.digitsOnly.isEmpty {
-            adventureComboBuilderViewModel.setNationalId(profile.nationalId)
+            adventureComboBuilderViewModel.setNationalId(profile.id)
         }
     }
 

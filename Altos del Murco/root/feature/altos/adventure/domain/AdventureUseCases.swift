@@ -56,4 +56,4 @@ struct CancelAdventureBookingUseCase {
     ) async throws {
         try await service.cancelBooking(id: id, nationalId: nationalId)
     }
-}
+} 

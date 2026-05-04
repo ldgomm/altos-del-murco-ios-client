@@ -125,12 +125,6 @@ final class AdventureComboBuilderViewModel: ObservableObject {
         rewardsListenerToken = nil
 
         let cleanNationalId = state.nationalId.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !cleanNationalId.isEmpty else {
-            state.rewardPreview = .empty(wallet: .empty(nationalId: ""))
-            state.isLoadingRewards = false
-            return
-        }
-
         state.isLoadingRewards = true
 
         rewardsListenerToken = loyaltyRewardsService.observeWalletSnapshot(
@@ -208,12 +202,6 @@ final class AdventureComboBuilderViewModel: ObservableObject {
 
     func refreshRewardPreview() async {
         let cleanNationalId = state.nationalId.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !cleanNationalId.isEmpty else {
-            state.rewardPreview = .empty(wallet: .empty(nationalId: ""))
-            state.isLoadingRewards = false
-            return
-        }
-
         state.isLoadingRewards = true
         defer { state.isLoadingRewards = false }
 
@@ -467,7 +455,7 @@ final class AdventureComboBuilderViewModel: ObservableObject {
     }
 
     func setNationalId(_ value: String) {
-        let cleanNationalId = value.filter(\.isNumber)
+        let cleanNationalId = value.trimmingCharacters(in: .whitespacesAndNewlines)
         let shouldRestartObservation =
             cleanNationalId != state.nationalId || rewardsListenerToken == nil
 
@@ -1007,10 +995,11 @@ final class AdventureComboBuilderViewModel: ObservableObject {
             defer { state.isSubmitting = false }
 
             let request = AdventureBookingRequest(
+                userId: clientId,
                 clientId: clientId,
                 clientName: validated.clientName,
                 whatsappNumber: validated.whatsappNumber,
-                nationalId: validated.nationalId,
+                nationalId: nil,
                 date: state.selectedDate,
                 selectedStartAt: validated.selectedStartAt,
                 guestCount: state.guestCount,
@@ -1038,7 +1027,6 @@ final class AdventureComboBuilderViewModel: ObservableObject {
     private struct ValidatedReservationInput {
         let clientName: String
         let whatsappNumber: String
-        let nationalId: String
         let selectedStartAt: Date
         let customEventTitle: String?
         let eventNotes: String?
@@ -1064,10 +1052,6 @@ final class AdventureComboBuilderViewModel: ObservableObject {
 
         guard let normalizedWhatsApp = normalizeEcuadorWhatsApp(state.whatsappNumber) else {
             throw ReservationValidationError(message: "Ingresa un número de WhatsApp de Ecuador válido.")
-        }
-
-        guard let normalizedNationalId = normalizeEcuadorNationalId(state.nationalId) else {
-            throw ReservationValidationError(message: "Ingresa una cédula ecuatoriana o un RUC personal válido.")
         }
 
         guard state.guestCount > 0 else {
@@ -1118,7 +1102,6 @@ final class AdventureComboBuilderViewModel: ObservableObject {
         return ValidatedReservationInput(
             clientName: cleanClientName,
             whatsappNumber: normalizedWhatsApp,
-            nationalId: normalizedNationalId,
             selectedStartAt: slot.startAt,
             customEventTitle: state.eventType == .custom ? cleanCustomEventTitle : nil,
             eventNotes: cleanEventNotes.isEmpty ? nil : cleanEventNotes,

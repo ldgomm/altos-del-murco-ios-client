@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import FirebaseAuth
 import FirebaseFirestore
 
 protocol ProfileStatsListenerToken {
@@ -38,31 +39,35 @@ private final class CompositeProfileStatsListenerToken: ProfileStatsListenerToke
 
 final class ProfileStatsService {
     private let db: Firestore
+    private let auth: Auth
     private let loyaltyRewardsService: LoyaltyRewardsServiceable
 
     init(
         db: Firestore = Firestore.firestore(),
+        auth: Auth = Auth.auth(),
         loyaltyRewardsService: LoyaltyRewardsServiceable
     ) {
         self.db = db
+        self.auth = auth
         self.loyaltyRewardsService = loyaltyRewardsService
     }
 
+    /// Legacy parameter name kept so current views still compile.
+    /// This method ignores nationalId and loads stats by Firebase Auth uid.
     func loadStats(for nationalId: String) async throws -> ProfileStats {
-        let cleanNationalId = nationalId.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !cleanNationalId.isEmpty else { return .empty }
+        guard let uid = currentUserId else { return .empty }
 
         async let ordersTask = db
             .collection(FirestoreConstants.restaurant_orders)
-            .whereField("nationalId", isEqualTo: cleanNationalId)
+            .whereField("userId", isEqualTo: uid)
             .getDocuments()
 
         async let bookingsTask = db
             .collection(FirestoreConstants.adventure_bookings)
-            .whereField("nationalId", isEqualTo: cleanNationalId)
+            .whereField("userId", isEqualTo: uid)
             .getDocuments()
 
-        async let walletTask = loyaltyRewardsService.loadWalletSnapshot(for: cleanNationalId)
+        async let walletTask = loyaltyRewardsService.loadWalletSnapshot(for: uid)
 
         let ordersSnapshot = try await ordersTask
         let bookingsSnapshot = try await bookingsTask
@@ -97,13 +102,13 @@ final class ProfileStatsService {
         )
     }
 
+    /// Legacy parameter name kept so current views still compile.
+    /// This method ignores nationalId and observes stats by Firebase Auth uid.
     func observeStats(
         for nationalId: String,
         onChange: @escaping (Result<ProfileStats, Error>) -> Void
     ) -> ProfileStatsListenerToken {
-        let cleanNationalId = nationalId.trimmingCharacters(in: .whitespacesAndNewlines)
-
-        guard !cleanNationalId.isEmpty else {
+        guard let uid = currentUserId else {
             onChange(.success(.empty))
             return EmptyProfileStatsListenerToken()
         }
@@ -113,7 +118,7 @@ final class ProfileStatsService {
 
             Task {
                 do {
-                    let stats = try await self.loadStats(for: cleanNationalId)
+                    let stats = try await self.loadStats(for: uid)
                     await MainActor.run {
                         onChange(.success(stats))
                     }
@@ -127,7 +132,7 @@ final class ProfileStatsService {
 
         let ordersRegistration = db
             .collection(FirestoreConstants.restaurant_orders)
-            .whereField("nationalId", isEqualTo: cleanNationalId)
+            .whereField("userId", isEqualTo: uid)
             .addSnapshotListener { _, error in
                 if let error {
                     onChange(.failure(error))
@@ -139,7 +144,7 @@ final class ProfileStatsService {
 
         let bookingsRegistration = db
             .collection(FirestoreConstants.adventure_bookings)
-            .whereField("nationalId", isEqualTo: cleanNationalId)
+            .whereField("userId", isEqualTo: uid)
             .addSnapshotListener { _, error in
                 if let error {
                     onChange(.failure(error))
@@ -149,7 +154,7 @@ final class ProfileStatsService {
                 emit()
             }
 
-        let walletListener = loyaltyRewardsService.observeWalletSnapshot(for: cleanNationalId) { result in
+        let walletListener = loyaltyRewardsService.observeWalletSnapshot(for: uid) { result in
             switch result {
             case .success:
                 emit()
@@ -165,5 +170,10 @@ final class ProfileStatsService {
             registrations: [ordersRegistration, bookingsRegistration],
             walletListenerToken: walletListener
         )
+    }
+
+    private var currentUserId: String? {
+        let value = auth.currentUser?.uid.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return value.isEmpty ? nil : value
     }
 }

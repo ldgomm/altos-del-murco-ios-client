@@ -35,6 +35,10 @@ final class MenuViewModel: ObservableObject {
     }
 
     func onAppear() {
+        if walletListenerToken == nil {
+            startWalletObservation()
+        }
+
         guard listenerToken == nil else { return }
 
         state.isLoading = true
@@ -66,29 +70,20 @@ final class MenuViewModel: ObservableObject {
     }
 
     func setNationalId(_ nationalId: String) {
-        let cleanNationalId = nationalId.filter(\.isNumber)
-        guard state.currentNationalId != cleanNationalId else { return }
-
+        let cleanNationalId = nationalId.trimmingCharacters(in: .whitespacesAndNewlines)
+        let shouldRestart = state.currentNationalId != cleanNationalId || walletListenerToken == nil
         state.currentNationalId = cleanNationalId
-        startWalletObservation()
+
+        if shouldRestart {
+            startWalletObservation()
+        }
     }
 
     private func startWalletObservation() {
         walletListenerToken?.remove()
         walletListenerToken = nil
 
-        let cleanNationalId = state.currentNationalId.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !cleanNationalId.isEmpty else {
-            state.rewardWalletSnapshot = .empty(nationalId: "")
-            state.isLoadingRewards = false
-            return
-        }
-
-        state.isLoadingRewards = true
-
-        walletListenerToken = loyaltyRewardsService.observeWalletSnapshot(
-            for: cleanNationalId
-        ) { [weak self] result in
+        walletListenerToken = loyaltyRewardsService.observeWalletSnapshot() { [weak self] result in
             Task { @MainActor in
                 guard let self else { return }
                 self.state.isLoadingRewards = false
@@ -98,7 +93,7 @@ final class MenuViewModel: ObservableObject {
                     self.state.rewardWalletSnapshot = snapshot
 
                 case .failure(let error):
-                    self.state.rewardWalletSnapshot = .empty(nationalId: cleanNationalId)
+                    self.state.rewardWalletSnapshot = .empty()
                     self.state.errorMessage = error.localizedDescription
                 }
             }

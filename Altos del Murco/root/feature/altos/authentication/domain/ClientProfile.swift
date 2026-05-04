@@ -28,12 +28,7 @@ struct ClientProfile: Identifiable, Codable, Equatable {
     var isComplete: Bool {
         isProfileComplete &&
         !fullName.trimmed.isEmpty &&
-        nationalId.digitsOnly.count >= 8 &&
-        phoneNumber.digitsOnly.count >= 8 &&
-        birthday <= Date() &&
-        !address.trimmed.isEmpty &&
-        !emergencyContactName.trimmed.isEmpty &&
-        emergencyContactPhone.digitsOnly.count >= 8
+        birthday <= Date()
     }
 
     var hasProfileImage: Bool {

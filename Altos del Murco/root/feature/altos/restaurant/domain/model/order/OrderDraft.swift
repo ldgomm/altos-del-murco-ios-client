@@ -9,8 +9,16 @@ import Foundation
 
 struct OrderDraft: Identifiable, Hashable {
     let id: UUID
+
+    /// Firebase Auth uid. Canonical owner field.
+    var userId: String?
+
+    /// Backwards-compatible alias. New code should store the same value as userId.
     var clientId: String?
+
+    /// Legacy/profile/display only. Do not use this for requests, matching, ownership, rewards, or history.
     var nationalId: String?
+
     var clientName: String
     var tableNumber: String
     var scheduledAt: Date
@@ -22,6 +30,7 @@ struct OrderDraft: Identifiable, Hashable {
 
     init(
         id: UUID = UUID(),
+        userId: String? = nil,
         clientId: String? = nil,
         nationalId: String? = nil,
         clientName: String = "",
@@ -33,8 +42,17 @@ struct OrderDraft: Identifiable, Hashable {
         revision: Int? = nil,
         lastConfirmedRevision: Int? = nil
     ) {
+        let cleanUserId = userId?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .nilIfBlank
+
+        let cleanClientId = clientId?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .nilIfBlank
+
         self.id = id
-        self.clientId = clientId
+        self.userId = cleanUserId ?? cleanClientId
+        self.clientId = cleanClientId ?? cleanUserId
         self.nationalId = nationalId
         self.clientName = clientName
         self.tableNumber = tableNumber
@@ -64,6 +82,18 @@ struct OrderDraft: Identifiable, Hashable {
 }
 
 extension OrderDraft {
+    var canonicalUserId: String? {
+        let cleanUserId = userId?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .nilIfBlank
+
+        let cleanClientId = clientId?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .nilIfBlank
+
+        return cleanUserId ?? cleanClientId
+    }
+
     var normalizedScheduledAt: Date {
         OrderScheduleResolver.sanitizedScheduledAt(scheduledAt)
     }
@@ -87,22 +117,23 @@ extension OrderDraft {
         !tableNumber.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
+    /// National ID is no longer required.
     var hasValidNationalId: Bool {
-        let digits = nationalId?.filter(\.isNumber) ?? ""
-        return digits.count >= 8
+        true
     }
 
     var canSubmit: Bool {
         !isEmpty &&
         hasValidClientName &&
-        hasValidNationalId &&
         (hasValidTableNumber || isScheduledForLater)
     }
 
     func normalizedForSubmit(now: Date = Date()) -> OrderDraft {
         OrderDraft(
             id: id,
-            nationalId: nationalId,
+            userId: canonicalUserId,
+            clientId: canonicalUserId,
+            nationalId: nil,
             clientName: clientName,
             tableNumber: tableNumber,
             scheduledAt: OrderScheduleResolver.sanitizedScheduledAt(scheduledAt, now: now),
@@ -115,7 +146,8 @@ extension OrderDraft {
     }
 
     func toOrder(
-        clientId: String?,
+        clientId: String? = nil,
+        userId: String? = nil,
         orderId: String = UUID().uuidString,
         status: OrderStatus = .pending
     ) -> Order {
@@ -141,13 +173,15 @@ extension OrderDraft {
             )
         }
 
-        let cleanClientId = clientId?
+        let cleanInputUserId = userId?
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .nilIfBlank
 
-        let cleanNationalId = nationalId?
+        let cleanInputClientId = clientId?
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .nilIfBlank
+
+        let resolvedUserId = cleanInputUserId ?? cleanInputClientId ?? canonicalUserId
 
         let cleanClientName = clientName
             .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -157,8 +191,9 @@ extension OrderDraft {
 
         return Order(
             id: orderId,
-            clientId: cleanClientId,
-            nationalId: cleanNationalId,
+            userId: resolvedUserId,
+            clientId: resolvedUserId,
+            nationalId: nil,
             clientName: cleanClientName,
             tableNumber: cleanTable.isEmpty && resolvedServiceMode == .scheduled ? "Por asignar" : cleanTable,
             createdAt: now,

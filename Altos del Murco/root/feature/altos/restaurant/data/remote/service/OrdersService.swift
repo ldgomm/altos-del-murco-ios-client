@@ -41,11 +41,9 @@ final class OrdersService: OrdersServiceable {
             try await submitFutureFoodReservation(order: trustedOrder)
         }
 
-        if let nationalId = trustedOrder.nationalId?.trimmingCharacters(in: .whitespacesAndNewlines),
-           !nationalId.isEmpty,
-           !trustedOrder.appliedRewards.isEmpty {
+        if !trustedOrder.appliedRewards.isEmpty {
             try await loyaltyRewardsService.reserveRewards(
-                nationalId: nationalId,
+                nationalId: trustedOrder.userId ?? trustedOrder.clientId ?? "",
                 referenceType: .order,
                 referenceId: trustedOrder.id,
                 appliedRewards: trustedOrder.appliedRewards
@@ -55,11 +53,6 @@ final class OrdersService: OrdersServiceable {
 
     private func makeTrustedOrder(from order: Order) async throws -> Order {
         let uid = try requireCurrentUid()
-
-        let cleanNationalId = order.nationalId?.filter(\.isNumber) ?? ""
-        guard !cleanNationalId.isEmpty else {
-            throw makeError(code: 21, message: "No se encontró una cédula asociada a esta cuenta.")
-        }
 
         let trustedItems = try await order.items.asyncMap { item -> OrderItem in
             let ref = db.collection(FirestoreConstants.restaurant_menu_items).document(item.menuItemId)
@@ -78,7 +71,7 @@ final class OrdersService: OrdersServiceable {
         }
 
         let preview = try await loyaltyRewardsService.previewRestaurantRewards(
-            for: cleanNationalId,
+            for: uid,
             items: trustedItems
         )
 
@@ -161,7 +154,7 @@ final class OrdersService: OrdersServiceable {
 
     func observeOrders(for nationalId: String) -> AsyncThrowingStream<[Order], Error> {
         AsyncThrowingStream { continuation in
-            guard let uid = auth.currentUser?.uid, !uid.isEmpty else {
+            guard let uid = auth.currentUser?.uid.trimmingCharacters(in: .whitespacesAndNewlines), !uid.isEmpty else {
                 continuation.yield([])
                 continuation.finish()
                 return
@@ -169,7 +162,7 @@ final class OrdersService: OrdersServiceable {
 
             let listener = db
                 .collection(FirestoreConstants.restaurant_orders)
-                .whereField("nationalId", isEqualTo: nationalId)
+                .whereField("userId", isEqualTo: uid)
                 .order(by: "scheduledAt", descending: true)
                 .addSnapshotListener { snapshot, error in
                     if let error {

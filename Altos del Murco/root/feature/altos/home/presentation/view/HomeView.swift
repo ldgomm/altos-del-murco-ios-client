@@ -85,7 +85,7 @@ struct HomeView: View {
         .onAppear {
             menuViewModel.onAppear()
 
-            if let nationalId = profile?.nationalId {
+            if let nationalId = profile?.id {
                 menuViewModel.setNationalId(nationalId)
                 adventureComboBuilderViewModel.setNationalId(nationalId)
             }
@@ -100,7 +100,7 @@ struct HomeView: View {
         .onDisappear {
             catalogViewModel.onDisappear()
         }
-        .onChange(of: profile?.nationalId) { _, nationalId in
+        .onChange(of: profile?.id) { _, nationalId in
             guard let nationalId else { return }
             menuViewModel.setNationalId(nationalId)
             adventureComboBuilderViewModel.setNationalId(nationalId)
@@ -227,7 +227,7 @@ struct HomeView: View {
 
         adventureComboBuilderViewModel.setClientName(profile.fullName)
         adventureComboBuilderViewModel.setWhatsapp(profile.phoneNumber)
-        adventureComboBuilderViewModel.setNationalId(profile.nationalId)
+        adventureComboBuilderViewModel.setNationalId(profile.id)
     }
 
     private func menuItem(with id: String) -> MenuItem? {

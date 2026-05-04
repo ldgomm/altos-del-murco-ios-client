@@ -40,13 +40,6 @@ final class OrdersViewModel: ObservableObject {
         observeTask?.cancel()
 
         let nationalId = state.nationalId.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !nationalId.isEmpty else {
-            state.orders = []
-            state.errorMessage = nil
-            state.isLoading = false
-            return
-        }
-
         state.isLoading = true
         state.errorMessage = nil
 

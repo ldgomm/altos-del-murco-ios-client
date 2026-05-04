@@ -38,7 +38,7 @@ struct MenuListView: View {
     ]
 
     private var authenticatedNationalId: String {
-        sessionViewModel.authenticatedProfile?.nationalId ?? ""
+        sessionViewModel.authenticatedProfile?.id ?? ""
     }
 
     private func categoryRank(for title: String) -> Int {
@@ -109,7 +109,7 @@ struct MenuListView: View {
             menuViewModel.onAppear()
             syncIdentityAndRefreshRewards()
         }
-        .onChange(of: sessionViewModel.authenticatedProfile?.nationalId) { _, _ in
+        .onChange(of: sessionViewModel.authenticatedProfile?.id) { _, _ in
             syncIdentityAndRefreshRewards()
         }
         .toolbar {

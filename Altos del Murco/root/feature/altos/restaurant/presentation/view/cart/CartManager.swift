@@ -22,11 +22,11 @@ final class CartManager: ObservableObject {
 
     var items: [CartItem] { draft.items }
 
-    // Backward-compatible name used by existing views. This is the national ID, not Firebase uid.
+    // Firebase Auth UID used as the canonical client identifier for order ownership.
     var clientId: String? {
-        get { draft.nationalId }
+        get { draft.clientId }
         set {
-            draft.nationalId = newValue?.filter(\.isNumber)
+            draft.clientId = newValue?.trimmingCharacters(in: .whitespacesAndNewlines)
             persist()
         }
     }
@@ -170,7 +170,7 @@ final class CartManager: ObservableObject {
     }
 
     func updateClientId(_ id: String) {
-        draft.nationalId = id.filter(\.isNumber)
+        draft.clientId = id.trimmingCharacters(in: .whitespacesAndNewlines)
         persist()
     }
 

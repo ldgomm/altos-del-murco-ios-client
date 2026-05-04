@@ -59,7 +59,7 @@ struct AdventureCatalogView: View {
             if let profile = sessionViewModel.authenticatedProfile {
                 adventureComboBuilderViewModel.setClientName(profile.fullName)
                 adventureComboBuilderViewModel.setWhatsapp(profile.phoneNumber)
-                adventureComboBuilderViewModel.setNationalId(profile.nationalId)
+                adventureComboBuilderViewModel.setNationalId(profile.id)
             }
 
             catalogViewModel.onAppear()

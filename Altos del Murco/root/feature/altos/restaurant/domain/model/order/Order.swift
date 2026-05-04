@@ -21,7 +21,14 @@ enum OrderServiceMode: String, Codable, Hashable, CaseIterable {
 
 struct Order: Identifiable, Hashable, Codable {
     let id: String
+
+    /// Firebase Auth UID. Canonical owner field for Firestore security and all user queries.
+    let userId: String?
+
+    /// Backward-compatible alias. New client writes store the same value as userId.
     let clientId: String?
+
+    /// Legacy-only. Do not use this for querying, security, or matching.
     let nationalId: String?
     let clientName: String
     let tableNumber: String
@@ -41,8 +48,9 @@ struct Order: Identifiable, Hashable, Codable {
 
     init(
         id: String,
+        userId: String? = nil,
         clientId: String? = nil,
-        nationalId: String?,
+        nationalId: String? = nil,
         clientName: String,
         tableNumber: String,
         createdAt: Date,
@@ -65,9 +73,13 @@ struct Order: Identifiable, Hashable, Codable {
             scheduledAt: resolvedScheduledAt
         )
 
+        let cleanUserId = userId?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let cleanClientId = clientId?.trimmingCharacters(in: .whitespacesAndNewlines)
+
         self.id = id
-        self.clientId = clientId?.trimmingCharacters(in: .whitespacesAndNewlines)
-        self.nationalId = nationalId?.filter(\.isNumber)
+        self.userId = cleanUserId?.isEmpty == false ? cleanUserId : cleanClientId
+        self.clientId = cleanClientId?.isEmpty == false ? cleanClientId : cleanUserId
+        self.nationalId = nationalId?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfBlank
         self.clientName = clientName
         self.tableNumber = tableNumber
         self.createdAt = createdAt
@@ -88,8 +100,9 @@ struct Order: Identifiable, Hashable, Codable {
     func withClientId(_ uid: String) -> Order {
         Order(
             id: id,
+            userId: uid,
             clientId: uid,
-            nationalId: nationalId,
+            nationalId: nil,
             clientName: clientName,
             tableNumber: tableNumber,
             createdAt: createdAt,
@@ -118,6 +131,7 @@ struct Order: Identifiable, Hashable, Codable {
 
         return Order(
             id: id,
+            userId: userId,
             clientId: clientId,
             nationalId: nationalId,
             clientName: clientName,
@@ -146,6 +160,7 @@ struct Order: Identifiable, Hashable, Codable {
 
         return Order(
             id: id,
+            userId: userId,
             clientId: clientId,
             nationalId: nationalId,
             clientName: clientName,
@@ -251,5 +266,13 @@ enum OrderScheduleResolver {
 private extension Double {
     var roundedMoney: Double {
         (self * 100).rounded() / 100
+    }
+}
+
+
+private extension String {
+    var nilIfBlank: String? {
+        let value = trimmingCharacters(in: .whitespacesAndNewlines)
+        return value.isEmpty ? nil : value
     }
 }

@@ -141,9 +141,7 @@ struct OrdersView: View {
         .navigationBarTitleDisplayMode(.large)
         .tint(palette.primary)
         .onAppear {
-            if let nationalId = sessionViewModel.authenticatedProfile?.nationalId {
-                viewModel.setNationalId(nationalId)
-            }
+            viewModel.setNationalId(sessionViewModel.authenticatedProfile?.id ?? "")
             viewModel.onEvent(.onAppear)
         }
     }

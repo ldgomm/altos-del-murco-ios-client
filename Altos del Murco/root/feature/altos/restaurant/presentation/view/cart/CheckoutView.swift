@@ -61,12 +61,12 @@ struct CheckoutView: View {
         .onAppear {
             syncProfileFieldsFromSession()
             cartManager.refreshDefaultScheduleIfNeeded()
-            let nationalId = authenticatedProfile?.nationalId ?? cartManager.clientId ?? ""
+            let nationalId = authenticatedProfile?.id ?? cartManager.clientId ?? ""
             viewModel.onAppear(nationalId: nationalId)
         }
-        .onChange(of: authenticatedProfile?.nationalId) { _, _ in
+        .onChange(of: authenticatedProfile?.id) { _, _ in
             syncProfileFieldsFromSession()
-            let nationalId = authenticatedProfile?.nationalId ?? cartManager.clientId ?? ""
+            let nationalId = authenticatedProfile?.id ?? cartManager.clientId ?? ""
             viewModel.onAppear(nationalId: nationalId)
         }
         .onChange(of: authenticatedProfile?.fullName) { _, _ in

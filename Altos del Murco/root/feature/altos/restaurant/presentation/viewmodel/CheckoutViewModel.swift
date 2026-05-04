@@ -177,12 +177,6 @@ final class CheckoutViewModel: ObservableObject {
 
         let cleanNationalId = currentNationalId.trimmingCharacters(in: .whitespacesAndNewlines)
 
-        guard !cleanNationalId.isEmpty else {
-            state.isLoadingRewards = false
-            state.rewardPreview = .empty(nationalId: "")
-            return
-        }
-
         state.isLoadingRewards = true
 
         walletListenerToken = loyaltyRewardsService.observeWalletSnapshot(
@@ -208,7 +202,7 @@ final class CheckoutViewModel: ObservableObject {
         Task { @MainActor in
             guard let baseOrder = cartManager.createOrder() else {
                 state.errorMessage = cartManager.isScheduledForLater
-                    ? "Agrega productos y confirma que tu perfil tenga nombre y cédula. La mesa puede quedar por asignar para reservas."
+                    ? "Agrega productos y confirma que tu perfil tenga nombre. La mesa puede quedar por asignar para reservas."
                     : "Completa la mesa y asegúrate de tener productos en el carrito."
                 return
             }
@@ -246,10 +240,6 @@ final class CheckoutViewModel: ObservableObject {
 
     private func buildRewardPreview(for nationalId: String) async throws -> CheckoutRewardPreview {
         let cleanNationalId = nationalId.trimmingCharacters(in: .whitespacesAndNewlines)
-
-        guard !cleanNationalId.isEmpty else {
-            return .empty(nationalId: "")
-        }
 
         let previewItems = cartManager.items.map {
             OrderItem(

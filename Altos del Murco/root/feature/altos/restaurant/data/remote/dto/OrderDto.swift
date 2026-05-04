@@ -42,7 +42,10 @@ struct AppliedRewardDto: Codable {
 
 struct OrderDto: Codable {
     let id: String
+    let userId: String?
     let clientId: String?
+
+    /// Legacy-only. New client writes leave this nil.
     let nationalId: String?
     let clientName: String
     let tableNumber: String
@@ -62,8 +65,9 @@ struct OrderDto: Codable {
     
     init(from domain: Order) {
         self.id = domain.id
-        self.clientId = domain.clientId
-        self.nationalId = domain.nationalId
+        self.userId = domain.userId ?? domain.clientId
+        self.clientId = domain.clientId ?? domain.userId
+        self.nationalId = nil
         self.clientName = domain.clientName
         self.tableNumber = domain.tableNumber
         self.createdAt = Timestamp(date: domain.createdAt)
@@ -95,7 +99,8 @@ struct OrderDto: Codable {
         
         return Order(
             id: id,
-            clientId: clientId,
+            userId: userId ?? clientId,
+            clientId: clientId ?? userId,
             nationalId: nationalId,
             clientName: clientName,
             tableNumber: tableNumber,

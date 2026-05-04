@@ -326,10 +326,17 @@ struct AdventureAvailabilitySlot: Identifiable, Hashable {
 }
 
 struct AdventureBookingRequest: Hashable {
+    /// Firebase Auth UID. Canonical owner field for all reads/writes.
+    let userId: String?
+
+    /// Backward-compatible alias. New writes store the same value as userId.
     let clientId: String?
+
     let clientName: String
     let whatsappNumber: String
-    let nationalId: String
+
+    /// Legacy/display only. It is not used to read, create, reserve, or match data.
+    let nationalId: String?
     let date: Date
     let selectedStartAt: Date
     let guestCount: Int
@@ -344,10 +351,11 @@ struct AdventureBookingRequest: Hashable {
     let notes: String?
 
     init(
+        userId: String? = nil,
         clientId: String?,
         clientName: String,
         whatsappNumber: String,
-        nationalId: String,
+        nationalId: String? = nil,
         date: Date,
         selectedStartAt: Date,
         guestCount: Int,
@@ -361,10 +369,14 @@ struct AdventureBookingRequest: Hashable {
         appliedRewards: [AppliedReward] = [],
         notes: String?
     ) {
-        self.clientId = clientId
+        let cleanUserId = userId?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let cleanClientId = clientId?.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        self.userId = cleanUserId?.isEmpty == false ? cleanUserId : cleanClientId
+        self.clientId = cleanClientId?.isEmpty == false ? cleanClientId : cleanUserId
         self.clientName = clientName
         self.whatsappNumber = whatsappNumber
-        self.nationalId = nationalId
+        self.nationalId = nationalId?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfBlank
         self.date = date
         self.selectedStartAt = selectedStartAt
         self.guestCount = guestCount
@@ -385,10 +397,13 @@ struct AdventureBookingRequest: Hashable {
 
 struct AdventureBooking: Identifiable, Hashable {
     let id: String
+    let userId: String?
     let clientId: String?
     let clientName: String
     let whatsappNumber: String
-    let nationalId: String
+
+    /// Legacy/display only. It is not used for ownership or matching.
+    let nationalId: String?
     let startDayKey: String
     let startAt: Date
     let endAt: Date
@@ -953,5 +968,13 @@ enum AdventurePlanner {
         }
 
         return slots
+    }
+}
+
+
+private extension String {
+    var nilIfBlank: String? {
+        let value = trimmingCharacters(in: .whitespacesAndNewlines)
+        return value.isEmpty ? nil : value
     }
 }

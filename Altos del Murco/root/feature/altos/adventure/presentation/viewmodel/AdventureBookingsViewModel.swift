@@ -196,11 +196,6 @@ final class AdventureBookingsViewModel: ObservableObject {
     func cancelBooking(_ id: String) {
         let nationalId = state.nationalId.trimmingCharacters(in: .whitespacesAndNewlines)
 
-        guard !nationalId.isEmpty else {
-            state.errorMessage = "No se encontró una cédula asociada a esta cuenta."
-            return
-        }
-
         Task {
             do {
                 try await cancelBookingUseCase.execute(
@@ -279,15 +274,6 @@ final class AdventureBookingsViewModel: ObservableObject {
 
     private func startListening() {
         let nationalId = state.nationalId.trimmingCharacters(in: .whitespacesAndNewlines)
-
-        guard !nationalId.isEmpty else {
-            listenerToken?.remove()
-            listenerToken = nil
-            state.allBookings = []
-            state.isLoading = false
-            state.errorMessage = nil
-            return
-        }
 
         state.isLoading = true
         state.errorMessage = nil

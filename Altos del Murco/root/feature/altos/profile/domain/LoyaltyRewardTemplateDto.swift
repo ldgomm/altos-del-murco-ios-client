@@ -100,23 +100,36 @@ struct LoyaltyWalletEventDto: Codable {
 }
 
 struct LoyaltyWalletDocument: Codable {
-    let nationalId: String
+    /// Firebase Auth UID. This must match the document ID in client_loyalty_wallets/{uid}.
+    let userId: String
+
+    /// Legacy-only. Decoded for old wallet documents, never encoded by new client writes.
+    let nationalId: String?
+
     let updatedAt: Date
     let events: [LoyaltyWalletEvent]
 
     init(
-        nationalId: String,
+        userId: String,
+        nationalId: String? = nil,
         updatedAt: Date,
         events: [LoyaltyWalletEvent]
     ) {
-        self.nationalId = nationalId
+        self.userId = userId.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.nationalId = nationalId?.trimmingCharacters(in: .whitespacesAndNewlines)
         self.updatedAt = updatedAt
         self.events = events
     }
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        nationalId = try container.decode(String.self, forKey: .nationalId)
+        let decodedUserId = try container.decodeIfPresent(String.self, forKey: .userId)
+        let decodedNationalId = try container.decodeIfPresent(String.self, forKey: .nationalId)
+
+        userId = (decodedUserId ?? decodedNationalId ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        nationalId = decodedNationalId
+
         let updatedAtTimestamp = try container.decode(Timestamp.self, forKey: .updatedAt)
         let eventDtos = try container.decodeIfPresent([LoyaltyWalletEventDto].self, forKey: .events) ?? []
         updatedAt = updatedAtTimestamp.dateValue()
@@ -124,6 +137,7 @@ struct LoyaltyWalletDocument: Codable {
     }
 
     enum CodingKeys: String, CodingKey {
+        case userId
         case nationalId
         case updatedAt
         case events
@@ -131,7 +145,7 @@ struct LoyaltyWalletDocument: Codable {
 
     func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
-        try container.encode(nationalId, forKey: .nationalId)
+        try container.encode(userId, forKey: .userId)
         try container.encode(Timestamp(date: updatedAt), forKey: .updatedAt)
         try container.encode(events.map(LoyaltyWalletEventDto.init(domain:)), forKey: .events)
     }

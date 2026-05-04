@@ -54,17 +54,15 @@ final class CompleteProfileViewModel: ObservableObject {
 
     var canSubmit: Bool {
         !fullName.trimmed.isEmpty &&
-        nationalId.digitsOnly.count >= 8 &&
-        phoneNumber.digitsOnly.count >= 8 &&
         birthday <= Date() &&
-        !address.trimmed.isEmpty &&
-        !emergencyContactName.trimmed.isEmpty &&
-        emergencyContactPhone.digitsOnly.count >= 8
+        optionalNationalIdIsValid &&
+        optionalPhoneIsValid(phoneNumber) &&
+        optionalPhoneIsValid(emergencyContactPhone)
     }
 
     func saveProfile() {
         guard canSubmit else {
-            errorMessage = "Completa todos los campos obligatorios correctamente para continuar."
+            errorMessage = "Solo el nombre es obligatorio. Si agregas cédula o teléfono, revisa que tengan un formato válido."
             return
         }
 
@@ -101,5 +99,15 @@ final class CompleteProfileViewModel: ObservableObject {
                 errorMessage = error.localizedDescription
             }
         }
+    }
+
+    private var optionalNationalIdIsValid: Bool {
+        let count = nationalId.digitsOnly.count
+        return count == 0 || count == 10 || count == 13
+    }
+
+    private func optionalPhoneIsValid(_ value: String) -> Bool {
+        let count = value.digitsOnly.count
+        return count == 0 || count >= 8
     }
 }

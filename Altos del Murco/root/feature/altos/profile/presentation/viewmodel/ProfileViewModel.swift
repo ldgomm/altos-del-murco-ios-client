@@ -144,8 +144,8 @@ final class ProfileViewModel: ObservableObject {
         statsListenerToken?.remove()
         statsListenerToken = nil
 
-        let nationalId = profile.nationalId.filter(\.isNumber)
-        guard !nationalId.isEmpty else {
+        let userId = profile.id.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !userId.isEmpty else {
             stats = .empty
             isLoadingStats = false
             return
@@ -153,7 +153,7 @@ final class ProfileViewModel: ObservableObject {
 
         isLoadingStats = true
 
-        statsListenerToken = profileStatsService.observeStats(for: nationalId) { [weak self] result in
+        statsListenerToken = profileStatsService.observeStats(for: userId) { [weak self] result in
             guard let self else { return }
 
             switch result {
@@ -172,8 +172,8 @@ final class ProfileViewModel: ObservableObject {
     }
 
     func refreshStats() async {
-        let nationalId = profile.nationalId.filter(\.isNumber)
-        guard !nationalId.isEmpty else {
+        let userId = profile.id.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !userId.isEmpty else {
             stats = .empty
             return
         }
@@ -182,7 +182,7 @@ final class ProfileViewModel: ObservableObject {
         defer { isLoadingStats = false }
 
         do {
-            stats = try await profileStatsService.loadStats(for: nationalId)
+            stats = try await profileStatsService.loadStats(for: userId)
         } catch {
             alertItem = ProfileAlertItem(
                 title: "Could not load profile stats",

@@ -11,8 +11,16 @@ import SwiftData
 @Model
 final class CartDraftEntity {
     @Attribute(.unique) var id: UUID
+
+    /// Firebase Auth uid. Canonical local cart owner field.
+    var userId: String?
+
+    /// Backwards-compatible alias.
     var clientId: String?
+
+    /// Legacy only. Do not use for requests or matching.
     var nationalId: String?
+
     var clientName: String
     var tableNumber: String
     var scheduledAt: Date
@@ -24,6 +32,7 @@ final class CartDraftEntity {
 
     init(
         id: UUID = UUID(),
+        userId: String? = nil,
         clientId: String? = nil,
         nationalId: String? = nil,
         clientName: String = "",
@@ -33,8 +42,17 @@ final class CartDraftEntity {
         updatedAt: Date = Date(),
         items: [CartItemEntity] = []
     ) {
+        let cleanUserId = userId?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .nilIfBlank
+
+        let cleanClientId = clientId?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .nilIfBlank
+
         self.id = id
-        self.clientId = clientId
+        self.userId = cleanUserId ?? cleanClientId
+        self.clientId = cleanClientId ?? cleanUserId
         self.nationalId = nationalId
         self.clientName = clientName
         self.tableNumber = tableNumber
@@ -93,5 +111,11 @@ final class CartItemEntity {
         self.isAvailable = isAvailable
         self.isFeatured = isFeatured
         self.draft = draft
+    }
+}
+
+private extension String {
+    var nilIfBlank: String? {
+        isEmpty ? nil : self
     }
 }

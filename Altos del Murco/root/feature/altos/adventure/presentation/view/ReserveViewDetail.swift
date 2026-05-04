@@ -151,7 +151,7 @@ struct ReserveViewDetail: View {
 
             detailRow("Nombre", booking.clientName)
             detailRow("WhatsApp", booking.whatsappNumber)
-            detailRow("Cédula", booking.nationalId)
+            detailRow("Cuenta", booking.userId ?? booking.clientId ?? "")
         }
         .appCardStyle(.adventure, emphasized: false)
     }

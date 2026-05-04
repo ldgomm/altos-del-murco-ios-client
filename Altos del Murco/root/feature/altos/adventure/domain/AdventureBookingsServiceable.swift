@@ -23,4 +23,4 @@ protocol AdventureBookingsServiceable {
     func createBooking(_ request: AdventureBookingRequest) async throws -> AdventureBooking
 
     func cancelBooking(id: String, nationalId: String) async throws
-}
+} 

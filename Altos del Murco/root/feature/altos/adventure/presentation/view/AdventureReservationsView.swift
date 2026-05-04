@@ -108,7 +108,7 @@ struct AdventureReservationsView: View {
         .onDisappear {
             viewModel.onDisappear()
         }
-        .onChange(of: authenticatedProfile?.nationalId) { _, _ in
+        .onChange(of: authenticatedProfile?.id) { _, _ in
             syncNationalIdFromSession()
         }
     }
@@ -144,11 +144,7 @@ struct AdventureReservationsView: View {
     }
 
     private func syncNationalIdFromSession() {
-        guard let nationalId = authenticatedProfile?.nationalId else {
-            return
-        }
-
-        viewModel.setNationalId(nationalId)
+        viewModel.setNationalId(authenticatedProfile?.id ?? "")
     }
 
     private var sortMenu: some View {
@@ -510,7 +506,7 @@ private struct AdventureReservationRow: View {
     private var guestBlock: some View {
         HStack(spacing: 8) {
             Label("\(booking.guestCount) invitado(s)", systemImage: "person.2.fill")
-            Label("Cédula \(booking.nationalId)", systemImage: "person.text.rectangle")
+            Label("Cuenta \(booking.userId ?? booking.clientId ?? "")", systemImage: "person.crop.circle.badge.checkmark")
         }
         .font(.caption.weight(.semibold))
         .foregroundStyle(palette.textSecondary)
