@@ -23,13 +23,7 @@ struct Order: Identifiable, Hashable, Codable {
     let id: String
 
     /// Firebase Auth UID. Canonical owner field for Firestore security and all user queries.
-    let userId: String?
-
-    /// Backward-compatible alias. New client writes store the same value as userId.
-    let clientId: String?
-
-    /// Legacy-only. Do not use this for querying, security, or matching.
-    let nationalId: String?
+    let userId: String
     let clientName: String
     let tableNumber: String
     let createdAt: Date
@@ -48,9 +42,7 @@ struct Order: Identifiable, Hashable, Codable {
 
     init(
         id: String,
-        userId: String? = nil,
-        clientId: String? = nil,
-        nationalId: String? = nil,
+        userId: String,
         clientName: String,
         tableNumber: String,
         createdAt: Date,
@@ -73,13 +65,10 @@ struct Order: Identifiable, Hashable, Codable {
             scheduledAt: resolvedScheduledAt
         )
 
-        let cleanUserId = userId?.trimmingCharacters(in: .whitespacesAndNewlines)
-        let cleanClientId = clientId?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let cleanUserId = userId.trimmingCharacters(in: .whitespacesAndNewlines)
 
         self.id = id
-        self.userId = cleanUserId?.isEmpty == false ? cleanUserId : cleanClientId
-        self.clientId = cleanClientId?.isEmpty == false ? cleanClientId : cleanUserId
-        self.nationalId = nationalId?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfBlank
+        self.userId = cleanUserId
         self.clientName = clientName
         self.tableNumber = tableNumber
         self.createdAt = createdAt
@@ -101,8 +90,6 @@ struct Order: Identifiable, Hashable, Codable {
         Order(
             id: id,
             userId: uid,
-            clientId: uid,
-            nationalId: nil,
             clientName: clientName,
             tableNumber: tableNumber,
             createdAt: createdAt,
@@ -132,8 +119,6 @@ struct Order: Identifiable, Hashable, Codable {
         return Order(
             id: id,
             userId: userId,
-            clientId: clientId,
-            nationalId: nationalId,
             clientName: clientName,
             tableNumber: tableNumber,
             createdAt: createdAt,
@@ -161,8 +146,6 @@ struct Order: Identifiable, Hashable, Codable {
         return Order(
             id: id,
             userId: userId,
-            clientId: clientId,
-            nationalId: nationalId,
             clientName: clientName,
             tableNumber: tableNumber,
             createdAt: createdAt,

@@ -12,7 +12,6 @@ struct ClientProfile: Identifiable, Codable, Equatable {
     let email: String
     let appleUserIdentifier: String
     let fullName: String
-    let nationalId: String
     let phoneNumber: String
     let birthday: Date
     let address: String
@@ -50,7 +49,6 @@ extension ClientProfile {
             email: existingProfile?.email.nilIfBlank ?? user.email,
             appleUserIdentifier: existingProfile?.appleUserIdentifier.nilIfBlank ?? user.appleUserIdentifier,
             fullName: existingProfile?.fullName.nilIfBlank ?? user.displayName,
-            nationalId: existingProfile?.nationalId ?? "",
             phoneNumber: existingProfile?.phoneNumber ?? "",
             birthday: existingProfile?.birthday ?? defaultBirthday,
             address: existingProfile?.address ?? "",

@@ -153,7 +153,7 @@ final class ProfileViewModel: ObservableObject {
 
         isLoadingStats = true
 
-        statsListenerToken = profileStatsService.observeStats(for: userId) { [weak self] result in
+        statsListenerToken = profileStatsService.observeStats() { [weak self] result in
             guard let self else { return }
 
             switch result {
@@ -182,7 +182,7 @@ final class ProfileViewModel: ObservableObject {
         defer { isLoadingStats = false }
 
         do {
-            stats = try await profileStatsService.loadStats(for: userId)
+            stats = try await profileStatsService.loadStats()
         } catch {
             alertItem = ProfileAlertItem(
                 title: "Could not load profile stats",
@@ -213,7 +213,6 @@ final class ProfileViewModel: ObservableObject {
                     email: profile.email,
                     appleUserIdentifier: profile.appleUserIdentifier,
                     fullName: profile.fullName,
-                    nationalId: profile.nationalId,
                     phoneNumber: profile.phoneNumber,
                     birthday: profile.birthday,
                     address: profile.address,
@@ -255,7 +254,6 @@ final class ProfileViewModel: ObservableObject {
                     email: profile.email,
                     appleUserIdentifier: profile.appleUserIdentifier,
                     fullName: profile.fullName,
-                    nationalId: profile.nationalId,
                     phoneNumber: profile.phoneNumber,
                     birthday: profile.birthday,
                     address: profile.address,

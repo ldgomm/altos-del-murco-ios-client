@@ -12,8 +12,7 @@ struct RestaurantMenuState {
     var sections: [MenuSection] = []
     var isLoading = false
     var isLoadingRewards = false
-    var currentNationalId: String = ""
-    var rewardWalletSnapshot: RewardWalletSnapshot = .empty(nationalId: "")
+    var rewardWalletSnapshot: RewardWalletSnapshot = .empty()
     var errorMessage: String?
 }
 
@@ -67,16 +66,6 @@ final class MenuViewModel: ObservableObject {
         listenerToken = nil
         walletListenerToken?.remove()
         walletListenerToken = nil
-    }
-
-    func setNationalId(_ nationalId: String) {
-        let cleanNationalId = nationalId.trimmingCharacters(in: .whitespacesAndNewlines)
-        let shouldRestart = state.currentNationalId != cleanNationalId || walletListenerToken == nil
-        state.currentNationalId = cleanNationalId
-
-        if shouldRestart {
-            startWalletObservation()
-        }
     }
 
     private func startWalletObservation() {

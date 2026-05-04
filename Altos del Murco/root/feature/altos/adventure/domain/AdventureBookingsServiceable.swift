@@ -9,7 +9,6 @@ import Foundation
 
 protocol AdventureBookingsServiceable {
     func observeBookings(
-        nationalId: String,
         onChange: @escaping (Result<[AdventureBooking], Error>) -> Void
     ) -> AdventureListenerToken
 
@@ -22,5 +21,5 @@ protocol AdventureBookingsServiceable {
 
     func createBooking(_ request: AdventureBookingRequest) async throws -> AdventureBooking
 
-    func cancelBooking(id: String, nationalId: String) async throws
+    func cancelBooking(id: String) async throws
 } 

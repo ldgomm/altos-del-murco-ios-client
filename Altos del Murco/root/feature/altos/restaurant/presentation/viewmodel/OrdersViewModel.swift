@@ -18,13 +18,7 @@ final class OrdersViewModel: ObservableObject {
     init(observeOrdersUseCase: ObserveOrdersUseCase) {
         self.observeOrdersUseCase = observeOrdersUseCase
     }
-
-    func setNationalId(_ nationalId: String) {
-        let clean = nationalId.filter(\.isNumber)
-        guard state.nationalId != clean else { return }
-        state.nationalId = clean
-    }
-
+    
     func onEvent(_ event: OrdersEvent) {
         switch event {
         case .onAppear:
@@ -39,13 +33,12 @@ final class OrdersViewModel: ObservableObject {
     private func startObservingOrders() {
         observeTask?.cancel()
 
-        let nationalId = state.nationalId.trimmingCharacters(in: .whitespacesAndNewlines)
         state.isLoading = true
         state.errorMessage = nil
 
         observeTask = Task {
             do {
-                for try await orders in observeOrdersUseCase.execute(nationalId: nationalId) {
+                for try await orders in observeOrdersUseCase.execute() {
                     guard !Task.isCancelled else { return }
                     state.orders = orders
                     state.isLoading = false

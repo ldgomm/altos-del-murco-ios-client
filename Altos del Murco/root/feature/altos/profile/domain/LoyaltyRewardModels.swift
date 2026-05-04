@@ -238,9 +238,6 @@ struct RewardWalletSnapshot: Hashable {
     /// Firebase Auth UID. Canonical wallet owner identifier.
     let userId: String
 
-    /// Legacy/display only. Do not use this for Firestore document IDs or queries.
-    let nationalId: String?
-
     let currentLevel: LoyaltyLevel
     let totalSpent: Double
     let points: Int
@@ -249,24 +246,9 @@ struct RewardWalletSnapshot: Hashable {
     let consumedEvents: [LoyaltyWalletEvent]
     let releasedEvents: [LoyaltyWalletEvent]
 
-    static func empty(nationalId: String) -> RewardWalletSnapshot {
+    static func empty() -> RewardWalletSnapshot {
         RewardWalletSnapshot(
-            userId: nationalId,
-            nationalId: nil,
-            currentLevel: .bronze,
-            totalSpent: 0,
-            points: 0,
-            availableTemplates: [],
-            reservedEvents: [],
-            consumedEvents: [],
-            releasedEvents: []
-        )
-    }
-
-    static func empty(userId: String) -> RewardWalletSnapshot {
-        RewardWalletSnapshot(
-            userId: userId,
-            nationalId: nil,
+            userId: currentUserId() ?? "",
             currentLevel: .bronze,
             totalSpent: 0,
             points: 0,

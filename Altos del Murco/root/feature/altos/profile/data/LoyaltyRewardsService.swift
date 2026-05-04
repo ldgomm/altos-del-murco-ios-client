@@ -95,43 +95,43 @@ private final class LoyaltyWalletObservationCoordinator {
 protocol LoyaltyRewardsServiceable {
     /// Legacy parameter name kept to avoid breaking every view immediately.
     /// The implementation ignores this value and always uses Firebase Auth uid.
-    func loadWalletSnapshot(for nationalId: String) async throws -> RewardWalletSnapshot
+    func loadWalletSnapshot() async throws -> RewardWalletSnapshot
 
     /// Legacy parameter name kept to avoid breaking every view immediately.
     /// The implementation ignores this value and always uses Firebase Auth uid.
     func observeWalletSnapshot(
-        for nationalId: String,
         onChange: @escaping (Result<RewardWalletSnapshot, Error>) -> Void
     ) -> LoyaltyRewardsListenerToken
 
     func previewRestaurantRewards(
-        for nationalId: String,
         items: [OrderItem]
     ) async throws -> RewardComputationResult
 
     func previewAdventureRewards(
-        for nationalId: String,
         activityItems: [AdventureReservationItemDraft],
         foodItems: [ReservationFoodItemDraft],
         catalog: AdventureCatalogSnapshot
     ) async throws -> RewardComputationResult
 
     func reserveRewards(
-        nationalId: String,
         referenceType: LoyaltyRewardReferenceType,
         referenceId: String,
         appliedRewards: [AppliedReward]
     ) async throws
 
     func consumeRewards(
-        nationalId: String,
         referenceId: String
     ) async throws
 
     func releaseRewards(
-        nationalId: String,
         referenceId: String
     ) async throws
+}
+
+func currentUserId() -> String? {
+    let auth: Auth = Auth.auth()
+    let value = auth.currentUser?.uid.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    return value.isEmpty ? nil : value
 }
 
 final class LoyaltyRewardsService: LoyaltyRewardsServiceable {
@@ -146,9 +146,9 @@ final class LoyaltyRewardsService: LoyaltyRewardsServiceable {
         self.auth = auth
     }
 
-    func loadWalletSnapshot(for nationalId: String) async throws -> RewardWalletSnapshot {
+    func loadWalletSnapshot() async throws -> RewardWalletSnapshot {
         guard let uid = currentUserId else {
-            return .empty(userId: "")
+            return .empty()
         }
 
         async let templatesTask = fetchTemplates()
@@ -182,7 +182,6 @@ final class LoyaltyRewardsService: LoyaltyRewardsServiceable {
 
         return RewardWalletSnapshot(
             userId: uid,
-            nationalId: nil,
             currentLevel: currentLevel,
             totalSpent: totals.totalSpent,
             points: Int(totals.totalSpent.rounded(.down)),
@@ -194,11 +193,10 @@ final class LoyaltyRewardsService: LoyaltyRewardsServiceable {
     }
 
     func observeWalletSnapshot(
-        for nationalId: String,
         onChange: @escaping (Result<RewardWalletSnapshot, Error>) -> Void
     ) -> LoyaltyRewardsListenerToken {
         guard let uid = currentUserId else {
-            onChange(.success(.empty(userId: "")))
+            onChange(.success(.empty()))
             return FirestoreLoyaltyWalletListenerToken(registration: nil)
         }
 
@@ -222,7 +220,7 @@ final class LoyaltyRewardsService: LoyaltyRewardsServiceable {
 
                 Task {
                     do {
-                        let snapshot = try await self.loadWalletSnapshot(for: uid)
+                        let snapshot = try await self.loadWalletSnapshot()
                         await MainActor.run {
                             onChange(.success(snapshot))
                         }
@@ -273,10 +271,9 @@ final class LoyaltyRewardsService: LoyaltyRewardsServiceable {
     }
 
     func previewRestaurantRewards(
-        for nationalId: String,
         items: [OrderItem]
     ) async throws -> RewardComputationResult {
-        let wallet = try await loadWalletSnapshot(for: nationalId)
+        let wallet = try await loadWalletSnapshot()
 
         let lines = items.map {
             RewardMenuLine(
@@ -295,12 +292,11 @@ final class LoyaltyRewardsService: LoyaltyRewardsServiceable {
     }
 
     func previewAdventureRewards(
-        for nationalId: String,
         activityItems: [AdventureReservationItemDraft],
         foodItems: [ReservationFoodItemDraft],
         catalog: AdventureCatalogSnapshot
     ) async throws -> RewardComputationResult {
-        let wallet = try await loadWalletSnapshot(for: nationalId)
+        let wallet = try await loadWalletSnapshot()
 
         let activityLines = activityItems.compactMap { item -> RewardActivityLine? in
             guard let activity = catalog.activity(for: item.activity) else { return nil }
@@ -331,7 +327,6 @@ final class LoyaltyRewardsService: LoyaltyRewardsServiceable {
     }
 
     func reserveRewards(
-        nationalId: String,
         referenceType: LoyaltyRewardReferenceType,
         referenceId: String,
         appliedRewards: [AppliedReward]
@@ -419,7 +414,6 @@ final class LoyaltyRewardsService: LoyaltyRewardsServiceable {
     }
 
     func consumeRewards(
-        nationalId: String,
         referenceId: String
     ) async throws {
         try await mutateReferenceStatus(
@@ -429,7 +423,6 @@ final class LoyaltyRewardsService: LoyaltyRewardsServiceable {
     }
 
     func releaseRewards(
-        nationalId: String,
         referenceId: String
     ) async throws {
         try await mutateReferenceStatus(

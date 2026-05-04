@@ -33,7 +33,6 @@ final class AdventureBookingsService: AdventureBookingsServiceable {
     }
 
     func observeBookings(
-        nationalId: String,
         onChange: @escaping (Result<[AdventureBooking], Error>) -> Void
     ) -> AdventureListenerToken {
         guard let uid = auth.currentUser?.uid, !uid.isEmpty else {
@@ -104,7 +103,6 @@ final class AdventureBookingsService: AdventureBookingsServiceable {
         }
 
         let rewardPreview = try await loyaltyRewardsService.previewAdventureRewards(
-            for: uid,
             activityItems: request.items,
             foodItems: request.foodReservation?.items ?? [],
             catalog: catalog
@@ -127,10 +125,8 @@ final class AdventureBookingsService: AdventureBookingsServiceable {
 
         let normalizedRequest = AdventureBookingRequest(
             userId: uid,
-            clientId: uid,
             clientName: request.clientName,
             whatsappNumber: request.whatsappNumber,
-            nationalId: nil,
             date: request.date,
             selectedStartAt: request.selectedStartAt,
             guestCount: request.guestCount,
@@ -168,7 +164,6 @@ final class AdventureBookingsService: AdventureBookingsServiceable {
         }
 
         try await loyaltyRewardsService.reserveRewards(
-            nationalId: uid,
             referenceType: .booking,
             referenceId: bookingRef.documentID,
             appliedRewards: normalizedRequest.appliedRewards
@@ -177,7 +172,7 @@ final class AdventureBookingsService: AdventureBookingsServiceable {
         return dto.toDomain(documentId: bookingRef.documentID)
     }
 
-    func cancelBooking(id: String, nationalId: String) async throws {
+    func cancelBooking(id: String) async throws {
         let uid = try requireCurrentUid()
         let bookingRef = db.collection(bookingsCollection).document(id)
         let snapshot = try await bookingRef.getDocument()
@@ -189,7 +184,7 @@ final class AdventureBookingsService: AdventureBookingsServiceable {
         let dto = try snapshot.data(as: AdventureBookingDto.self)
         let booking = dto.toDomain(documentId: id)
 
-        guard booking.userId == uid || booking.clientId == uid else {
+        guard booking.userId == uid else {
             throw makeError("You are not allowed to cancel this booking.")
         }
 
@@ -213,7 +208,6 @@ final class AdventureBookingsService: AdventureBookingsServiceable {
         }
 
         try await loyaltyRewardsService.releaseRewards(
-            nationalId: uid,
             referenceId: id
         )
     }

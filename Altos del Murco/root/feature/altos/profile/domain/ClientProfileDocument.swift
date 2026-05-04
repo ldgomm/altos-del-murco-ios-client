@@ -12,7 +12,6 @@ struct ClientProfileDocument: Codable {
     let email: String
     let appleUserIdentifier: String
     let fullName: String
-    let nationalId: String
     let phoneNumber: String
     let birthday: Date
     let address: String
@@ -30,7 +29,6 @@ struct ClientProfileDocument: Codable {
         self.email = profile.email
         self.appleUserIdentifier = profile.appleUserIdentifier
         self.fullName = profile.fullName
-        self.nationalId = profile.nationalId
         self.phoneNumber = profile.phoneNumber
         self.birthday = profile.birthday
         self.address = profile.address
@@ -50,7 +48,6 @@ struct ClientProfileDocument: Codable {
             email: email,
             appleUserIdentifier: appleUserIdentifier,
             fullName: fullName,
-            nationalId: nationalId,
             phoneNumber: phoneNumber,
             birthday: birthday,
             address: address,

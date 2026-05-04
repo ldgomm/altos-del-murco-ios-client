@@ -10,7 +10,7 @@ import Foundation
 struct ObserveOrdersUseCase {
     let service: OrdersServiceable
     
-    func execute(nationalId: String) -> AsyncThrowingStream<[Order], Error> {
-        service.observeOrders(for: nationalId)
+    func execute() -> AsyncThrowingStream<[Order], Error> {
+        service.observeOrders()
     }
 }

@@ -11,7 +11,7 @@ import AuthenticationServices
 @MainActor
 final class AppSessionViewModel: ObservableObject {
     @Published private(set) var state: AppSessionState = .loading
-    @Published private(set) var rewardWalletSnapshot: RewardWalletSnapshot = .empty(nationalId: "")
+    @Published private(set) var rewardWalletSnapshot: RewardWalletSnapshot = .empty()
 
     private let signInWithAppleUseCase: SignInWithAppleUseCase
     private let resolveSessionUseCase: ResolveSessionUseCase
@@ -120,7 +120,7 @@ final class AppSessionViewModel: ObservableObject {
             do {
                 stopSessionGuard()
                 try signOutUseCase.execute()
-                rewardWalletSnapshot = .empty(nationalId: "")
+                rewardWalletSnapshot = .empty()
                 state = .signedOut
             } catch {
                 state = .error(error.localizedDescription)
@@ -290,7 +290,7 @@ final class AppSessionViewModel: ObservableObject {
             try signOutUseCase.execute()
         } catch { }
 
-        rewardWalletSnapshot = .empty(nationalId: "")
+        rewardWalletSnapshot = .empty()
         state = .signedOut
     }
 }

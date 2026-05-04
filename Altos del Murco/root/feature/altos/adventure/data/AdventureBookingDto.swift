@@ -186,16 +186,10 @@ struct AdventureAppliedRewardDto: Codable {
 @MainActor
 struct AdventureBookingDto: Codable {
     /// Firebase Auth UID. This is the canonical owner field for security rules and queries.
-    let userId: String?
-
-    /// Backward-compatible alias. New writes store the same Firebase Auth UID here.
-    let clientId: String?
-
+    let userId: String
     let clientName: String
     let whatsappNumber: String
 
-    /// Legacy-only. Do not use this for matching, querying, or security.
-    let nationalId: String?
     let startDayKey: String
     let startAt: Timestamp
     let endAt: Timestamp
@@ -221,11 +215,9 @@ struct AdventureBookingDto: Codable {
     func toDomain(documentId: String) -> AdventureBooking {
         AdventureBooking(
             id: documentId,
-            userId: userId ?? clientId,
-            clientId: clientId ?? userId,
+            userId: userId,
             clientName: clientName,
             whatsappNumber: whatsappNumber,
-            nationalId: nationalId,
             startDayKey: startDayKey,
             startAt: startAt.dateValue(),
             endAt: endAt.dateValue(),
@@ -258,11 +250,9 @@ struct AdventureBookingDto: Codable {
         status: AdventureBookingStatus = .pending
     ) -> AdventureBookingDto {
         AdventureBookingDto(
-            userId: request.userId ?? request.clientId,
-            clientId: request.clientId ?? request.userId,
+            userId: request.userId,
             clientName: request.clientName,
             whatsappNumber: request.whatsappNumber,
-            nationalId: nil,
             startDayKey: AdventureDateHelper.dayKey(from: plan.startAt),
             startAt: Timestamp(date: plan.startAt),
             endAt: Timestamp(date: plan.endAt),

@@ -43,14 +43,6 @@ struct EditProfileView: View {
 
                         EditableFieldCard(
                             theme: theme,
-                            title: "Número de cédula",
-                            placeholder: "Ejemplo: 0501234567",
-                            text: $viewModel.nationalId,
-                            keyboardType: .numberPad
-                        )
-
-                        EditableFieldCard(
-                            theme: theme,
                             title: "Número de teléfono",
                             placeholder: "Ejemplo: 0987654321",
                             text: $viewModel.phoneNumber,

@@ -96,15 +96,6 @@ struct CompleteProfileView: View {
 
             ProfileInputField(
                 theme: theme,
-                title: "Número único nacional / cédula",
-                placeholder: "Ejemplo: 0501234567",
-                text: $viewModel.nationalId,
-                keyboardType: .numberPad,
-                autocapitalization: .never
-            )
-
-            ProfileInputField(
-                theme: theme,
                 title: "Número de teléfono / WhatsApp",
                 placeholder: "Ejemplo: 0987654321",
                 text: $viewModel.phoneNumber,

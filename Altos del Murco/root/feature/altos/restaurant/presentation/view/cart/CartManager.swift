@@ -22,23 +22,6 @@ final class CartManager: ObservableObject {
 
     var items: [CartItem] { draft.items }
 
-    // Firebase Auth UID used as the canonical client identifier for order ownership.
-    var clientId: String? {
-        get { draft.clientId }
-        set {
-            draft.clientId = newValue?.trimmingCharacters(in: .whitespacesAndNewlines)
-            persist()
-        }
-    }
-
-    var nationalId: String? {
-        get { draft.nationalId }
-        set {
-            draft.nationalId = newValue?.filter(\.isNumber)
-            persist()
-        }
-    }
-
     var clientName: String {
         get { draft.clientName }
         set {
@@ -170,7 +153,6 @@ final class CartManager: ObservableObject {
     }
 
     func updateClientId(_ id: String) {
-        draft.clientId = id.trimmingCharacters(in: .whitespacesAndNewlines)
         persist()
     }
 
@@ -241,7 +223,7 @@ final class CartManager: ObservableObject {
     func createOrder(firebaseClientId: String? = nil) -> Order? {
         refreshDefaultScheduleIfNeeded()
         guard draft.canSubmit else { return nil }
-        return draft.toOrder(clientId: firebaseClientId)
+        return draft.toOrder()
     }
 
     func submitOrder(firebaseClientId: String? = nil) -> Order? {

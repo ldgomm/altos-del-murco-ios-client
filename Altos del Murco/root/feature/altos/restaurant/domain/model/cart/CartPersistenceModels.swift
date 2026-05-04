@@ -12,14 +12,7 @@ import SwiftData
 final class CartDraftEntity {
     @Attribute(.unique) var id: UUID
 
-    /// Firebase Auth uid. Canonical local cart owner field.
-    var userId: String?
-
-    /// Backwards-compatible alias.
-    var clientId: String?
-
-    /// Legacy only. Do not use for requests or matching.
-    var nationalId: String?
+    var userId: String
 
     var clientName: String
     var tableNumber: String
@@ -32,9 +25,7 @@ final class CartDraftEntity {
 
     init(
         id: UUID = UUID(),
-        userId: String? = nil,
-        clientId: String? = nil,
-        nationalId: String? = nil,
+        userId: String,
         clientName: String = "",
         tableNumber: String = "",
         scheduledAt: Date = Date(),
@@ -42,18 +33,10 @@ final class CartDraftEntity {
         updatedAt: Date = Date(),
         items: [CartItemEntity] = []
     ) {
-        let cleanUserId = userId?
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .nilIfBlank
-
-        let cleanClientId = clientId?
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .nilIfBlank
+        let cleanUserId = userId.trimmingCharacters(in: .whitespacesAndNewlines)
 
         self.id = id
-        self.userId = cleanUserId ?? cleanClientId
-        self.clientId = cleanClientId ?? cleanUserId
-        self.nationalId = nationalId
+        self.userId = cleanUserId
         self.clientName = clientName
         self.tableNumber = tableNumber
         self.scheduledAt = scheduledAt

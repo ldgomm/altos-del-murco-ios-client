@@ -103,20 +103,15 @@ struct LoyaltyWalletDocument: Codable {
     /// Firebase Auth UID. This must match the document ID in client_loyalty_wallets/{uid}.
     let userId: String
 
-    /// Legacy-only. Decoded for old wallet documents, never encoded by new client writes.
-    let nationalId: String?
-
     let updatedAt: Date
     let events: [LoyaltyWalletEvent]
 
     init(
         userId: String,
-        nationalId: String? = nil,
         updatedAt: Date,
         events: [LoyaltyWalletEvent]
     ) {
         self.userId = userId.trimmingCharacters(in: .whitespacesAndNewlines)
-        self.nationalId = nationalId?.trimmingCharacters(in: .whitespacesAndNewlines)
         self.updatedAt = updatedAt
         self.events = events
     }
@@ -124,11 +119,9 @@ struct LoyaltyWalletDocument: Codable {
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         let decodedUserId = try container.decodeIfPresent(String.self, forKey: .userId)
-        let decodedNationalId = try container.decodeIfPresent(String.self, forKey: .nationalId)
 
-        userId = (decodedUserId ?? decodedNationalId ?? "")
+        userId = (decodedUserId ?? "")
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        nationalId = decodedNationalId
 
         let updatedAtTimestamp = try container.decode(Timestamp.self, forKey: .updatedAt)
         let eventDtos = try container.decodeIfPresent([LoyaltyWalletEventDto].self, forKey: .events) ?? []
@@ -138,7 +131,6 @@ struct LoyaltyWalletDocument: Codable {
 
     enum CodingKeys: String, CodingKey {
         case userId
-        case nationalId
         case updatedAt
         case events
     }

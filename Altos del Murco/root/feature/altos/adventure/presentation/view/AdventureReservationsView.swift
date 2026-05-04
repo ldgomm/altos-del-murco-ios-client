@@ -102,14 +102,10 @@ struct AdventureReservationsView: View {
             Text("Esta acción marcará la reserva como cancelada.")
         }
         .onAppear {
-            syncNationalIdFromSession()
             viewModel.onAppear()
         }
         .onDisappear {
             viewModel.onDisappear()
-        }
-        .onChange(of: authenticatedProfile?.id) { _, _ in
-            syncNationalIdFromSession()
         }
     }
 
@@ -138,13 +134,8 @@ struct AdventureReservationsView: View {
         .background(Color.clear)
         .appScreenStyle(.adventure)
         .refreshable {
-            syncNationalIdFromSession()
             viewModel.onAppear()
         }
-    }
-
-    private func syncNationalIdFromSession() {
-        viewModel.setNationalId(authenticatedProfile?.id ?? "")
     }
 
     private var sortMenu: some View {
@@ -506,7 +497,7 @@ private struct AdventureReservationRow: View {
     private var guestBlock: some View {
         HStack(spacing: 8) {
             Label("\(booking.guestCount) invitado(s)", systemImage: "person.2.fill")
-            Label("Cuenta \(booking.userId ?? booking.clientId ?? "")", systemImage: "person.crop.circle.badge.checkmark")
+            Label("Cuenta \(booking.userId)", systemImage: "person.crop.circle.badge.checkmark")
         }
         .font(.caption.weight(.semibold))
         .foregroundStyle(palette.textSecondary)

@@ -119,8 +119,6 @@ struct AdventureBookingsDateGroup: Identifiable {
 }
 
 struct AdventureBookingsState {
-    var nationalId: String = ""
-
     var allBookings: [AdventureBooking] = []
 
     var selectedTimelineFilter: AdventureReservationTimelineFilter = .all
@@ -161,20 +159,6 @@ final class AdventureBookingsViewModel: ObservableObject {
         listenerToken = nil
     }
 
-    func setNationalId(_ nationalId: String) {
-        let cleanNationalId = nationalId.filter(\.isNumber)
-
-        guard state.nationalId != cleanNationalId else {
-            return
-        }
-
-        state.nationalId = cleanNationalId
-
-        if listenerToken != nil {
-            startListening()
-        }
-    }
-
     func setTimelineFilter(_ filter: AdventureReservationTimelineFilter) {
         state.now = Date()
         state.selectedTimelineFilter = filter
@@ -194,14 +178,10 @@ final class AdventureBookingsViewModel: ObservableObject {
     }
 
     func cancelBooking(_ id: String) {
-        let nationalId = state.nationalId.trimmingCharacters(in: .whitespacesAndNewlines)
 
         Task {
             do {
-                try await cancelBookingUseCase.execute(
-                    id: id,
-                    nationalId: nationalId
-                )
+                try await cancelBookingUseCase.execute(id: id)
 
                 state.successMessage = "Reserva cancelada correctamente."
             } catch {
@@ -273,7 +253,6 @@ final class AdventureBookingsViewModel: ObservableObject {
     }
 
     private func startListening() {
-        let nationalId = state.nationalId.trimmingCharacters(in: .whitespacesAndNewlines)
 
         state.isLoading = true
         state.errorMessage = nil
@@ -282,7 +261,6 @@ final class AdventureBookingsViewModel: ObservableObject {
         listenerToken?.remove()
 
         listenerToken = observeBookingsUseCase.execute(
-            nationalId: nationalId
         ) { [weak self] result in
             Task { @MainActor in
                 guard let self else { return }

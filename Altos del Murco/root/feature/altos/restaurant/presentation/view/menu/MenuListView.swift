@@ -37,10 +37,6 @@ struct MenuListView: View {
         "Bebidas Alcohólicas"
     ]
 
-    private var authenticatedNationalId: String {
-        sessionViewModel.authenticatedProfile?.id ?? ""
-    }
-
     private func categoryRank(for title: String) -> Int {
         categoryDisplayOrder.firstIndex(of: title) ?? Int.max
     }
@@ -181,7 +177,6 @@ struct MenuListView: View {
             case .cart:
                 CartView(
                     viewModel: checkoutViewModel,
-                    nationalId: authenticatedNationalId
                 )
 
             case .checkout:
@@ -222,9 +217,7 @@ struct MenuListView: View {
     }
 
     private func syncIdentityAndRefreshRewards() {
-        let nationalId = authenticatedNationalId
-        menuViewModel.setNationalId(nationalId)
-        checkoutViewModel.onAppear(nationalId: nationalId)
+        checkoutViewModel.onAppear()
     }
 
     @ViewBuilder

@@ -129,10 +129,6 @@ struct AdventureComboBuilderView: View {
         if adventureComboBuilderViewModel.state.whatsappNumber.digitsOnly.isEmpty {
             adventureComboBuilderViewModel.setWhatsapp(profile.phoneNumber)
         }
-
-        if adventureComboBuilderViewModel.state.nationalId.digitsOnly.isEmpty {
-            adventureComboBuilderViewModel.setNationalId(profile.id)
-        }
     }
 
     private var schedulingSection: some View {
@@ -560,17 +556,6 @@ struct AdventureComboBuilderView: View {
                         TextField(
                             "",
                             text: Binding(
-                                get: { adventureComboBuilderViewModel.state.nationalId },
-                                set: { adventureComboBuilderViewModel.setNationalId($0) }
-                            ),
-                            prompt: Text("Cédula / número único nacional")
-                        )
-                        .keyboardType(.numberPad)
-                        .appTextFieldStyle(.adventure)
-
-                        TextField(
-                            "",
-                            text: Binding(
                                 get: { adventureComboBuilderViewModel.state.clientName },
                                 set: { adventureComboBuilderViewModel.setClientName($0) }
                             ),
@@ -755,7 +740,7 @@ struct AdventureComboBuilderView: View {
 
                     Task { @MainActor in
                         let didSubmit = await adventureComboBuilderViewModel.submit(
-                            clientId: authenticatedProfile?.id
+                            userId: authenticatedProfile?.id ?? ""
                         )
 
                         guard didSubmit else { return }

@@ -25,6 +25,6 @@ struct ProfileStats {
         adventureSpent: 0,
         totalSpent: 0,
         level: .bronze,
-        wallet: .empty(nationalId: "")
+        wallet: .empty()
     )
 }

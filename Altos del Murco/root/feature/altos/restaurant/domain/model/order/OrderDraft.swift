@@ -11,13 +11,7 @@ struct OrderDraft: Identifiable, Hashable {
     let id: UUID
 
     /// Firebase Auth uid. Canonical owner field.
-    var userId: String?
-
-    /// Backwards-compatible alias. New code should store the same value as userId.
-    var clientId: String?
-
-    /// Legacy/profile/display only. Do not use this for requests, matching, ownership, rewards, or history.
-    var nationalId: String?
+    var userId: String
 
     var clientName: String
     var tableNumber: String
@@ -30,9 +24,7 @@ struct OrderDraft: Identifiable, Hashable {
 
     init(
         id: UUID = UUID(),
-        userId: String? = nil,
-        clientId: String? = nil,
-        nationalId: String? = nil,
+        userId: String = currentUserId() ?? "",
         clientName: String = "",
         tableNumber: String = "",
         scheduledAt: Date = Date(),
@@ -42,18 +34,11 @@ struct OrderDraft: Identifiable, Hashable {
         revision: Int? = nil,
         lastConfirmedRevision: Int? = nil
     ) {
-        let cleanUserId = userId?
+        let cleanUserId = userId
             .trimmingCharacters(in: .whitespacesAndNewlines)
-            .nilIfBlank
-
-        let cleanClientId = clientId?
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .nilIfBlank
 
         self.id = id
-        self.userId = cleanUserId ?? cleanClientId
-        self.clientId = cleanClientId ?? cleanUserId
-        self.nationalId = nationalId
+        self.userId = cleanUserId
         self.clientName = clientName
         self.tableNumber = tableNumber
         self.scheduledAt = scheduledAt
@@ -82,16 +67,8 @@ struct OrderDraft: Identifiable, Hashable {
 }
 
 extension OrderDraft {
-    var canonicalUserId: String? {
-        let cleanUserId = userId?
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .nilIfBlank
-
-        let cleanClientId = clientId?
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .nilIfBlank
-
-        return cleanUserId ?? cleanClientId
+    var canonicalUserId: String {
+        return userId.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     var normalizedScheduledAt: Date {
@@ -117,11 +94,6 @@ extension OrderDraft {
         !tableNumber.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
-    /// National ID is no longer required.
-    var hasValidNationalId: Bool {
-        true
-    }
-
     var canSubmit: Bool {
         !isEmpty &&
         hasValidClientName &&
@@ -132,8 +104,6 @@ extension OrderDraft {
         OrderDraft(
             id: id,
             userId: canonicalUserId,
-            clientId: canonicalUserId,
-            nationalId: nil,
             clientName: clientName,
             tableNumber: tableNumber,
             scheduledAt: OrderScheduleResolver.sanitizedScheduledAt(scheduledAt, now: now),
@@ -146,8 +116,7 @@ extension OrderDraft {
     }
 
     func toOrder(
-        clientId: String? = nil,
-        userId: String? = nil,
+        userId: String = currentUserId() ?? "",
         orderId: String = UUID().uuidString,
         status: OrderStatus = .pending
     ) -> Order {
@@ -173,15 +142,10 @@ extension OrderDraft {
             )
         }
 
-        let cleanInputUserId = userId?
+        let cleanInputUserId = userId
             .trimmingCharacters(in: .whitespacesAndNewlines)
-            .nilIfBlank
 
-        let cleanInputClientId = clientId?
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .nilIfBlank
-
-        let resolvedUserId = cleanInputUserId ?? cleanInputClientId ?? canonicalUserId
+        let resolvedUserId = cleanInputUserId
 
         let cleanClientName = clientName
             .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -192,8 +156,6 @@ extension OrderDraft {
         return Order(
             id: orderId,
             userId: resolvedUserId,
-            clientId: resolvedUserId,
-            nationalId: nil,
             clientName: cleanClientName,
             tableNumber: cleanTable.isEmpty && resolvedServiceMode == .scheduled ? "Por asignar" : cleanTable,
             createdAt: now,

@@ -52,9 +52,7 @@ final class ProfileStatsService {
         self.loyaltyRewardsService = loyaltyRewardsService
     }
 
-    /// Legacy parameter name kept so current views still compile.
-    /// This method ignores nationalId and loads stats by Firebase Auth uid.
-    func loadStats(for nationalId: String) async throws -> ProfileStats {
+    func loadStats() async throws -> ProfileStats {
         guard let uid = currentUserId else { return .empty }
 
         async let ordersTask = db
@@ -67,7 +65,7 @@ final class ProfileStatsService {
             .whereField("userId", isEqualTo: uid)
             .getDocuments()
 
-        async let walletTask = loyaltyRewardsService.loadWalletSnapshot(for: uid)
+        async let walletTask = loyaltyRewardsService.loadWalletSnapshot()
 
         let ordersSnapshot = try await ordersTask
         let bookingsSnapshot = try await bookingsTask
@@ -102,10 +100,7 @@ final class ProfileStatsService {
         )
     }
 
-    /// Legacy parameter name kept so current views still compile.
-    /// This method ignores nationalId and observes stats by Firebase Auth uid.
     func observeStats(
-        for nationalId: String,
         onChange: @escaping (Result<ProfileStats, Error>) -> Void
     ) -> ProfileStatsListenerToken {
         guard let uid = currentUserId else {
@@ -118,7 +113,7 @@ final class ProfileStatsService {
 
             Task {
                 do {
-                    let stats = try await self.loadStats(for: uid)
+                    let stats = try await self.loadStats()
                     await MainActor.run {
                         onChange(.success(stats))
                     }
@@ -154,7 +149,7 @@ final class ProfileStatsService {
                 emit()
             }
 
-        let walletListener = loyaltyRewardsService.observeWalletSnapshot(for: uid) { result in
+        let walletListener = loyaltyRewardsService.observeWalletSnapshot() { result in
             switch result {
             case .success:
                 emit()

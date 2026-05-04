@@ -13,11 +13,11 @@ struct CheckoutRewardPreview: Hashable {
     let discountAmount: Double
     let walletSnapshot: RewardWalletSnapshot
 
-    static func empty(nationalId: String) -> CheckoutRewardPreview {
+    static func empty() -> CheckoutRewardPreview {
         CheckoutRewardPreview(
             appliedRewards: [],
             discountAmount: 0,
-            walletSnapshot: .empty(nationalId: nationalId)
+            walletSnapshot: .empty()
         )
     }
 }
@@ -26,7 +26,7 @@ struct CheckoutState {
     var isSubmitting = false
     var isLoadingRewards = false
     var createdOrder: Order?
-    var rewardPreview: CheckoutRewardPreview = .empty(nationalId: "")
+    var rewardPreview: CheckoutRewardPreview = .empty()
     var errorMessage: String?
 }
 
@@ -39,7 +39,6 @@ final class CheckoutViewModel: ObservableObject {
     private let loyaltyRewardsService: LoyaltyRewardsServiceable
 
     private var cancellables = Set<AnyCancellable>()
-    private var currentNationalId: String = ""
     private var walletListenerToken: LoyaltyRewardsListenerToken?
 
     init(
@@ -62,36 +61,30 @@ final class CheckoutViewModel: ObservableObject {
             .store(in: &cancellables)
     }
 
-    func onAppear(nationalId: String) {
+    func onAppear() {
         cartManager.refreshDefaultScheduleIfNeeded()
 
-        let cleanNationalId = nationalId.trimmingCharacters(in: .whitespacesAndNewlines)
-        let shouldRestartObservation = cleanNationalId != currentNationalId || walletListenerToken == nil
-        currentNationalId = cleanNationalId
-
-        if shouldRestartObservation {
+        if walletListenerToken == nil {
             startWalletObservation()
         }
     }
 
     func refreshRewardPreviewIfPossible() async {
-        await refreshRewardPreview(nationalId: currentNationalId)
+        await refreshRewardPreview()
     }
 
-    func refreshRewardPreview(nationalId: String) async {
-        let cleanNationalId = nationalId.trimmingCharacters(in: .whitespacesAndNewlines)
-        currentNationalId = cleanNationalId
+    func refreshRewardPreview() async {
         state.errorMessage = nil
 
         do {
             state.isLoadingRewards = true
-            let preview = try await buildRewardPreview(for: cleanNationalId)
+            let preview = try await buildRewardPreview()
             state.rewardPreview = preview
             state.isLoadingRewards = false
         } catch {
             state.isLoadingRewards = false
             state.errorMessage = error.localizedDescription
-            state.rewardPreview = .empty(nationalId: cleanNationalId)
+            state.rewardPreview = .empty()
         }
     }
 
@@ -175,24 +168,20 @@ final class CheckoutViewModel: ObservableObject {
         walletListenerToken?.remove()
         walletListenerToken = nil
 
-        let cleanNationalId = currentNationalId.trimmingCharacters(in: .whitespacesAndNewlines)
-
         state.isLoadingRewards = true
 
-        walletListenerToken = loyaltyRewardsService.observeWalletSnapshot(
-            for: cleanNationalId
-        ) { [weak self] result in
+        walletListenerToken = loyaltyRewardsService.observeWalletSnapshot() { [weak self] result in
             Task { @MainActor in
                 guard let self else { return }
 
                 switch result {
                 case .success:
-                    await self.refreshRewardPreview(nationalId: cleanNationalId)
+                    await self.refreshRewardPreview()
 
                 case .failure(let error):
                     self.state.isLoadingRewards = false
                     self.state.errorMessage = error.localizedDescription
-                    self.state.rewardPreview = .empty(nationalId: cleanNationalId)
+                    self.state.rewardPreview = .empty()
                 }
             }
         }
@@ -211,13 +200,7 @@ final class CheckoutViewModel: ObservableObject {
             state.errorMessage = nil
 
             do {
-                let previewNationalId = (
-                    baseOrder.nationalId?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
-                    ? baseOrder.nationalId!
-                    : currentNationalId
-                )
-
-                let latestPreview = try await buildRewardPreview(for: previewNationalId)
+                let latestPreview = try await buildRewardPreview()
                 state.rewardPreview = latestPreview
 
                 let finalOrder = baseOrder.withLoyalty(
@@ -229,7 +212,7 @@ final class CheckoutViewModel: ObservableObject {
 
                 cartManager.clear()
                 state.createdOrder = finalOrder
-                state.rewardPreview = .empty(nationalId: previewNationalId)
+                state.rewardPreview = .empty()
                 state.isSubmitting = false
             } catch {
                 state.isSubmitting = false
@@ -238,8 +221,7 @@ final class CheckoutViewModel: ObservableObject {
         }
     }
 
-    private func buildRewardPreview(for nationalId: String) async throws -> CheckoutRewardPreview {
-        let cleanNationalId = nationalId.trimmingCharacters(in: .whitespacesAndNewlines)
+    private func buildRewardPreview() async throws -> CheckoutRewardPreview {
 
         let previewItems = cartManager.items.map {
             OrderItem(
@@ -252,11 +234,10 @@ final class CheckoutViewModel: ObservableObject {
         }
 
         guard !previewItems.isEmpty else {
-            return .empty(nationalId: cleanNationalId)
+            return .empty()
         }
 
         let result = try await loyaltyRewardsService.previewRestaurantRewards(
-            for: cleanNationalId,
             items: previewItems
         )
 

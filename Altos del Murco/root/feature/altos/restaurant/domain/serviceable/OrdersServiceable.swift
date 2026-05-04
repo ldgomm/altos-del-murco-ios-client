@@ -9,5 +9,5 @@ import Foundation
 
 protocol OrdersServiceable {
     func submit(order: Order) async throws
-    func observeOrders(for nationalId: String) -> AsyncThrowingStream<[Order], Error>
+    func observeOrders() -> AsyncThrowingStream<[Order], Error>
 }

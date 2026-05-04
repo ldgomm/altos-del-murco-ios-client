@@ -17,7 +17,7 @@ struct LoyaltyProgramView: View {
     let points: Int
     let completedOrders: Int
     let completedBookings: Int
-    var walletSnapshot: RewardWalletSnapshot = .empty(nationalId: "")
+    var walletSnapshot: RewardWalletSnapshot = .empty()
 
     private var palette: ThemePalette {
         AppTheme.palette(for: theme, scheme: colorScheme)

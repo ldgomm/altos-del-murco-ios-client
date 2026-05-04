@@ -11,7 +11,6 @@ import Foundation
 @MainActor
 final class CompleteProfileViewModel: ObservableObject {
     @Published var fullName: String
-    @Published var nationalId: String
     @Published var phoneNumber: String
     @Published var birthday: Date
     @Published var address: String
@@ -44,7 +43,6 @@ final class CompleteProfileViewModel: ObservableObject {
         self.validBirthdayRange = minimumDate...now
 
         self.fullName = existingProfile?.fullName ?? authenticatedUser.displayName
-        self.nationalId = existingProfile?.nationalId ?? ""
         self.phoneNumber = existingProfile?.phoneNumber ?? ""
         self.birthday = existingProfile?.birthday ?? Calendar.current.date(byAdding: .year, value: -18, to: now) ?? now
         self.address = existingProfile?.address ?? ""
@@ -55,7 +53,6 @@ final class CompleteProfileViewModel: ObservableObject {
     var canSubmit: Bool {
         !fullName.trimmed.isEmpty &&
         birthday <= Date() &&
-        optionalNationalIdIsValid &&
         optionalPhoneIsValid(phoneNumber) &&
         optionalPhoneIsValid(emergencyContactPhone)
     }
@@ -75,7 +72,6 @@ final class CompleteProfileViewModel: ObservableObject {
             email: authenticatedUser.email,
             appleUserIdentifier: authenticatedUser.appleUserIdentifier,
             fullName: fullName.trimmed,
-            nationalId: nationalId.digitsOnly,
             phoneNumber: phoneNumber.digitsOnly,
             birthday: birthday,
             address: address.trimmed,
@@ -99,11 +95,6 @@ final class CompleteProfileViewModel: ObservableObject {
                 errorMessage = error.localizedDescription
             }
         }
-    }
-
-    private var optionalNationalIdIsValid: Bool {
-        let count = nationalId.digitsOnly.count
-        return count == 0 || count == 10 || count == 13
     }
 
     private func optionalPhoneIsValid(_ value: String) -> Bool {

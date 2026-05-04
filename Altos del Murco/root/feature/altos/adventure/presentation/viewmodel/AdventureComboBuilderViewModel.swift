@@ -24,7 +24,6 @@ struct AdventureComboBuilderState {
 
     var clientName: String = ""
     var whatsappNumber: String = ""
-    var nationalId: String = ""
     var notes: String = ""
 
     var packageDiscountAmount: Double = 0
@@ -41,7 +40,7 @@ struct AdventureComboBuilderState {
     var successMessage: String?
 
     var rewardPreview: RewardComputationResult =
-        .empty(wallet: .empty(nationalId: ""))
+        .empty(wallet: .empty())
 }
 
 @MainActor
@@ -124,11 +123,9 @@ final class AdventureComboBuilderViewModel: ObservableObject {
         rewardsListenerToken?.remove()
         rewardsListenerToken = nil
 
-        let cleanNationalId = state.nationalId.trimmingCharacters(in: .whitespacesAndNewlines)
         state.isLoadingRewards = true
 
         rewardsListenerToken = loyaltyRewardsService.observeWalletSnapshot(
-            for: cleanNationalId
         ) { [weak self] result in
             Task { @MainActor in
                 guard let self else { return }
@@ -140,7 +137,7 @@ final class AdventureComboBuilderViewModel: ObservableObject {
                     self.state.isLoadingRewards = false
                     self.state.errorMessage = error.localizedDescription
                     self.state.rewardPreview = .empty(
-                        wallet: .empty(nationalId: cleanNationalId)
+                        wallet: .empty()
                     )
                 }
             }
@@ -201,14 +198,12 @@ final class AdventureComboBuilderViewModel: ObservableObject {
     }
 
     func refreshRewardPreview() async {
-        let cleanNationalId = state.nationalId.trimmingCharacters(in: .whitespacesAndNewlines)
         state.isLoadingRewards = true
         defer { state.isLoadingRewards = false }
 
         do {
 
             let result = try await loyaltyRewardsService.previewAdventureRewards(
-                for: cleanNationalId,
                 activityItems: state.items,
                 foodItems: state.foodItems,
                 catalog: state.catalog
@@ -220,7 +215,7 @@ final class AdventureComboBuilderViewModel: ObservableObject {
         } catch {
             state.errorMessage = error.localizedDescription
             state.rewardPreview = .empty(
-                wallet: .empty(nationalId: cleanNationalId)
+                wallet: .empty()
             )
         }
     }
@@ -454,18 +449,6 @@ final class AdventureComboBuilderViewModel: ObservableObject {
         state.whatsappNumber = value
     }
 
-    func setNationalId(_ value: String) {
-        let cleanNationalId = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        let shouldRestartObservation =
-            cleanNationalId != state.nationalId || rewardsListenerToken == nil
-
-        state.nationalId = cleanNationalId
-
-        if shouldRestartObservation {
-            startRewardsObservation()
-        }
-    }
-
     func setNotes(_ value: String) {
         state.notes = value
     }
@@ -569,8 +552,8 @@ final class AdventureComboBuilderViewModel: ObservableObject {
     }
 
     @discardableResult
-    func submit(clientId: String?) async -> Bool {
-        await submitReservation(clientId: clientId)
+    func submit(userId: String) async -> Bool {
+        await submitReservation(userId: userId)
     }
 
     var estimatedAdventureSubtotal: Double {
@@ -795,7 +778,6 @@ final class AdventureComboBuilderViewModel: ObservableObject {
     private struct PreservedBuilderContext {
         let clientName: String
         let whatsappNumber: String
-        let nationalId: String
         let catalog: AdventureCatalogSnapshot
         let rewardPreview: RewardComputationResult
     }
@@ -804,7 +786,6 @@ final class AdventureComboBuilderViewModel: ObservableObject {
         PreservedBuilderContext(
             clientName: state.clientName,
             whatsappNumber: state.whatsappNumber,
-            nationalId: state.nationalId,
             catalog: state.catalog,
             rewardPreview: state.rewardPreview
         )
@@ -826,7 +807,6 @@ final class AdventureComboBuilderViewModel: ObservableObject {
             foodServingTime: state.selectedDate,
             clientName: preserved.clientName,
             whatsappNumber: preserved.whatsappNumber,
-            nationalId: preserved.nationalId,
             packageDiscountAmount: max(0, packageDiscountAmount),
             catalog: preserved.catalog,
             rewardPreview: preserved.rewardPreview
@@ -979,7 +959,7 @@ final class AdventureComboBuilderViewModel: ObservableObject {
         Task { await refreshRewardPreview() }
     }
 
-    private func submitReservation(clientId: String?) async -> Bool {
+    private func submitReservation(userId: String) async -> Bool {
         guard !state.isSubmitting else { return false }
 
         let foodDraft = buildFoodDraft()
@@ -995,11 +975,9 @@ final class AdventureComboBuilderViewModel: ObservableObject {
             defer { state.isSubmitting = false }
 
             let request = AdventureBookingRequest(
-                userId: clientId,
-                clientId: clientId,
+                userId: userId,
                 clientName: validated.clientName,
                 whatsappNumber: validated.whatsappNumber,
-                nationalId: nil,
                 date: state.selectedDate,
                 selectedStartAt: validated.selectedStartAt,
                 guestCount: state.guestCount,
@@ -1152,58 +1130,6 @@ final class AdventureComboBuilderViewModel: ObservableObject {
         guard Set(normalized).count > 1 else { return nil }
 
         return normalized
-    }
-
-    private func normalizeEcuadorNationalId(_ rawValue: String) -> String? {
-        let digits = rawValue.filter(\.isNumber)
-
-        if isValidEcuadorCedula(digits) {
-            return digits
-        }
-
-        if isValidEcuadorPersonalRUC(digits) {
-            return digits
-        }
-
-        return nil
-    }
-
-    private func isValidEcuadorCedula(_ digits: String) -> Bool {
-        guard digits.count == 10 else { return false }
-        guard Set(digits).count > 1 else { return false }
-
-        let numbers = digits.compactMap(\.wholeNumberValue)
-        guard numbers.count == 10 else { return false }
-
-        let provinceCode = numbers[0] * 10 + numbers[1]
-        guard (1...24).contains(provinceCode) else { return false }
-
-        let thirdDigit = numbers[2]
-        guard (0...5).contains(thirdDigit) else { return false }
-
-        var sum = 0
-
-        for index in 0..<9 {
-            var value = numbers[index]
-
-            if index.isMultiple(of: 2) {
-                value *= 2
-                if value > 9 { value -= 9 }
-            }
-
-            sum += value
-        }
-
-        let verifier = sum % 10 == 0 ? 0 : 10 - (sum % 10)
-        return verifier == numbers[9]
-    }
-
-    private func isValidEcuadorPersonalRUC(_ digits: String) -> Bool {
-        guard digits.count == 13 else { return false }
-        guard String(digits.suffix(3)) != "000" else { return false }
-
-        let cedulaPart = String(digits.prefix(10))
-        return isValidEcuadorCedula(cedulaPart)
     }
 
     private func keepCampingAtEnd() {

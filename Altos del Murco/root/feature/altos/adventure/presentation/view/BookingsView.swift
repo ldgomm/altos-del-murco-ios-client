@@ -305,7 +305,6 @@ private enum UnifiedReservation: Identifiable, Hashable {
                 order.id,
                 order.clientName,
                 order.tableNumber,
-                order.nationalId ?? "",
                 order.serviceMode.title,
                 order.items.map(\.name).joined(separator: " ")
             ]
@@ -317,7 +316,7 @@ private enum UnifiedReservation: Identifiable, Hashable {
                 booking.id,
                 booking.clientName,
                 booking.whatsappNumber,
-                booking.userId ?? booking.clientId ?? "",
+                booking.userId,
                 booking.eventDisplayTitle,
                 booking.visitTypeTitle,
                 booking.items.map(\.title).joined(separator: " "),
@@ -504,11 +503,8 @@ struct BookingsView: View {
                     ?? ""
                 )
             }
-            .onAppear {
-                syncNationalIdFromSession(forceRefresh: false)
-            }
             .onChange(of: profile?.id) { _, _ in
-                syncNationalIdFromSession(forceRefresh: true)
+                syncFromSession(forceRefresh: true)
             }
             .onDisappear {
                 adventureBookingsViewModel.onDisappear()
@@ -560,16 +556,11 @@ struct BookingsView: View {
         }
         .appScreenStyle(.neutral)
         .refreshable {
-            syncNationalIdFromSession(forceRefresh: true)
+            syncFromSession(forceRefresh: true)
         }
     }
 
-    private func syncNationalIdFromSession(forceRefresh: Bool) {
-        let userId = profile?.id ?? ""
-
-        ordersViewModel.setNationalId(userId)
-        adventureBookingsViewModel.setNationalId(userId)
-
+    private func syncFromSession(forceRefresh: Bool) {
         ordersViewModel.onEvent(forceRefresh ? .refresh : .onAppear)
         adventureBookingsViewModel.onAppear()
     }

@@ -141,7 +141,6 @@ struct OrdersView: View {
         .navigationBarTitleDisplayMode(.large)
         .tint(palette.primary)
         .onAppear {
-            viewModel.setNationalId(sessionViewModel.authenticatedProfile?.id ?? "")
             viewModel.onEvent(.onAppear)
         }
     }
@@ -193,7 +192,7 @@ struct OrdersView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding()
-        .appCardStyle(.restaurant, emphasized: true)
+        .appCardStyle(.restaurant, emphasized: false)
         .padding()
     }
 

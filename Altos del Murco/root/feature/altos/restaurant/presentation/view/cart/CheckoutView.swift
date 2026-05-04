@@ -61,13 +61,11 @@ struct CheckoutView: View {
         .onAppear {
             syncProfileFieldsFromSession()
             cartManager.refreshDefaultScheduleIfNeeded()
-            let nationalId = authenticatedProfile?.id ?? cartManager.clientId ?? ""
-            viewModel.onAppear(nationalId: nationalId)
+            viewModel.onAppear()
         }
         .onChange(of: authenticatedProfile?.id) { _, _ in
             syncProfileFieldsFromSession()
-            let nationalId = authenticatedProfile?.id ?? cartManager.clientId ?? ""
-            viewModel.onAppear(nationalId: nationalId)
+            viewModel.onAppear()
         }
         .onChange(of: authenticatedProfile?.fullName) { _, _ in
             syncProfileFieldsFromSession()
@@ -87,14 +85,6 @@ struct CheckoutView: View {
             )
 
             VStack(spacing: 14) {
-                themedField(
-                    title: "Cédula / número único nacional",
-                    text: Binding(
-                        get: { cartManager.nationalId ?? "" },
-                        set: { cartManager.updateClientId($0) }
-                    )
-                )
-                .keyboardType(.numberPad)
 
                 themedField(
                     title: "Nombre",
@@ -330,11 +320,6 @@ struct CheckoutView: View {
 
     private func syncProfileFieldsFromSession() {
         guard let profile = authenticatedProfile else { return }
-
-        let profileNationalId = profile.nationalId.digitsOnly
-        if (cartManager.nationalId ?? "").isEmpty && !profileNationalId.isEmpty {
-            cartManager.nationalId = profileNationalId
-        }
 
         if cartManager.clientName.trimmed.isEmpty && !profile.fullName.trimmed.isEmpty {
             cartManager.clientName = profile.fullName

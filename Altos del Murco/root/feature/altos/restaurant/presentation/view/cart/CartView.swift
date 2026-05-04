@@ -9,7 +9,6 @@ import SwiftUI
 
 struct CartView: View {
     @ObservedObject var viewModel: CheckoutViewModel
-    let nationalId: String
 
     @EnvironmentObject private var cartManager: CartManager
     @State private var showClearCartAlert = false
@@ -83,10 +82,7 @@ struct CartView: View {
         .navigationTitle("Carrito")
         .appScreenStyle(.restaurant)
         .onAppear {
-            viewModel.onAppear(nationalId: nationalId)
-        }
-        .onChange(of: nationalId) { _, value in
-            viewModel.onAppear(nationalId: value)
+            viewModel.onAppear()
         }
         .toolbar {
             if !cartManager.isEmpty {

@@ -148,10 +148,8 @@ struct ReserveViewDetail: View {
                 title: "Cliente",
                 subtitle: "Datos asociados a la reserva."
             )
-
             detailRow("Nombre", booking.clientName)
             detailRow("WhatsApp", booking.whatsappNumber)
-            detailRow("Cuenta", booking.userId ?? booking.clientId ?? "")
         }
         .appCardStyle(.adventure, emphasized: false)
     }

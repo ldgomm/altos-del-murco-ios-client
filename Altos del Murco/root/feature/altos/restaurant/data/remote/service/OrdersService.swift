@@ -43,7 +43,6 @@ final class OrdersService: OrdersServiceable {
 
         if !trustedOrder.appliedRewards.isEmpty {
             try await loyaltyRewardsService.reserveRewards(
-                nationalId: trustedOrder.userId ?? trustedOrder.clientId ?? "",
                 referenceType: .order,
                 referenceId: trustedOrder.id,
                 appliedRewards: trustedOrder.appliedRewards
@@ -71,7 +70,6 @@ final class OrdersService: OrdersServiceable {
         }
 
         let preview = try await loyaltyRewardsService.previewRestaurantRewards(
-            for: uid,
             items: trustedItems
         )
 
@@ -152,7 +150,7 @@ final class OrdersService: OrdersServiceable {
         }
     }
 
-    func observeOrders(for nationalId: String) -> AsyncThrowingStream<[Order], Error> {
+    func observeOrders() -> AsyncThrowingStream<[Order], Error> {
         AsyncThrowingStream { continuation in
             guard let uid = auth.currentUser?.uid.trimmingCharacters(in: .whitespacesAndNewlines), !uid.isEmpty else {
                 continuation.yield([])

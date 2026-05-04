@@ -11,7 +11,6 @@ import Foundation
 @MainActor
 final class EditProfileViewModel: ObservableObject {
     @Published var fullName: String
-    @Published var nationalId: String
     @Published var phoneNumber: String
     @Published var birthday: Date
     @Published var address: String
@@ -41,7 +40,6 @@ final class EditProfileViewModel: ObservableObject {
         self.validBirthdayRange = minimumDate...now
 
         self.fullName = profile.fullName
-        self.nationalId = profile.nationalId
         self.phoneNumber = profile.phoneNumber
         self.birthday = profile.birthday
         self.address = profile.address
@@ -55,7 +53,6 @@ final class EditProfileViewModel: ObservableObject {
 
     var canSave: Bool {
         !fullName.trimmed.isEmpty &&
-        optionalNationalIdIsValid &&
         optionalPhoneIsValid(phoneNumber) &&
         optionalPhoneIsValid(emergencyContactPhone)
     }
@@ -75,7 +72,6 @@ final class EditProfileViewModel: ObservableObject {
             email: originalProfile.email,
             appleUserIdentifier: originalProfile.appleUserIdentifier,
             fullName: cleanName,
-            nationalId: nationalId.digitsOnly,
             phoneNumber: phoneNumber.digitsOnly,
             birthday: birthday,
             address: address.trimmed,
@@ -100,14 +96,10 @@ final class EditProfileViewModel: ObservableObject {
             }
         }
     }
-
-    private var optionalNationalIdIsValid: Bool {
-        let count = nationalId.digitsOnly.count
-        return count == 0 || count == 10 || count == 13
-    }
-
+    
     private func optionalPhoneIsValid(_ value: String) -> Bool {
         let count = value.digitsOnly.count
         return count == 0 || count >= 8
     }
 }
+
