@@ -260,8 +260,7 @@ final class AdventureBookingsViewModel: ObservableObject {
 
         listenerToken?.remove()
 
-        listenerToken = observeBookingsUseCase.execute(
-        ) { [weak self] result in
+        listenerToken = observeBookingsUseCase.execute() { [weak self] result in
             Task { @MainActor in
                 guard let self else { return }
 

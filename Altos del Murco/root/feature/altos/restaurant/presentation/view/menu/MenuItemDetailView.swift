@@ -17,6 +17,8 @@ struct MenuItemDetailView: View {
     @EnvironmentObject private var cartManager: CartManager
     @Environment(\.dismiss) private var dismiss
     @Environment(\.colorScheme) private var colorScheme
+    
+    @FocusState private var focusedField: Field?
 
     @State private var quantity: Int = 1
     @State private var notesText: String = ""
@@ -89,9 +91,13 @@ struct MenuItemDetailView: View {
         .navigationTitle(item.name)
         .navigationBarTitleDisplayMode(.inline)
         .appScreenStyle(.restaurant)
-//        .safeAreaInset(edge: .bottom) {
-//            
-//        }
+        .scrollDismissesKeyboard(.interactively)
+        .contentShape(Rectangle())
+        .simultaneousGesture(
+            TapGesture().onEnded {
+                focusedField = nil
+            }
+        )
     }
 
     private var heroSection: some View {
@@ -545,6 +551,10 @@ struct MenuItemDetailView: View {
         }
         .appCardStyle(.restaurant)
     }
+    
+    private enum Field: Hashable {
+        case notes
+    }
 
     private var notesCard: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -555,6 +565,7 @@ struct MenuItemDetailView: View {
             )
 
             TextField("Agrega alguna nota especial (opcional)", text: $notesText, axis: .vertical)
+                .focused($focusedField, equals: .notes)
                 .appTextFieldStyle(.restaurant)
                 .lineLimit(3, reservesSpace: true)
                 .disabled(!item.canBeOrdered)

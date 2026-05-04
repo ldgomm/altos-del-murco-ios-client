@@ -33,6 +33,8 @@ struct RestaurantRootView: View {
             }
         }
         .onAppear {
+            menuViewModel.onAppear()
+
             RemoteImageLoader.prefetch(
                 urls: menuViewModel.state.sections.menuImageURLs
             )

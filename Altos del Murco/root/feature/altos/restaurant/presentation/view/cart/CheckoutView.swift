@@ -110,9 +110,6 @@ struct CheckoutView: View {
                     .font(.caption)
                     .foregroundStyle(palette.textSecondary)
 
-                Text("La cédula es obligatoria solo para confirmar el pedido o servicio. No se requiere para ver el menú.")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(palette.textSecondary)
             }
         }
         .appCardStyle(.restaurant)

@@ -10,6 +10,9 @@ import SwiftUI
 struct EditProfileView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.colorScheme) private var colorScheme
+    
+    @FocusState private var focusedField: ProfileField?
+
     @StateObject private var viewModel: EditProfileViewModel
     
     private let theme: AppSectionTheme = .neutral
@@ -36,17 +39,21 @@ struct EditProfileView: View {
                         EditableFieldCard(
                             theme: theme,
                             title: "Nombre completo",
-                            placeholder: "Ingresa tu nombre completo",
+                            placeholder: "Opcional",
                             text: $viewModel.fullName,
-                            keyboardType: .default
+                            keyboardType: .default,
+                            focusedField: $focusedField,
+                            field: .fullName
                         )
 
                         EditableFieldCard(
                             theme: theme,
                             title: "Número de teléfono",
-                            placeholder: "Ejemplo: 0987654321",
+                            placeholder: "Opcional",
                             text: $viewModel.phoneNumber,
-                            keyboardType: .phonePad
+                            keyboardType: .phonePad,
+                            focusedField: $focusedField,
+                            field: .phoneNumber
                         )
 
                         VStack(alignment: .leading, spacing: 10) {
@@ -83,7 +90,8 @@ struct EditProfileView: View {
                                 .font(.subheadline.bold())
                                 .foregroundStyle(palette.textPrimary)
 
-                            TextField("Calle, referencia, sector...", text: $viewModel.address, axis: .vertical)
+                            TextField("Opcional", text: $viewModel.address, axis: .vertical)
+                                .focused($focusedField, equals: .address)
                                 .textInputAutocapitalization(.words)
                                 .autocorrectionDisabled()
                                 .foregroundStyle(palette.textPrimary)
@@ -105,17 +113,21 @@ struct EditProfileView: View {
                         EditableFieldCard(
                             theme: theme,
                             title: "Nombre del contacto de emergencia",
-                            placeholder: "¿A quién debemos contactar si es necesario?",
+                            placeholder: "Opcional",
                             text: $viewModel.emergencyContactName,
-                            keyboardType: .default
+                            keyboardType: .default,
+                            focusedField: $focusedField,
+                            field: .emergencyContactName
                         )
 
                         EditableFieldCard(
                             theme: theme,
                             title: "Teléfono del contacto de emergencia",
-                            placeholder: "Ejemplo: 0999999999",
+                            placeholder: "Opcional",
                             text: $viewModel.emergencyContactPhone,
-                            keyboardType: .phonePad
+                            keyboardType: .phonePad,
+                            focusedField: $focusedField,
+                            field: .emergencyContactPhone
                         )
                     }
 
@@ -142,17 +154,26 @@ struct EditProfileView: View {
                 }
                 .padding()
             }
+            .scrollDismissesKeyboard(.interactively)
+            .contentShape(Rectangle())
+            .simultaneousGesture(
+                TapGesture().onEnded {
+                    focusedField = nil
+                }
+            )
             .navigationTitle("Editar perfil")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button("Cerrar") {
+                        focusedField = nil
                         dismiss()
                     }
                 }
 
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
+                        focusedField = nil
                         viewModel.saveChanges()
                     } label: {
                         if viewModel.isSaving {
@@ -164,6 +185,15 @@ struct EditProfileView: View {
                         }
                     }
                     .disabled(!viewModel.canSave || viewModel.isSaving)
+                }
+
+                ToolbarItemGroup(placement: .keyboard) {
+                    Spacer()
+
+                    Button("Listo") {
+                        focusedField = nil
+                    }
+                    .fontWeight(.semibold)
                 }
             }
             .onChange(of: viewModel.isSaving) { _, isSaving in
@@ -196,6 +226,8 @@ private struct EditableFieldCard: View {
     let placeholder: String
     @Binding var text: String
     let keyboardType: UIKeyboardType
+    let focusedField: FocusState<ProfileField?>.Binding
+    let field: ProfileField
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -203,6 +235,7 @@ private struct EditableFieldCard: View {
                 .font(.subheadline.bold())
 
             TextField(placeholder, text: $text)
+                .focused(focusedField, equals: field)
                 .keyboardType(keyboardType)
                 .textInputAutocapitalization(keyboardType == .default ? .words : .never)
                 .autocorrectionDisabled()
@@ -240,4 +273,12 @@ private struct ReadOnlyFieldCard: View {
                 .foregroundStyle(palette.textSecondary)
         }
     }
+}
+
+private enum ProfileField: Hashable {
+    case fullName
+    case phoneNumber
+    case address
+    case emergencyContactName
+    case emergencyContactPhone
 }

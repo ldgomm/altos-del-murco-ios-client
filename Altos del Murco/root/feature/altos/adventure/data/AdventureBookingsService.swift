@@ -15,8 +15,8 @@ private final class EmptyAdventureListenerToken: AdventureListenerToken {
 
 final class AdventureBookingsService: AdventureBookingsServiceable {
     private let db: Firestore
+    private let bookingsCollection = FirestoreConstants.adventure_bookings
     private let auth: Auth
-    private let bookingsCollection = "adventure_bookings"
     private let catalogService: AdventureCatalogServiceable
     private let loyaltyRewardsService: LoyaltyRewardsServiceable
 
@@ -40,7 +40,7 @@ final class AdventureBookingsService: AdventureBookingsServiceable {
             return EmptyAdventureListenerToken()
         }
 
-        let registration = db.collection(bookingsCollection)
+        let registration = db.collection(FirestoreConstants.adventure_bookings)
             .whereField("userId", isEqualTo: uid)
             .order(by: "startAt", descending: false)
             .addSnapshotListener { snapshot, error in

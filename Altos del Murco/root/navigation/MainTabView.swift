@@ -92,6 +92,9 @@ struct MainTabView: View {
             .tag(MainTab.profile)
         }
         .tint(selectedPalette.primary)
+        .task {
+            menuViewModel.onAppear()
+        }
     }
 }
 

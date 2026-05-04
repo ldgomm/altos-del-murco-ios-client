@@ -224,10 +224,11 @@ final class AppSessionViewModel: ObservableObject {
             return .signedOut
 
         case .needsProfile(let user, let existingProfile):
-            // IMPORTANT:
-            // Do not create ClientProfile.starter here.
-            // That bypasses the mandatory form and is exactly what we do not want.
-            return .needsProfile(user, existingProfile)
+            let starterProfile = ClientProfile.starter(
+                from: user,
+                existingProfile: existingProfile
+            )
+            return .authenticated(starterProfile)
 
         case .authenticated(let profile):
             return .authenticated(profile)

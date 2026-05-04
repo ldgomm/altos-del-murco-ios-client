@@ -19,21 +19,12 @@ struct RootView<Home: View>: View {
                     .transition(.opacity)
 
             case .signedOut:
-                // Public browsing is allowed without login.
-                // This is the important App Store Review fix: menu/catalog are not behind auth.
                 home()
                     .transition(.opacity)
 
-            case .needsProfile(let user, let existingProfile):
-                // Signed-in users with incomplete profile cannot continue to services.
-                // No skip, no guest escape, no normal tab UI until the mandatory form is saved.
-                CompleteProfileView {
-                    viewModel.makeCompleteProfileViewModel(
-                        user: user,
-                        existingProfile: existingProfile
-                    )
-                }
-                .transition(.opacity)
+            case .needsProfile:
+                home()
+                    .transition(.opacity)
 
             case .authenticated:
                 home()

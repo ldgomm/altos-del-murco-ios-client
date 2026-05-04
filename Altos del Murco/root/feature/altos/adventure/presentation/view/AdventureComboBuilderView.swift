@@ -10,6 +10,8 @@ import SwiftUI
 struct AdventureComboBuilderView: View {
     @EnvironmentObject private var sessionViewModel: AppSessionViewModel
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.openURL) private var openURL
+    
     @ObservedObject var adventureComboBuilderViewModel: AdventureComboBuilderViewModel
     @ObservedObject var menuViewModel: MenuViewModel
 
@@ -18,6 +20,10 @@ struct AdventureComboBuilderView: View {
     @State private var editingFoodItem: ReservationFoodItemDraft?
     @State private var isContactSectionExpanded = false
     @State private var showAddedMessage = false
+
+    @State private var showOptionalContactAlert = false
+    @State private var optionalContactName = ""
+    @State private var optionalContactWhatsApp = ""
 
     private var authenticatedProfile: ClientProfile? {
         sessionViewModel.authenticatedProfile
@@ -97,6 +103,27 @@ struct AdventureComboBuilderView: View {
             }
         } message: {
             Text(adventureComboBuilderViewModel.state.errorMessage ?? "")
+        }
+        .alert(
+            "Datos de contacto opcionales",
+            isPresented: $showOptionalContactAlert
+        ) {
+            TextField("Nombre opcional", text: $optionalContactName)
+
+            TextField("WhatsApp opcional", text: $optionalContactWhatsApp)
+                .keyboardType(.phonePad)
+
+            Button("Confirmar con estos datos") {
+                applyOptionalContactAndSubmit(openWhatsAppAfterSubmit: false)
+            }
+
+            Button("Prefiero escribir por WhatsApp") {
+                applyOptionalContactAndSubmit(openWhatsAppAfterSubmit: true)
+            }
+
+            Button("Cancelar", role: .cancel) { }
+        } message: {
+            Text("Tu nombre y WhatsApp son opcionales. Nos ayudan a confirmar más rápido. Si prefieres no compartirlos aquí, escríbenos cuanto antes al 096 718 8093; sin un contacto no podremos confirmar la reserva o pedido.")
         }
     }
 
@@ -559,7 +586,7 @@ struct AdventureComboBuilderView: View {
                                 get: { adventureComboBuilderViewModel.state.clientName },
                                 set: { adventureComboBuilderViewModel.setClientName($0) }
                             ),
-                            prompt: Text("Nombre")
+                            prompt: Text("Nombre opcional")
                         )
                         .textInputAutocapitalization(.words)
                         .appTextFieldStyle(.adventure)
@@ -570,7 +597,7 @@ struct AdventureComboBuilderView: View {
                                 get: { adventureComboBuilderViewModel.state.whatsappNumber },
                                 set: { adventureComboBuilderViewModel.setWhatsapp($0) }
                             ),
-                            prompt: Text("WhatsApp")
+                            prompt: Text("WhatsApp opcional")
                         )
                         .keyboardType(.phonePad)
                         .appTextFieldStyle(.adventure)
@@ -579,10 +606,9 @@ struct AdventureComboBuilderView: View {
                             BrandIconBubble(theme: .adventure, systemImage: "person.text.rectangle", size: 38)
 
                             VStack(alignment: .leading, spacing: 4) {
-                                Text("Datos requeridos solo para crear la reserva")
-                                    .font(.subheadline.weight(.semibold))
+                                Text("Datos opcionales para confirmar más rápido")                                    .font(.subheadline.weight(.semibold))
 
-                                Text("Puedes explorar las experiencias sin ingresar estos datos. La cédula y WhatsApp se solicitan únicamente para confirmar un servicio real.")
+                                Text("Puedes dejar estos campos vacíos. Si no compartes tu WhatsApp aquí, escríbenos cuanto antes al 096 718 8093; sin un contacto no podremos confirmar la reserva o pedido.")
                                     .font(.subheadline)
                                     .foregroundStyle(.secondary)
                             }
@@ -710,13 +736,13 @@ struct AdventureComboBuilderView: View {
                 if !sessionViewModel.isAuthenticated {
                     ProtectedAccessRequiredView(
                         title: "Inicia sesión para confirmar la reserva",
-                        message: "Puedes explorar experiencias sin cuenta. Para solicitar un servicio real necesitamos verificar tu sesión y pedir los datos obligatorios de la reserva.",
+                        message: "Puedes explorar experiencias sin cuenta. Para solicitar un servicio real necesitamos verificar tu sesión. Los datos de contacto son opcionales y ayudan a confirmar más rápido.",
                         systemImage: "calendar.badge.plus",
                         theme: .adventure
                     )
                     .frame(maxWidth: .infinity)
                 } else if showAddedMessage {
-                    Text("Reserva agregada")
+                    Text("Reserva enviada")
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(.white)
                         .padding(.horizontal, 16)
@@ -729,40 +755,13 @@ struct AdventureComboBuilderView: View {
                 }
 
                 Button {
-                    guard blockedFoodItemsForToday.isEmpty else {
-                        adventureComboBuilderViewModel.presentError(
-                            "Por hoy, algunos productos seleccionados están agotados y no se pueden pedir. Elige mañana u otro día futuro."
-                        )
-                        return
-                    }
-
-                    syncProfileFieldsFromSession()
-
-                    Task { @MainActor in
-                        let didSubmit = await adventureComboBuilderViewModel.submit(
-                            userId: authenticatedProfile?.id ?? ""
-                        )
-
-                        guard didSubmit else { return }
-
-                        withAnimation(.easeInOut(duration: 0.25)) {
-                            showAddedMessage = true
-                        }
-
-                        try? await Task.sleep(nanoseconds: 650_000_000)
-
-                        withAnimation(.easeInOut(duration: 0.25)) {
-                            showAddedMessage = false
-                        }
-
-                        dismiss()
-                    }
+                    handleConfirmReservationTapped()
                 } label: {
                     if adventureComboBuilderViewModel.state.isSubmitting {
                         ProgressView()
                             .frame(maxWidth: .infinity)
                     } else {
-                        Label("Confirmar reserva", systemImage: "checkmark.circle.fill")
+                        Label("Enviar reserva", systemImage: "checkmark.circle.fill")
                             .frame(maxWidth: .infinity)
                     }
                 }
@@ -791,6 +790,81 @@ struct AdventureComboBuilderView: View {
                 .foregroundStyle(.primary)
         }
         .font(bold ? .headline : .subheadline)
+    }
+    
+    private var contactInfoIsMissing: Bool {
+        adventureComboBuilderViewModel.state.clientName.trimmed.isEmpty
+        || adventureComboBuilderViewModel.state.whatsappNumber.digitsOnly.isEmpty
+    }
+
+    private func handleConfirmReservationTapped() {
+        guard blockedFoodItemsForToday.isEmpty else {
+            adventureComboBuilderViewModel.presentError(
+                "Por hoy, algunos productos seleccionados están agotados y no se pueden pedir. Elige mañana u otro día futuro."
+            )
+            return
+        }
+
+        syncProfileFieldsFromSession()
+
+        if contactInfoIsMissing {
+            optionalContactName = adventureComboBuilderViewModel.state.clientName.trimmed
+            optionalContactWhatsApp = adventureComboBuilderViewModel.state.whatsappNumber
+            showOptionalContactAlert = true
+            return
+        }
+
+        submitReservation(openWhatsAppAfterSubmit: false)
+    }
+
+    private func applyOptionalContactAndSubmit(openWhatsAppAfterSubmit: Bool) {
+        let cleanName = optionalContactName.trimmed
+        let cleanWhatsApp = optionalContactWhatsApp.digitsOnly
+
+        adventureComboBuilderViewModel.setClientName(cleanName)
+        adventureComboBuilderViewModel.setWhatsapp(cleanWhatsApp)
+
+        let shouldOpenWhatsApp = openWhatsAppAfterSubmit || cleanWhatsApp.isEmpty
+        submitReservation(openWhatsAppAfterSubmit: shouldOpenWhatsApp)
+    }
+
+    private func submitReservation(openWhatsAppAfterSubmit: Bool) {
+        Task { @MainActor in
+            let didSubmit = await adventureComboBuilderViewModel.submit(
+                userId: authenticatedProfile?.id ?? ""
+            )
+
+            guard didSubmit else { return }
+
+            withAnimation(.easeInOut(duration: 0.25)) {
+                showAddedMessage = true
+            }
+
+            try? await Task.sleep(nanoseconds: 650_000_000)
+
+            withAnimation(.easeInOut(duration: 0.25)) {
+                showAddedMessage = false
+            }
+
+            if openWhatsAppAfterSubmit {
+                openAltosWhatsApp()
+            }
+
+            dismiss()
+        }
+    }
+
+    private func openAltosWhatsApp() {
+        let message = """
+        Hola Altos del Murco, acabo de enviar una reserva desde la app y quiero confirmar disponibilidad lo antes posible.
+        """
+
+        guard let encodedMessage = message.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
+              let url = URL(string: "https://wa.me/593967188093?text=\(encodedMessage)") else {
+            return
+        }
+
+        openURL(url)
     }
 }
 

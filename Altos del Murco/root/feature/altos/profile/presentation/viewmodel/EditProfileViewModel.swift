@@ -52,14 +52,13 @@ final class EditProfileViewModel: ObservableObject {
     }
 
     var canSave: Bool {
-        !fullName.trimmed.isEmpty &&
         optionalPhoneIsValid(phoneNumber) &&
         optionalPhoneIsValid(emergencyContactPhone)
     }
 
     func saveChanges() {
         guard canSave else {
-            errorMessage = "Solo el nombre es obligatorio. Si agregas cédula o teléfono, revisa que tengan un formato válido."
+            errorMessage = "Si agregas un teléfono, revisa que tenga un formato válido."
             return
         }
 
@@ -67,6 +66,7 @@ final class EditProfileViewModel: ObservableObject {
         isSaving = true
 
         let cleanName = fullName.trimmed
+
         let updatedProfile = ClientProfile(
             id: originalProfile.id,
             email: originalProfile.email,
@@ -77,7 +77,7 @@ final class EditProfileViewModel: ObservableObject {
             address: address.trimmed,
             emergencyContactName: emergencyContactName.trimmed,
             emergencyContactPhone: emergencyContactPhone.digitsOnly,
-            isProfileComplete: !cleanName.isEmpty,
+            isProfileComplete: true,
             createdAt: originalProfile.createdAt,
             updatedAt: Date(),
             profileCompletedAt: originalProfile.profileCompletedAt ?? Date(),

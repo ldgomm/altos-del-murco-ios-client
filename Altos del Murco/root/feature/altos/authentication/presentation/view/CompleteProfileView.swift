@@ -207,7 +207,7 @@ struct CompleteProfileView: View {
                             .font(.headline)
                     }
 
-                    Text(viewModel.isSaving ? "Guardando perfil..." : "Guardar perfil")
+                    Text(viewModel.isSaving ? "Guardando..." : "Guardar datos opcionales")
                         .font(.headline)
                 }
             }
@@ -216,7 +216,14 @@ struct CompleteProfileView: View {
             .padding(.horizontal, 16)
             .padding(.top, 10)
 
-            Text("Completa todos los datos obligatorios para continuar usando los servicios de la app.")
+            Button("Omitir por ahora") {
+                viewModel.skipProfile()
+            }
+            .buttonStyle(BrandSecondaryButtonStyle(theme: theme))
+            .disabled(viewModel.isSaving)
+            .padding(.horizontal, 16)
+
+            Text("Puedes compartir estos datos para facilitar pedidos y reservas, o continuar sin completarlos.")
                 .font(.caption)
                 .foregroundStyle(palette.textSecondary)
                 .padding(.bottom, 6)

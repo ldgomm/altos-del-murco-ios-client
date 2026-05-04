@@ -49,17 +49,16 @@ final class CompleteProfileViewModel: ObservableObject {
         self.emergencyContactName = existingProfile?.emergencyContactName ?? ""
         self.emergencyContactPhone = existingProfile?.emergencyContactPhone ?? ""
     }
-
+    
     var canSubmit: Bool {
-        !fullName.trimmed.isEmpty &&
-        birthday <= Date() &&
         optionalPhoneIsValid(phoneNumber) &&
-        optionalPhoneIsValid(emergencyContactPhone)
+        optionalPhoneIsValid(emergencyContactPhone) &&
+        birthday <= Date()
     }
 
     func saveProfile() {
         guard canSubmit else {
-            errorMessage = "Solo el nombre es obligatorio. Si agregas cédula o teléfono, revisa que tengan un formato válido."
+            errorMessage = "Si agregas un teléfono, revisa que tenga un formato válido."
             return
         }
 
@@ -95,6 +94,15 @@ final class CompleteProfileViewModel: ObservableObject {
                 errorMessage = error.localizedDescription
             }
         }
+    }
+
+    func skipProfile() {
+        let profile = ClientProfile.starter(
+            from: authenticatedUser,
+            existingProfile: existingProfile
+        )
+
+        onCompleted(profile)
     }
 
     private func optionalPhoneIsValid(_ value: String) -> Bool {
