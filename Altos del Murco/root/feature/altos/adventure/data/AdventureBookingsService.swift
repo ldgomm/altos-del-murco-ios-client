@@ -35,7 +35,8 @@ final class AdventureBookingsService: AdventureBookingsServiceable {
     func observeBookings(
         onChange: @escaping (Result<[AdventureBooking], Error>) -> Void
     ) -> AdventureListenerToken {
-        guard let uid = auth.currentUser?.uid, !uid.isEmpty else {
+        guard let uid = auth.currentUser?.uid.trimmingCharacters(in: .whitespacesAndNewlines),
+              !uid.isEmpty else {
             onChange(.success([]))
             return EmptyAdventureListenerToken()
         }
@@ -45,25 +46,40 @@ final class AdventureBookingsService: AdventureBookingsServiceable {
             .order(by: "startAt", descending: false)
             .addSnapshotListener { snapshot, error in
                 if let error {
+                    print("❌ adventure_bookings listener error:", error.localizedDescription)
                     onChange(.failure(error))
                     return
                 }
 
                 guard let snapshot else {
+                    print("⚠️ adventure_bookings snapshot is nil")
                     onChange(.success([]))
                     return
                 }
 
-                do {
-                    let bookings = try snapshot.documents.map { document in
-                        let dto = try document.data(as: AdventureBookingDto.self)
-                        return dto.toDomain(documentId: document.documentID)
-                    }
+                print("✅ adventure_bookings raw docs:", snapshot.documents.count)
+                print("✅ Current uid:", uid)
 
-                    onChange(.success(bookings))
-                } catch {
-                    onChange(.failure(error))
+                var bookings: [AdventureBooking] = []
+                var decodeFailures: [String] = []
+
+                for document in snapshot.documents {
+                    do {
+                        let dto = try document.data(as: AdventureBookingDto.self)
+                        let booking = dto.toDomain(documentId: document.documentID)
+                        bookings.append(booking)
+                    } catch {
+                        decodeFailures.append("\(document.documentID): \(error.localizedDescription)")
+                        print("❌ Failed decoding adventure_booking \(document.documentID):", error)
+                        print("📄 Raw data:", document.data())
+                    }
                 }
+
+                if !decodeFailures.isEmpty {
+                    print("⚠️ adventure_bookings decode failures:", decodeFailures)
+                }
+
+                onChange(.success(bookings))
             }
 
         return FirestoreAdventureListenerToken(registration: registration)

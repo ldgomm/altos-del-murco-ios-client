@@ -503,6 +503,9 @@ struct BookingsView: View {
                     ?? ""
                 )
             }
+            .onAppear {
+                syncFromSession(forceRefresh: false)
+            }
             .onChange(of: profile?.id) { _, _ in
                 syncFromSession(forceRefresh: true)
             }

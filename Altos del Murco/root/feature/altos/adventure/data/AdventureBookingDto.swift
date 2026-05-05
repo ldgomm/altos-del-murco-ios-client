@@ -187,8 +187,8 @@ struct AdventureAppliedRewardDto: Codable {
 struct AdventureBookingDto: Codable {
     /// Firebase Auth UID. This is the canonical owner field for security rules and queries.
     let userId: String
-    let clientName: String
-    let whatsappNumber: String
+    let clientName: String?
+    let whatsappNumber: String?
 
     let startDayKey: String
     let startAt: Timestamp
@@ -216,8 +216,11 @@ struct AdventureBookingDto: Codable {
         AdventureBooking(
             id: documentId,
             userId: userId,
-            clientName: clientName,
-            whatsappNumber: whatsappNumber,
+            clientName: {
+                let clean = clientName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                return clean.isEmpty ? "Cliente" : clean
+            }(),
+            whatsappNumber: whatsappNumber?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "",
             startDayKey: startDayKey,
             startAt: startAt.dateValue(),
             endAt: endAt.dateValue(),
@@ -251,8 +254,10 @@ struct AdventureBookingDto: Codable {
     ) -> AdventureBookingDto {
         AdventureBookingDto(
             userId: request.userId,
-            clientName: request.clientName,
-            whatsappNumber: request.whatsappNumber,
+            clientName: request.clientName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                ? "Cliente"
+                : request.clientName.trimmingCharacters(in: .whitespacesAndNewlines),
+            whatsappNumber: request.whatsappNumber.trimmingCharacters(in: .whitespacesAndNewlines),
             startDayKey: AdventureDateHelper.dayKey(from: plan.startAt),
             startAt: Timestamp(date: plan.startAt),
             endAt: Timestamp(date: plan.endAt),
