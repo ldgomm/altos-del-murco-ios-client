@@ -66,10 +66,10 @@ struct OrderSuccessView: View {
             }
 
             VStack(spacing: 8) {
-                Text("Pedido enviado")
+                Text(order.isScheduledForLater ? "Reserva enviada" : "Pedido enviado")
                     .font(.system(.largeTitle, design: .rounded, weight: .bold))
                     .foregroundStyle(palette.textPrimary)
-                Text("Tu pedido fue creado correctamente.")
+                Text(order.isScheduledForLater ? "Tu reserva de comida fue creada correctamente." : "Tu pedido fue creado correctamente.")
                     .font(.body)
                     .foregroundStyle(palette.textSecondary)
                     .multilineTextAlignment(.center)
@@ -91,9 +91,13 @@ struct OrderSuccessView: View {
                 InfoRow(title: "ID del pedido", value: String(order.id.prefix(7)), theme: theme)
                 InfoRow(title: "Cliente", value: order.clientName, theme: theme)
                 InfoRow(title: "Mesa", value: order.tableNumber, theme: theme)
+                if order.isScheduledForLater {
+                    InfoRow(title: "Reserva", value: order.scheduledDateText, theme: theme)
+                    InfoRow(title: "WhatsApp", value: order.contactDisplayText, theme: theme)
+                }
                 InfoRow(title: "Estado", value: order.status.title, theme: theme)
                 InfoRow(
-                    title: "Hora",
+                    title: order.isScheduledForLater ? "Creada" : "Hora",
                     value: order.createdAt.formatted(date: .omitted, time: .shortened),
                     theme: theme
                 )

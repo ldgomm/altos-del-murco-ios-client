@@ -26,6 +26,11 @@ struct Order: Identifiable, Hashable, Codable {
     let userId: String
     let clientName: String
     let tableNumber: String
+
+    /// Optional contact number used only for scheduled restaurant orders.
+    /// Immediate table orders intentionally keep this empty.
+    let whatsappNumber: String
+
     let createdAt: Date
     let updatedAt: Date
     let scheduledAt: Date
@@ -45,6 +50,7 @@ struct Order: Identifiable, Hashable, Codable {
         userId: String,
         clientName: String,
         tableNumber: String,
+        whatsappNumber: String = "",
         createdAt: Date,
         updatedAt: Date,
         scheduledAt: Date? = nil,
@@ -66,11 +72,13 @@ struct Order: Identifiable, Hashable, Codable {
         )
 
         let cleanUserId = userId.trimmingCharacters(in: .whitespacesAndNewlines)
+        let cleanWhatsApp = whatsappNumber.trimmingCharacters(in: .whitespacesAndNewlines)
 
         self.id = id
         self.userId = cleanUserId
-        self.clientName = clientName
-        self.tableNumber = tableNumber
+        self.clientName = clientName.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.tableNumber = tableNumber.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.whatsappNumber = resolvedMode == .scheduled ? cleanWhatsApp : ""
         self.createdAt = createdAt
         self.updatedAt = updatedAt
         self.scheduledAt = resolvedScheduledAt
@@ -92,6 +100,7 @@ struct Order: Identifiable, Hashable, Codable {
             userId: uid,
             clientName: clientName,
             tableNumber: tableNumber,
+            whatsappNumber: whatsappNumber,
             createdAt: createdAt,
             updatedAt: updatedAt,
             scheduledAt: scheduledAt,
@@ -121,6 +130,7 @@ struct Order: Identifiable, Hashable, Codable {
             userId: userId,
             clientName: clientName,
             tableNumber: tableNumber,
+            whatsappNumber: whatsappNumber,
             createdAt: createdAt,
             updatedAt: Date(),
             scheduledAt: scheduledAt,
@@ -148,6 +158,7 @@ struct Order: Identifiable, Hashable, Codable {
             userId: userId,
             clientName: clientName,
             tableNumber: tableNumber,
+            whatsappNumber: whatsappNumber,
             createdAt: createdAt,
             updatedAt: updatedAt,
             scheduledAt: scheduledAt,
@@ -209,6 +220,12 @@ struct Order: Identifiable, Hashable, Codable {
         OrderScheduleResolver.displayText(for: scheduledAt)
     }
 
+    var contactDisplayText: String {
+        whatsappNumber.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            ? "Cliente escribirá por WhatsApp"
+            : whatsappNumber
+    }
+
     func recalculatedStatus() -> OrderStatus {
         if status == .canceled { return .canceled }
         if requiresReconfirmation { return .pending }
@@ -249,13 +266,5 @@ enum OrderScheduleResolver {
 private extension Double {
     var roundedMoney: Double {
         (self * 100).rounded() / 100
-    }
-}
-
-
-private extension String {
-    var nilIfBlank: String? {
-        let value = trimmingCharacters(in: .whitespacesAndNewlines)
-        return value.isEmpty ? nil : value
     }
 }

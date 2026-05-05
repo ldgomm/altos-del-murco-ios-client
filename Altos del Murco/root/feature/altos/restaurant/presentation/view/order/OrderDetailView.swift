@@ -134,6 +134,22 @@ struct OrderDetailView: View {
                 )
             }
 
+            if order.isScheduledForLater {
+                HStack(spacing: 12) {
+                    DetailMetricView(
+                        title: "Reserva",
+                        value: order.scheduledDateText,
+                        systemImage: "calendar.badge.clock"
+                    )
+
+                    DetailMetricView(
+                        title: "WhatsApp",
+                        value: order.contactDisplayText,
+                        systemImage: "phone.fill"
+                    )
+                }
+            }
+
             VStack(alignment: .leading, spacing: 10) {
                 HStack {
                     Text("Progreso de preparación")

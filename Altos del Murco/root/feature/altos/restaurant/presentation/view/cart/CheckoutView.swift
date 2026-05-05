@@ -7,12 +7,22 @@
 
 import SwiftUI
 
+private enum RestaurantCheckoutContactField: Hashable {
+    case name
+    case table
+    case whatsapp
+}
+
 struct CheckoutView: View {
     @ObservedObject var viewModel: CheckoutViewModel
     @EnvironmentObject private var cartManager: CartManager
     @EnvironmentObject private var sessionViewModel: AppSessionViewModel
     @Binding var path: NavigationPath
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.openURL) private var openURL
+
+    @State private var showMissingWhatsAppConfirmation = false
+    @FocusState private var focusedContactField: RestaurantCheckoutContactField?
 
     private var palette: ThemePalette {
         AppTheme.palette(for: .restaurant, scheme: colorScheme)
@@ -28,6 +38,18 @@ struct CheckoutView: View {
 
     private var rowDiscounts: [UUID: Double] {
         viewModel.allocatedDiscountByCartItemId(for: cartManager.items)
+    }
+
+    private var clientNameIsMissing: Bool {
+        cartManager.clientName.trimmed.isEmpty
+    }
+
+    private var tableIsMissingForImmediateOrder: Bool {
+        !cartManager.isScheduledForLater && cartManager.tableNumber.trimmed.isEmpty
+    }
+
+    private var whatsappIsMissingForScheduledOrder: Bool {
+        cartManager.isScheduledForLater && cartManager.whatsappNumber.digitsOnly.isEmpty
     }
 
     var body: some View {
@@ -46,7 +68,7 @@ struct CheckoutView: View {
         .navigationTitle("Confirmación")
         .appScreenStyle(.restaurant)
         .alert(
-            "Error",
+            "Mensaje",
             isPresented: Binding(
                 get: { viewModel.state.errorMessage != nil },
                 set: { isPresented in
@@ -58,6 +80,23 @@ struct CheckoutView: View {
             },
             message: { Text(viewModel.state.errorMessage ?? "") }
         )
+        .confirmationDialog(
+            "Confirmar por WhatsApp",
+            isPresented: $showMissingWhatsAppConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Enviar y escribir por WhatsApp") {
+                submitOrder(openWhatsAppAfterSubmit: true)
+            }
+
+            Button("Agregar WhatsApp aquí") {
+                focusContact(.whatsapp)
+            }
+
+            Button("Cancelar", role: .cancel) { }
+        } message: {
+            Text("Puedes enviar la reserva sin número. Al finalizar abriremos WhatsApp para que nos escribas y podamos confirmar la comida programada.")
+        }
         .onAppear {
             syncProfileFieldsFromSession()
             cartManager.refreshDefaultScheduleIfNeeded()
@@ -70,6 +109,12 @@ struct CheckoutView: View {
         .onChange(of: authenticatedProfile?.fullName) { _, _ in
             syncProfileFieldsFromSession()
         }
+        .onChange(of: authenticatedProfile?.phoneNumber) { _, _ in
+            syncProfileFieldsFromSession()
+        }
+        .onChange(of: cartManager.isScheduledForLater) { _, _ in
+            syncProfileFieldsFromSession()
+        }
         .onChange(of: viewModel.state.createdOrder) { _, order in
             guard let order else { return }
             path.append(Route.orderSuccess(order))
@@ -80,12 +125,13 @@ struct CheckoutView: View {
         VStack(alignment: .leading, spacing: 16) {
             BrandSectionHeader(
                 theme: .restaurant,
-                title: "Datos para confirmar",
-                subtitle: "Estos datos solo se solicitan cuando vas a crear un pedido o reserva real."
+                title: "Contacto",
+                subtitle: cartManager.isScheduledForLater
+                    ? "Para reservas de comida, solo el nombre es obligatorio. WhatsApp ayuda a confirmar."
+                    : "Para pedidos inmediatos, solo necesitamos nombre y mesa."
             )
 
             VStack(spacing: 14) {
-
                 themedField(
                     title: "Nombre",
                     text: Binding(
@@ -94,6 +140,7 @@ struct CheckoutView: View {
                     )
                 )
                 .textInputAutocapitalization(.words)
+                .focused($focusedContactField, equals: .name)
 
                 themedField(
                     title: cartManager.isScheduledForLater ? "Mesa o referencia" : "Número de mesa",
@@ -103,16 +150,80 @@ struct CheckoutView: View {
                     )
                 )
                 .keyboardType(.default)
+                .focused($focusedContactField, equals: .table)
 
-                Text(cartManager.isScheduledForLater
-                     ? "Para una reserva posterior puedes dejar la mesa vacía; ADM la verá como Por asignar."
-                     : "Para pedidos inmediatos, indica la mesa donde debe llegar la comida.")
-                    .font(.caption)
-                    .foregroundStyle(palette.textSecondary)
+                if cartManager.isScheduledForLater {
+                    themedField(
+                        title: "WhatsApp opcional",
+                        text: Binding(
+                            get: { cartManager.whatsappNumber },
+                            set: { cartManager.updateWhatsappNumber($0) }
+                        )
+                    )
+                    .keyboardType(.phonePad)
+                    .focused($focusedContactField, equals: .whatsapp)
+                }
 
+                contactHelpCard
             }
         }
         .appCardStyle(.restaurant)
+    }
+
+    private var contactHelpCard: some View {
+        HStack(alignment: .top, spacing: 12) {
+            BrandIconBubble(
+                theme: .restaurant,
+                systemImage: contactHelpIcon,
+                size: 38
+            )
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(contactHelpTitle)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(palette.textPrimary)
+
+                Text(contactHelpMessage)
+                    .font(.caption)
+                    .foregroundStyle(palette.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Spacer()
+        }
+        .appCardStyle(.restaurant, emphasized: false)
+    }
+
+    private var contactHelpIcon: String {
+        if clientNameIsMissing { return "exclamationmark.circle.fill" }
+        if tableIsMissingForImmediateOrder { return "tablecells.badge.ellipsis" }
+        if whatsappIsMissingForScheduledOrder { return "message.circle.fill" }
+        return cartManager.isScheduledForLater ? "calendar.badge.clock" : "checkmark.circle.fill"
+    }
+
+    private var contactHelpTitle: String {
+        if clientNameIsMissing { return "Falta el nombre" }
+        if tableIsMissingForImmediateOrder { return "Falta la mesa" }
+        if whatsappIsMissingForScheduledOrder { return "WhatsApp opcional" }
+        return cartManager.isScheduledForLater ? "Reserva lista para enviar" : "Pedido listo para enviar"
+    }
+
+    private var contactHelpMessage: String {
+        if clientNameIsMissing {
+            return "Necesitamos un nombre para identificar el pedido."
+        }
+
+        if tableIsMissingForImmediateOrder {
+            return "En pedidos inmediatos necesitamos la mesa para llevar la comida correctamente."
+        }
+
+        if whatsappIsMissingForScheduledOrder {
+            return "Puedes dejarlo vacío y escribirnos por WhatsApp después de enviar la reserva."
+        }
+
+        return cartManager.isScheduledForLater
+            ? "Usaremos estos datos para confirmar la comida programada."
+            : "El pedido se enviará como inmediato y no guardará WhatsApp."
     }
 
     private var scheduleSection: some View {
@@ -160,7 +271,7 @@ struct CheckoutView: View {
                 )
                 .datePickerStyle(.compact)
 
-                Text("Por defecto es ahora. Si eliges otro día, se guardará como reserva de comida en restaurant_orders con scheduledAt.")
+                Text("Si eliges una hora futura, se guardará como reserva de comida en restaurant_orders y podremos confirmarla por WhatsApp.")
                     .font(.caption)
                     .foregroundStyle(palette.textSecondary)
             }
@@ -229,7 +340,19 @@ struct CheckoutView: View {
                 detailLine(title: "Murco Loyalty", value: "-\(viewModel.state.rewardPreview.discountAmount.priceText)", accent: true)
             }
 
-            detailLine(title: cartManager.isScheduledForLater ? "Reserva" : "Hora", value: OrderScheduleResolver.displayText(for: cartManager.scheduledAt), secondary: true)
+            detailLine(
+                title: cartManager.isScheduledForLater ? "Reserva" : "Hora",
+                value: OrderScheduleResolver.displayText(for: cartManager.scheduledAt),
+                secondary: true
+            )
+
+            if cartManager.isScheduledForLater {
+                detailLine(
+                    title: "WhatsApp",
+                    value: cartManager.whatsappNumber.digitsOnly.isEmpty ? "Lo escribirá después" : cartManager.whatsappNumber,
+                    secondary: true
+                )
+            }
 
             Divider().overlay(palette.stroke)
             detailLine(title: "Total", value: effectiveTotal.priceText, emphasized: true)
@@ -300,7 +423,7 @@ struct CheckoutView: View {
             }
 
             Button {
-                viewModel.onEvent(.confirmTapped)
+                handleConfirmTapped()
             } label: {
                 if viewModel.state.isSubmitting {
                     ProgressView().frame(maxWidth: .infinity)
@@ -310,9 +433,51 @@ struct CheckoutView: View {
                 }
             }
             .buttonStyle(BrandPrimaryButtonStyle(theme: .restaurant))
-            .disabled(!cartManager.canSubmit || viewModel.state.isSubmitting)
+            .disabled(cartManager.isEmpty || viewModel.state.isSubmitting)
         }
         .appCardStyle(.restaurant, emphasized: false)
+    }
+
+    private func handleConfirmTapped() {
+        syncProfileFieldsFromSession()
+
+        if clientNameIsMissing {
+            focusContact(.name)
+            viewModel.presentError("Ingresa tu nombre para enviar el pedido.")
+            return
+        }
+
+        if tableIsMissingForImmediateOrder {
+            focusContact(.table)
+            viewModel.presentError("Ingresa el número de mesa para pedidos inmediatos.")
+            return
+        }
+
+        if whatsappIsMissingForScheduledOrder {
+            focusContact(.whatsapp)
+            showMissingWhatsAppConfirmation = true
+            return
+        }
+
+        submitOrder(openWhatsAppAfterSubmit: false)
+    }
+
+    private func submitOrder(openWhatsAppAfterSubmit: Bool) {
+        Task { @MainActor in
+            let didSubmit = await viewModel.submitOrder()
+            guard didSubmit else { return }
+
+            if openWhatsAppAfterSubmit {
+                openAltosWhatsAppForRestaurantOrder()
+            }
+        }
+    }
+
+    private func focusContact(_ field: RestaurantCheckoutContactField) {
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 100_000_000)
+            focusedContactField = field
+        }
     }
 
     private func syncProfileFieldsFromSession() {
@@ -321,6 +486,25 @@ struct CheckoutView: View {
         if cartManager.clientName.trimmed.isEmpty && !profile.fullName.trimmed.isEmpty {
             cartManager.clientName = profile.fullName
         }
+
+        if cartManager.isScheduledForLater,
+           cartManager.whatsappNumber.digitsOnly.isEmpty,
+           !profile.phoneNumber.digitsOnly.isEmpty {
+            cartManager.whatsappNumber = profile.phoneNumber
+        }
+    }
+
+    private func openAltosWhatsAppForRestaurantOrder() {
+        let message = """
+        Hola Altos del Murco, acabo de enviar una reserva de comida desde la app y quiero confirmar disponibilidad lo antes posible.
+        """
+
+        guard let encodedMessage = message.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
+              let url = URL(string: "https://wa.me/593967188093?text=\(encodedMessage)") else {
+            return
+        }
+
+        openURL(url)
     }
 
     private func themedField(title: String, text: Binding<String>) -> some View {
@@ -351,6 +535,7 @@ struct CheckoutView: View {
             Text(value)
                 .font(emphasized ? .headline.bold() : .subheadline.weight(.semibold))
                 .foregroundStyle(accent ? palette.success : (secondary ? palette.textSecondary : palette.textPrimary))
+                .multilineTextAlignment(.trailing)
         }
     }
 }

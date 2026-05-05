@@ -38,6 +38,14 @@ final class CartManager: ObservableObject {
         }
     }
 
+    var whatsappNumber: String {
+        get { draft.whatsappNumber }
+        set {
+            draft.whatsappNumber = newValue
+            persist()
+        }
+    }
+
     var scheduledAt: Date { draft.scheduledAt }
     var isScheduledForLater: Bool { draft.isScheduledForLater }
     var canSubmit: Bool { draft.canSubmit }
@@ -166,6 +174,11 @@ final class CartManager: ObservableObject {
         persist()
     }
 
+    func updateWhatsappNumber(_ value: String) {
+        draft.whatsappNumber = value
+        persist()
+    }
+
     func updateScheduledAt(_ date: Date) {
         draft.scheduledAt = OrderScheduleResolver.sanitizedScheduledAt(date)
         draft.updatedAt = Date()
@@ -206,6 +219,7 @@ final class CartManager: ObservableObject {
     func resetDraftMetadata() {
         draft.clientName = ""
         draft.tableNumber = ""
+        draft.whatsappNumber = ""
         draft.scheduledAt = Date()
         draft.createdAt = Date()
     }

@@ -49,10 +49,17 @@ struct OrderRowView: View {
 
                     HStack(spacing: 8) {
                         Label("Mesa \(order.tableNumber)", systemImage: "tablecells")
-                        Label(order.createdAt.relativeTimeString, systemImage: "clock")
+                        Label(order.isScheduledForLater ? order.scheduledDateText : order.createdAt.relativeTimeString, systemImage: order.isScheduledForLater ? "calendar.badge.clock" : "clock")
                     }
                     .font(.caption)
                     .foregroundStyle(palette.textSecondary)
+
+                    if order.isScheduledForLater {
+                        Label(order.contactDisplayText, systemImage: "phone.fill")
+                            .font(.caption)
+                            .foregroundStyle(palette.textSecondary)
+                            .lineLimit(1)
+                    }
                 }
 
                 Spacer()

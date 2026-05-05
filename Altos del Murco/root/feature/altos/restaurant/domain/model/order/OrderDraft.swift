@@ -15,6 +15,10 @@ struct OrderDraft: Identifiable, Hashable {
 
     var clientName: String
     var tableNumber: String
+
+    /// Optional contact number used only when this draft becomes a scheduled restaurant order.
+    var whatsappNumber: String
+
     var scheduledAt: Date
     var createdAt: Date
     var updatedAt: Date
@@ -27,6 +31,7 @@ struct OrderDraft: Identifiable, Hashable {
         userId: String = currentUserId() ?? "",
         clientName: String = "",
         tableNumber: String = "",
+        whatsappNumber: String = "",
         scheduledAt: Date = Date(),
         createdAt: Date = Date(),
         updatedAt: Date = Date(),
@@ -34,13 +39,13 @@ struct OrderDraft: Identifiable, Hashable {
         revision: Int? = nil,
         lastConfirmedRevision: Int? = nil
     ) {
-        let cleanUserId = userId
-            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let cleanUserId = userId.trimmingCharacters(in: .whitespacesAndNewlines)
 
         self.id = id
         self.userId = cleanUserId
         self.clientName = clientName
         self.tableNumber = tableNumber
+        self.whatsappNumber = whatsappNumber
         self.scheduledAt = scheduledAt
         self.createdAt = createdAt
         self.updatedAt = updatedAt
@@ -68,7 +73,7 @@ struct OrderDraft: Identifiable, Hashable {
 
 extension OrderDraft {
     var canonicalUserId: String {
-        return userId.trimmingCharacters(in: .whitespacesAndNewlines)
+        userId.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     var normalizedScheduledAt: Date {
@@ -94,6 +99,8 @@ extension OrderDraft {
         !tableNumber.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
+    /// WhatsApp is intentionally not required here.
+    /// If the order is scheduled and the number is empty, the UI lets the user send and then opens WhatsApp.
     var canSubmit: Bool {
         !isEmpty &&
         hasValidClientName &&
@@ -101,12 +108,18 @@ extension OrderDraft {
     }
 
     func normalizedForSubmit(now: Date = Date()) -> OrderDraft {
-        OrderDraft(
+        let resolvedScheduledAt = OrderScheduleResolver.sanitizedScheduledAt(scheduledAt, now: now)
+        let resolvedMode = OrderScheduleResolver.mode(createdAt: now, scheduledAt: resolvedScheduledAt)
+
+        return OrderDraft(
             id: id,
             userId: canonicalUserId,
-            clientName: clientName,
-            tableNumber: tableNumber,
-            scheduledAt: OrderScheduleResolver.sanitizedScheduledAt(scheduledAt, now: now),
+            clientName: clientName.trimmingCharacters(in: .whitespacesAndNewlines),
+            tableNumber: tableNumber.trimmingCharacters(in: .whitespacesAndNewlines),
+            whatsappNumber: resolvedMode == .scheduled
+                ? whatsappNumber.trimmingCharacters(in: .whitespacesAndNewlines)
+                : "",
+            scheduledAt: resolvedScheduledAt,
             createdAt: createdAt,
             updatedAt: now,
             items: items,
@@ -142,22 +155,18 @@ extension OrderDraft {
             )
         }
 
-        let cleanInputUserId = userId
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-
+        let cleanInputUserId = userId.trimmingCharacters(in: .whitespacesAndNewlines)
         let resolvedUserId = cleanInputUserId
-
-        let cleanClientName = clientName
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-
-        let cleanTable = tableNumber
-            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let cleanClientName = clientName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let cleanTable = tableNumber.trimmingCharacters(in: .whitespacesAndNewlines)
+        let cleanWhatsApp = whatsappNumber.trimmingCharacters(in: .whitespacesAndNewlines)
 
         return Order(
             id: orderId,
             userId: resolvedUserId,
             clientName: cleanClientName,
             tableNumber: cleanTable.isEmpty && resolvedServiceMode == .scheduled ? "Por asignar" : cleanTable,
+            whatsappNumber: resolvedServiceMode == .scheduled ? cleanWhatsApp : "",
             createdAt: now,
             updatedAt: now,
             scheduledAt: resolvedScheduledAt,
@@ -172,11 +181,5 @@ extension OrderDraft {
             revision: revision ?? 0,
             lastConfirmedRevision: lastConfirmedRevision
         )
-    }
-}
-
-private extension String {
-    var nilIfBlank: String? {
-        isEmpty ? nil : self
     }
 }

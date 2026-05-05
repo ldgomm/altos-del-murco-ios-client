@@ -45,6 +45,7 @@ struct OrderDto: Codable {
     let userId: String
     let clientName: String
     let tableNumber: String
+    let whatsappNumber: String?
     let createdAt: Timestamp
     let updatedAt: Timestamp?
     let scheduledAt: Timestamp?
@@ -64,6 +65,9 @@ struct OrderDto: Codable {
         self.userId = domain.userId
         self.clientName = domain.clientName
         self.tableNumber = domain.tableNumber
+        self.whatsappNumber = domain.isScheduledForLater
+            ? domain.whatsappNumber.trimmingCharacters(in: .whitespacesAndNewlines).nilIfBlank
+            : nil
         self.createdAt = Timestamp(date: domain.createdAt)
         self.updatedAt = Timestamp(date: domain.updatedAt)
         self.scheduledAt = Timestamp(date: domain.scheduledAt)
@@ -96,6 +100,9 @@ struct OrderDto: Codable {
             userId: userId,
             clientName: clientName,
             tableNumber: tableNumber,
+            whatsappNumber: safeServiceMode == .scheduled
+                ? (whatsappNumber ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                : "",
             createdAt: safeCreatedAt,
             updatedAt: safeUpdatedAt,
             scheduledAt: safeScheduledAt,
@@ -110,5 +117,12 @@ struct OrderDto: Codable {
             revision: safeRevision,
             lastConfirmedRevision: lastConfirmedRevision
         )
+    }
+}
+
+private extension String {
+    var nilIfBlank: String? {
+        let clean = trimmingCharacters(in: .whitespacesAndNewlines)
+        return clean.isEmpty ? nil : clean
     }
 }

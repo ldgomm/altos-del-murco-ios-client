@@ -91,11 +91,14 @@ final class CheckoutViewModel: ObservableObject {
     func onEvent(_ event: CheckoutEvent) {
         switch event {
         case .confirmTapped:
-            submitOrder()
+            Task { @MainActor in
+                _ = await submitOrder()
+            }
         case .scheduledAtChanged(let date):
             cartManager.updateScheduledAt(date)
         case .scheduleNowTapped:
             cartManager.scheduleForNow()
+            cartManager.updateWhatsappNumber("")
         }
     }
 
@@ -164,6 +167,52 @@ final class CheckoutViewModel: ObservableObject {
         state.errorMessage = nil
     }
 
+    func presentError(_ message: String) {
+        state.errorMessage = message
+    }
+
+    @discardableResult
+    func submitOrder() async -> Bool {
+        do {
+            try normalizeAndValidateDraftBeforeSubmit()
+        } catch {
+            state.errorMessage = error.localizedDescription
+            return false
+        }
+
+        guard let baseOrder = cartManager.createOrder() else {
+            state.errorMessage = cartManager.isScheduledForLater
+                ? "Agrega productos y confirma tu nombre. La mesa puede quedar por asignar para reservas."
+                : "Completa la mesa y asegúrate de tener productos en el carrito."
+            return false
+        }
+
+        state.isSubmitting = true
+        state.errorMessage = nil
+
+        do {
+            let latestPreview = try await buildRewardPreview()
+            state.rewardPreview = latestPreview
+
+            let finalOrder = baseOrder.withLoyalty(
+                appliedRewards: latestPreview.appliedRewards,
+                discount: latestPreview.discountAmount
+            )
+
+            try await submitOrderUseCase.execute(order: finalOrder)
+
+            cartManager.clear()
+            state.createdOrder = finalOrder
+            state.rewardPreview = .empty()
+            state.isSubmitting = false
+            return true
+        } catch {
+            state.isSubmitting = false
+            state.errorMessage = error.localizedDescription
+            return false
+        }
+    }
+
     private func startWalletObservation() {
         walletListenerToken?.remove()
         walletListenerToken = nil
@@ -187,42 +236,47 @@ final class CheckoutViewModel: ObservableObject {
         }
     }
 
-    private func submitOrder() {
-        Task { @MainActor in
-            guard let baseOrder = cartManager.createOrder() else {
-                state.errorMessage = cartManager.isScheduledForLater
-                    ? "Agrega productos y confirma que tu perfil tenga nombre. La mesa puede quedar por asignar para reservas."
-                    : "Completa la mesa y asegúrate de tener productos en el carrito."
-                return
-            }
-
-            state.isSubmitting = true
-            state.errorMessage = nil
-
-            do {
-                let latestPreview = try await buildRewardPreview()
-                state.rewardPreview = latestPreview
-
-                let finalOrder = baseOrder.withLoyalty(
-                    appliedRewards: latestPreview.appliedRewards,
-                    discount: latestPreview.discountAmount
-                )
-
-                try await submitOrderUseCase.execute(order: finalOrder)
-
-                cartManager.clear()
-                state.createdOrder = finalOrder
-                state.rewardPreview = .empty()
-                state.isSubmitting = false
-            } catch {
-                state.isSubmitting = false
-                state.errorMessage = error.localizedDescription
-            }
+    private func normalizeAndValidateDraftBeforeSubmit() throws {
+        let cleanName = cartManager.clientName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleanName.isEmpty else {
+            throw checkoutError("Ingresa tu nombre para enviar el pedido.")
         }
+        cartManager.updateClientName(cleanName)
+
+        if cartManager.isScheduledForLater {
+            let normalizedWhatsApp = try normalizedOptionalEcuadorWhatsApp(cartManager.whatsappNumber)
+            cartManager.updateWhatsappNumber(normalizedWhatsApp)
+            return
+        }
+
+        let cleanTable = cartManager.tableNumber.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleanTable.isEmpty else {
+            throw checkoutError("Ingresa el número de mesa para pedidos inmediatos.")
+        }
+
+        cartManager.updateTableNumber(cleanTable)
+        cartManager.updateWhatsappNumber("")
+    }
+
+    private func normalizedOptionalEcuadorWhatsApp(_ rawValue: String) throws -> String {
+        let digits = rawValue.filter(\.isNumber)
+
+        guard !digits.isEmpty else {
+            return ""
+        }
+
+        if digits.count == 10, digits.hasPrefix("09") {
+            return "593" + String(digits.dropFirst())
+        }
+
+        if digits.count == 12, digits.hasPrefix("5939") {
+            return digits
+        }
+
+        throw checkoutError("El WhatsApp ingresado no parece válido. Corrígelo o déjalo vacío para escribirnos después por WhatsApp.")
     }
 
     private func buildRewardPreview() async throws -> CheckoutRewardPreview {
-
         let previewItems = cartManager.items.map {
             OrderItem(
                 menuItemId: $0.menuItem.id,
@@ -245,6 +299,14 @@ final class CheckoutViewModel: ObservableObject {
             appliedRewards: result.appliedRewards,
             discountAmount: result.totalDiscount,
             walletSnapshot: result.walletSnapshot
+        )
+    }
+
+    private func checkoutError(_ message: String) -> NSError {
+        NSError(
+            domain: "CheckoutViewModel",
+            code: 1,
+            userInfo: [NSLocalizedDescriptionKey: message]
         )
     }
 

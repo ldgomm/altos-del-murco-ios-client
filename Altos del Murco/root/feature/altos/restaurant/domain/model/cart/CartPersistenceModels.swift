@@ -16,6 +16,10 @@ final class CartDraftEntity {
 
     var clientName: String
     var tableNumber: String
+
+    /// Optional for lightweight SwiftData migration from older local drafts.
+    var whatsappNumber: String?
+
     var scheduledAt: Date
     var createdAt: Date
     var updatedAt: Date
@@ -28,6 +32,7 @@ final class CartDraftEntity {
         userId: String,
         clientName: String = "",
         tableNumber: String = "",
+        whatsappNumber: String = "",
         scheduledAt: Date = Date(),
         createdAt: Date = Date(),
         updatedAt: Date = Date(),
@@ -39,6 +44,7 @@ final class CartDraftEntity {
         self.userId = cleanUserId
         self.clientName = clientName
         self.tableNumber = tableNumber
+        self.whatsappNumber = whatsappNumber.trimmingCharacters(in: .whitespacesAndNewlines).nilIfBlank
         self.scheduledAt = scheduledAt
         self.createdAt = createdAt
         self.updatedAt = updatedAt
@@ -99,6 +105,8 @@ final class CartItemEntity {
 
 private extension String {
     var nilIfBlank: String? {
-        isEmpty ? nil : self
+        let clean = trimmingCharacters(in: .whitespacesAndNewlines)
+        return clean.isEmpty ? nil : clean
     }
 }
+ 
