@@ -46,19 +46,14 @@ final class AdventureBookingsService: AdventureBookingsServiceable {
             .order(by: "startAt", descending: false)
             .addSnapshotListener { snapshot, error in
                 if let error {
-                    print("❌ adventure_bookings listener error:", error.localizedDescription)
                     onChange(.failure(error))
                     return
                 }
 
                 guard let snapshot else {
-                    print("⚠️ adventure_bookings snapshot is nil")
                     onChange(.success([]))
                     return
                 }
-
-                print("✅ adventure_bookings raw docs:", snapshot.documents.count)
-                print("✅ Current uid:", uid)
 
                 var bookings: [AdventureBooking] = []
                 var decodeFailures: [String] = []
@@ -70,13 +65,7 @@ final class AdventureBookingsService: AdventureBookingsServiceable {
                         bookings.append(booking)
                     } catch {
                         decodeFailures.append("\(document.documentID): \(error.localizedDescription)")
-                        print("❌ Failed decoding adventure_booking \(document.documentID):", error)
-                        print("📄 Raw data:", document.data())
                     }
-                }
-
-                if !decodeFailures.isEmpty {
-                    print("⚠️ adventure_bookings decode failures:", decodeFailures)
                 }
 
                 onChange(.success(bookings))

@@ -64,3 +64,7 @@ struct ClientProfileDocument: Codable {
         )
     }
 }
+
+//1. As the same in bookings I want to include phone number in restaurant orders, also if the name or phone is empty, table must be obligatory when not schedule
+//2. When creating an order or booking only name is mandatory. Display an alert as the same in cofirming booking when confirming an order
+//3.

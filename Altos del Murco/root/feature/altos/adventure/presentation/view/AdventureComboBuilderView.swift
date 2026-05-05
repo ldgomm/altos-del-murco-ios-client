@@ -7,6 +7,11 @@
 
 import SwiftUI
 
+private enum ContactField: Hashable {
+    case name
+    case whatsapp
+}
+
 struct AdventureComboBuilderView: View {
     @EnvironmentObject private var sessionViewModel: AppSessionViewModel
     @Environment(\.dismiss) private var dismiss
@@ -21,9 +26,8 @@ struct AdventureComboBuilderView: View {
     @State private var isContactSectionExpanded = false
     @State private var showAddedMessage = false
 
-    @State private var showOptionalContactAlert = false
-    @State private var optionalContactName = ""
-    @State private var optionalContactWhatsApp = ""
+    @State private var showMissingWhatsAppConfirmation = false
+    @FocusState private var focusedContactField: ContactField?
 
     private var authenticatedProfile: ClientProfile? {
         sessionViewModel.authenticatedProfile
@@ -104,26 +108,22 @@ struct AdventureComboBuilderView: View {
         } message: {
             Text(adventureComboBuilderViewModel.state.errorMessage ?? "")
         }
-        .alert(
-            "Datos de contacto opcionales",
-            isPresented: $showOptionalContactAlert
+        .confirmationDialog(
+            "Confirmar por WhatsApp",
+            isPresented: $showMissingWhatsAppConfirmation,
+            titleVisibility: .visible
         ) {
-            TextField("Nombre opcional", text: $optionalContactName)
-
-            TextField("WhatsApp opcional", text: $optionalContactWhatsApp)
-                .keyboardType(.phonePad)
-
-            Button("Confirmar con estos datos") {
-                applyOptionalContactAndSubmit(openWhatsAppAfterSubmit: false)
+            Button("Enviar y escribir por WhatsApp") {
+                submitReservation(openWhatsAppAfterSubmit: true)
             }
 
-            Button("Prefiero escribir por WhatsApp") {
-                applyOptionalContactAndSubmit(openWhatsAppAfterSubmit: true)
+            Button("Agregar WhatsApp aquí") {
+                openContactCard(focus: .whatsapp)
             }
 
             Button("Cancelar", role: .cancel) { }
         } message: {
-            Text("Tu nombre y WhatsApp son opcionales. Nos ayudan a confirmar más rápido. Si prefieres no compartirlos aquí, escríbenos cuanto antes al 096 718 8093; sin un contacto no podremos confirmar la reserva o pedido.")
+            Text("Puedes enviar la reserva sin número. Al finalizar abriremos WhatsApp para que nos escribas.")
         }
     }
 
@@ -563,7 +563,7 @@ struct AdventureComboBuilderView: View {
                         BrandSectionHeader(
                             theme: .adventure,
                             title: "Contacto",
-                            subtitle: "La información de tu perfil se utiliza automáticamente para esta reserva."
+                            subtitle: "Solo el nombre es obligatorio. WhatsApp es opcional."
                         )
 
                         Spacer(minLength: 12)
@@ -586,9 +586,10 @@ struct AdventureComboBuilderView: View {
                                 get: { adventureComboBuilderViewModel.state.clientName },
                                 set: { adventureComboBuilderViewModel.setClientName($0) }
                             ),
-                            prompt: Text("Nombre opcional")
+                            prompt: Text("Nombre para la reserva")
                         )
                         .textInputAutocapitalization(.words)
+                        .focused($focusedContactField, equals: .name)
                         .appTextFieldStyle(.adventure)
 
                         TextField(
@@ -600,33 +601,32 @@ struct AdventureComboBuilderView: View {
                             prompt: Text("WhatsApp opcional")
                         )
                         .keyboardType(.phonePad)
+                        .focused($focusedContactField, equals: .whatsapp)
                         .appTextFieldStyle(.adventure)
 
                         HStack(alignment: .top, spacing: 12) {
-                            BrandIconBubble(theme: .adventure, systemImage: "person.text.rectangle", size: 38)
+                            BrandIconBubble(
+                                theme: .adventure,
+                                systemImage: clientNameIsMissing ? "exclamationmark.circle.fill" : "message.circle.fill",
+                                size: 38
+                            )
 
                             VStack(alignment: .leading, spacing: 4) {
-                                Text("Datos opcionales para confirmar más rápido")                                    .font(.subheadline.weight(.semibold))
+                                Text(clientNameIsMissing ? "Falta el nombre" : "WhatsApp opcional")
+                                    .font(.subheadline.weight(.semibold))
 
-                                Text("Puedes dejar estos campos vacíos. Si no compartes tu WhatsApp aquí, escríbenos cuanto antes al 096 718 8093; sin un contacto no podremos confirmar la reserva o pedido.")
-                                    .font(.subheadline)
-                                    .foregroundStyle(.secondary)
+                                Text(
+                                    clientNameIsMissing
+                                    ? "Necesitamos un nombre para identificar tu reserva."
+                                    : "Puedes dejar el número vacío y escribirnos por WhatsApp después de enviar la reserva."
+                                )
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
                             }
 
                             Spacer()
                         }
                         .appCardStyle(.adventure)
-
-                        TextField(
-                            "Notas generales (opcional)",
-                            text: Binding(
-                                get: { adventureComboBuilderViewModel.state.notes },
-                                set: { adventureComboBuilderViewModel.setNotes($0) }
-                            ),
-                            axis: .vertical
-                        )
-                        .lineLimit(3...5)
-                        .appTextFieldStyle(.adventure)
                     }
                     .transition(
                         .asymmetric(
@@ -792,9 +792,12 @@ struct AdventureComboBuilderView: View {
         .font(bold ? .headline : .subheadline)
     }
     
-    private var contactInfoIsMissing: Bool {
+    private var clientNameIsMissing: Bool {
         adventureComboBuilderViewModel.state.clientName.trimmed.isEmpty
-        || adventureComboBuilderViewModel.state.whatsappNumber.digitsOnly.isEmpty
+    }
+
+    private var whatsappIsMissing: Bool {
+        adventureComboBuilderViewModel.state.whatsappNumber.digitsOnly.isEmpty
     }
 
     private func handleConfirmReservationTapped() {
@@ -807,25 +810,32 @@ struct AdventureComboBuilderView: View {
 
         syncProfileFieldsFromSession()
 
-        if contactInfoIsMissing {
-            optionalContactName = adventureComboBuilderViewModel.state.clientName.trimmed
-            optionalContactWhatsApp = adventureComboBuilderViewModel.state.whatsappNumber
-            showOptionalContactAlert = true
+        guard !clientNameIsMissing else {
+            openContactCard(focus: .name)
+            adventureComboBuilderViewModel.presentError(
+                "Ingresa tu nombre para enviar la reserva."
+            )
+            return
+        }
+
+        if whatsappIsMissing {
+            openContactCard(focus: .whatsapp)
+            showMissingWhatsAppConfirmation = true
             return
         }
 
         submitReservation(openWhatsAppAfterSubmit: false)
     }
 
-    private func applyOptionalContactAndSubmit(openWhatsAppAfterSubmit: Bool) {
-        let cleanName = optionalContactName.trimmed
-        let cleanWhatsApp = optionalContactWhatsApp.digitsOnly
+    private func openContactCard(focus field: ContactField) {
+        withAnimation(.spring(response: 0.38, dampingFraction: 0.86)) {
+            isContactSectionExpanded = true
+        }
 
-        adventureComboBuilderViewModel.setClientName(cleanName)
-        adventureComboBuilderViewModel.setWhatsapp(cleanWhatsApp)
-
-        let shouldOpenWhatsApp = openWhatsAppAfterSubmit || cleanWhatsApp.isEmpty
-        submitReservation(openWhatsAppAfterSubmit: shouldOpenWhatsApp)
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 180_000_000)
+            focusedContactField = field
+        }
     }
 
     private func submitReservation(openWhatsAppAfterSubmit: Bool) {

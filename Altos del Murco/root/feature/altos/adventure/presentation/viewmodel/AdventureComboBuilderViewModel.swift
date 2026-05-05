@@ -1028,8 +1028,22 @@ final class AdventureComboBuilderViewModel: ObservableObject {
             throw ReservationValidationError(message: "Ingresa un nombre válido del cliente.")
         }
 
-        guard let normalizedWhatsApp = normalizeEcuadorWhatsApp(state.whatsappNumber) else {
-            throw ReservationValidationError(message: "Ingresa un número de WhatsApp de Ecuador válido.")
+        let normalizedWhatsApp = try normalizedOptionalWhatsApp(state.whatsappNumber)
+        
+        func normalizedOptionalWhatsApp(_ rawValue: String) throws -> String {
+            let digits = rawValue.filter(\.isNumber)
+
+            guard !digits.isEmpty else {
+                return ""
+            }
+
+            guard let normalized = normalizeEcuadorWhatsApp(rawValue) else {
+                throw ReservationValidationError(
+                    message: "El WhatsApp ingresado no parece válido. Corrígelo o déjalo vacío para escribirnos después por WhatsApp."
+                )
+            }
+
+            return normalized
         }
 
         guard state.guestCount > 0 else {
