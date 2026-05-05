@@ -9,6 +9,7 @@ import Foundation
 
 struct ClientProfileDocument: Codable {
     let id: String
+    let userId: String
     let email: String
     let appleUserIdentifier: String
     let fullName: String
@@ -26,6 +27,7 @@ struct ClientProfileDocument: Codable {
 
     init(profile: ClientProfile) {
         self.id = profile.id
+        self.userId = profile.id
         self.email = profile.email
         self.appleUserIdentifier = profile.appleUserIdentifier
         self.fullName = profile.fullName
@@ -44,7 +46,7 @@ struct ClientProfileDocument: Codable {
 
     func toDomain() -> ClientProfile {
         ClientProfile(
-            id: id,
+            id: id.isEmpty ? userId : id,
             email: email,
             appleUserIdentifier: appleUserIdentifier,
             fullName: fullName,

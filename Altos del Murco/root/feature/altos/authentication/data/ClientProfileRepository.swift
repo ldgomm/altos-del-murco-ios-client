@@ -35,14 +35,30 @@ final class ClientProfileRepository: ClientProfileRepositoriable {
     }
 
     func saveProfile(_ profile: ClientProfile) async throws {
+        let cleanId = profile.id.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard !cleanId.isEmpty else {
+            throw NSError(
+                domain: "ClientProfileRepository",
+                code: 1,
+                userInfo: [NSLocalizedDescriptionKey: "No se pudo guardar el perfil porque el usuario no tiene UID válido."]
+            )
+        }
+
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             do {
                 let document = ClientProfileDocument(profile: profile)
 
-                try collection.document(profile.id).setData(from: document, merge: true) { error in
+                print("🧾 Saving client profile document:", cleanId)
+                print("🧾 userId:", document.id)
+                print("🧾 id:", document.id)
+
+                try collection.document(cleanId).setData(from: document, merge: true) { error in
                     if let error {
+                        print("❌ Client profile save failed:", error.localizedDescription)
                         continuation.resume(throwing: error)
                     } else {
+                        print("✅ Client profile saved:", cleanId)
                         continuation.resume(returning: ())
                     }
                 }
