@@ -230,53 +230,225 @@ struct CheckoutView: View {
         VStack(alignment: .leading, spacing: 16) {
             BrandSectionHeader(
                 theme: .restaurant,
-                title: "Cuándo preparar",
-                subtitle: "Reserva solo comida para más tarde sin entrar al módulo de aventura."
+                title: "¿Cuándo quieres tu comida?",
+                subtitle: "Elige si el restaurante debe prepararla ahora o reservarla para más tarde."
             )
 
-            VStack(alignment: .leading, spacing: 12) {
-                HStack(spacing: 10) {
-                    Image(systemName: cartManager.isScheduledForLater ? "calendar.badge.clock" : "bolt.fill")
-                        .font(.title3)
-                        .foregroundStyle(palette.primary)
-                        .frame(width: 34)
-
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(cartManager.isScheduledForLater ? "Reserva de comida" : "Pedido inmediato")
-                            .font(.headline)
-                            .foregroundStyle(palette.textPrimary)
-
-                        Text(OrderScheduleResolver.displayText(for: cartManager.scheduledAt))
-                            .font(.subheadline)
-                            .foregroundStyle(palette.textSecondary)
-                    }
-
-                    Spacer()
-
-                    Button("Ahora") {
+            VStack(spacing: 10) {
+                scheduleModeOption(
+                    mode: .asSoonAsPossible,
+                    isSelected: !cartManager.isScheduledForLater
+                ) {
+                    withAnimation(.spring(response: 0.32, dampingFraction: 0.86)) {
                         viewModel.onEvent(.scheduleNowTapped)
                     }
-                    .buttonStyle(.bordered)
-                    .disabled(!cartManager.isScheduledForLater)
                 }
 
-                DatePicker(
-                    "Fecha y hora",
-                    selection: Binding(
-                        get: { cartManager.scheduledAt },
-                        set: { viewModel.onEvent(.scheduledAtChanged($0)) }
-                    ),
-                    in: Date()...,
-                    displayedComponents: [.date, .hourAndMinute]
-                )
-                .datePickerStyle(.compact)
+                scheduleModeOption(
+                    mode: .scheduled,
+                    isSelected: cartManager.isScheduledForLater
+                ) {
+                    withAnimation(.spring(response: 0.32, dampingFraction: 0.86)) {
+                        activateScheduledMode()
+                    }
+                }
+            }
 
-                Text("Si eliges una hora futura, se guardará como reserva de comida en restaurant_orders y podremos confirmarla por WhatsApp.")
-                    .font(.caption)
-                    .foregroundStyle(palette.textSecondary)
+            if cartManager.isScheduledForLater {
+                scheduledOrderControls
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+            } else {
+                immediateOrderInfoCard
+                    .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
         .appCardStyle(.restaurant)
+    }
+
+    private func scheduleModeOption(
+        mode: RestaurantOrderFulfillmentMode,
+        isSelected: Bool,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            HStack(alignment: .top, spacing: 12) {
+                ZStack {
+                    Circle()
+                        .fill(isSelected ? palette.primary.opacity(0.16) : palette.elevatedCard)
+                        .frame(width: 46, height: 46)
+
+                    Image(systemName: mode.icon)
+                        .font(.system(size: 19, weight: .bold))
+                        .foregroundStyle(isSelected ? palette.primary : palette.textSecondary)
+                }
+
+                VStack(alignment: .leading, spacing: 5) {
+                    HStack(spacing: 8) {
+                        Text(mode.title)
+                            .font(.headline)
+                            .foregroundStyle(palette.textPrimary)
+
+                        if isSelected {
+                            Label("Seleccionado", systemImage: "checkmark.circle.fill")
+                                .font(.caption.weight(.bold))
+                                .foregroundStyle(palette.primary)
+                        }
+                    }
+
+                    Text(mode.subtitle)
+                        .font(.subheadline)
+                        .foregroundStyle(palette.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Spacer(minLength: 8)
+
+                Image(systemName: isSelected ? "largecircle.fill.circle" : "circle")
+                    .font(.title3)
+                    .foregroundStyle(isSelected ? palette.primary : palette.textTertiary)
+                    .padding(.top, 2)
+            }
+            .padding(14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: AppTheme.Radius.large, style: .continuous)
+                    .fill(isSelected ? palette.primary.opacity(colorScheme == .dark ? 0.20 : 0.10) : palette.elevatedCard)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: AppTheme.Radius.large, style: .continuous)
+                    .stroke(isSelected ? palette.primary : palette.stroke, lineWidth: isSelected ? 1.6 : 1)
+            )
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var immediateOrderInfoCard: some View {
+        HStack(alignment: .top, spacing: 12) {
+            BrandIconBubble(
+                theme: .restaurant,
+                systemImage: "bolt.fill",
+                size: 42
+            )
+
+            VStack(alignment: .leading, spacing: 5) {
+                Text("Se preparará lo antes posible")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(palette.textPrimary)
+
+                Text("Este pedido se enviará como inmediato. La mesa es obligatoria para que podamos llevar la comida correctamente. WhatsApp no se guardará en pedidos inmediatos.")
+                    .font(.caption)
+                    .foregroundStyle(palette.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Text("Hora estimada: \(OrderScheduleResolver.displayText(for: cartManager.scheduledAt))")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(palette.primary)
+            }
+
+            Spacer()
+        }
+        .appCardStyle(.restaurant, emphasized: false)
+    }
+
+    private var scheduledOrderControls: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .top, spacing: 12) {
+                BrandIconBubble(
+                    theme: .restaurant,
+                    systemImage: "calendar.badge.clock",
+                    size: 42
+                )
+
+                VStack(alignment: .leading, spacing: 5) {
+                    Text("Comida programada")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(palette.textPrimary)
+
+                    Text("Prepararemos o confirmaremos tu comida para la fecha elegida. La mesa puede quedar por asignar y WhatsApp nos ayuda a confirmar disponibilidad.")
+                        .font(.caption)
+                        .foregroundStyle(palette.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    Text(OrderScheduleResolver.displayText(for: cartManager.scheduledAt))
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(palette.primary)
+                }
+
+                Spacer()
+
+                Button {
+                    withAnimation(.spring(response: 0.32, dampingFraction: 0.86)) {
+                        viewModel.onEvent(.scheduleNowTapped)
+                    }
+                } label: {
+                    Label("Ahora", systemImage: "bolt.fill")
+                        .font(.caption.weight(.bold))
+                }
+                .buttonStyle(.bordered)
+            }
+
+            Divider().overlay(palette.stroke)
+
+            DatePicker(
+                "Día y hora de llegada",
+                selection: Binding(
+                    get: { cartManager.scheduledAt },
+                    set: {
+                        viewModel.onEvent(
+                            .scheduledAtChanged(
+                                RestaurantOrderSchedulingRules.normalizedScheduledAt($0)
+                            )
+                        )
+                    }
+                ),
+                in: RestaurantOrderSchedulingRules.minimumScheduledAt()...RestaurantOrderSchedulingRules.maximumScheduledAt(),
+                displayedComponents: [.date, .hourAndMinute]
+            )
+            .datePickerStyle(.compact)
+
+            if let scheduleValidationMessage {
+                HStack(alignment: .top, spacing: 10) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(palette.destructive)
+
+                    Text(scheduleValidationMessage)
+                        .font(.caption)
+                        .foregroundStyle(palette.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            } else {
+                HStack(alignment: .top, spacing: 10) {
+                    Image(systemName: "checkmark.seal.fill")
+                        .foregroundStyle(palette.success)
+
+                    Text("Esta reserva se guardará con scheduledAt en restaurant_orders para que ADM la vea como comida programada.")
+                        .font(.caption)
+                        .foregroundStyle(palette.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+        .appCardStyle(.restaurant, emphasized: false)
+    }
+
+    private var scheduleValidationMessage: String? {
+        RestaurantOrderSchedulingRules.validate(
+            mode: cartManager.isScheduledForLater ? .scheduled : .asSoonAsPossible,
+            scheduledAt: cartManager.scheduledAt
+        )
+    }
+
+    private func activateScheduledMode() {
+        let minimum = RestaurantOrderSchedulingRules.minimumScheduledAt()
+        let nextDate = cartManager.scheduledAt >= minimum
+            ? cartManager.scheduledAt
+            : RestaurantOrderSchedulingRules.defaultScheduledAt()
+
+        viewModel.onEvent(
+            .scheduledAtChanged(
+                RestaurantOrderSchedulingRules.normalizedScheduledAt(nextDate)
+            )
+        )
     }
 
     private var summarySection: some View {
