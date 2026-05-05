@@ -25,6 +25,8 @@ struct AdventureComboBuilderView: View {
     @State private var editingFoodItem: ReservationFoodItemDraft?
     @State private var isContactSectionExpanded = false
     @State private var showAddedMessage = false
+    
+    @State private var showQuickContactProfileSheet = false
 
     @State private var showMissingWhatsAppConfirmation = false
     @FocusState private var focusedContactField: ContactField?
@@ -82,6 +84,29 @@ struct AdventureComboBuilderView: View {
             ) { updated in
                 adventureComboBuilderViewModel.updateItem(updated)
             }
+        }
+        .sheet(isPresented: $showQuickContactProfileSheet) {
+            QuickContactProfileSheet(
+                theme: .adventure,
+                title: "Completa tus datos de reserva",
+                message: "Con nombre y WhatsApp podremos confirmar cambios de horario, disponibilidad o detalles de tu experiencia.",
+                initialName: adventureComboBuilderViewModel.state.clientName.trimmed.isEmpty
+                    ? (authenticatedProfile?.fullName ?? "")
+                    : adventureComboBuilderViewModel.state.clientName,
+                initialPhone: adventureComboBuilderViewModel.state.whatsappNumber.digitsOnly.isEmpty
+                    ? (authenticatedProfile?.phoneNumber ?? "")
+                    : adventureComboBuilderViewModel.state.whatsappNumber,
+                saveProfile: { name, phone in
+                    try await sessionViewModel.saveQuickContactProfile(
+                        fullName: name,
+                        phoneNumber: phone
+                    )
+                },
+                onSaved: { profile in
+                    adventureComboBuilderViewModel.setClientName(profile.fullName)
+                    adventureComboBuilderViewModel.setWhatsapp(profile.phoneNumber)
+                }
+            )
         }
         .sheet(item: $editingFoodItem, onDismiss: {
             editingFoodItem = nil
@@ -555,6 +580,13 @@ struct AdventureComboBuilderView: View {
         Section {
             VStack(alignment: .leading, spacing: 16) {
                 Button {
+                    guard adventureContactCanCollapse else {
+                        withAnimation(.spring(response: 0.38, dampingFraction: 0.86)) {
+                            isContactSectionExpanded = true
+                        }
+                        return
+                    }
+
                     withAnimation(.spring(response: 0.38, dampingFraction: 0.86)) {
                         isContactSectionExpanded.toggle()
                     }
@@ -563,22 +595,29 @@ struct AdventureComboBuilderView: View {
                         BrandSectionHeader(
                             theme: .adventure,
                             title: "Contacto",
-                            subtitle: "Solo el nombre es obligatorio. WhatsApp es opcional."
+                            subtitle: adventureContactCanCollapse
+                                ? "Datos completos. Toca para revisar o editar."
+                                : "Completa nombre y WhatsApp sin salir de la reserva."
                         )
 
                         Spacer(minLength: 12)
 
-                        Image(systemName: "chevron.down")
-                            .font(.footnote.weight(.semibold))
-                            .foregroundStyle(.secondary)
-                            .rotationEffect(.degrees(isContactSectionExpanded ? 180 : 0))
-                            .animation(.spring(response: 0.32, dampingFraction: 0.82), value: isContactSectionExpanded)
+                        if adventureContactCanCollapse {
+                            Image(systemName: "chevron.down")
+                                .font(.footnote.weight(.semibold))
+                                .foregroundStyle(.secondary)
+                                .rotationEffect(.degrees(isContactSectionExpanded ? 180 : 0))
+                                .animation(.spring(response: 0.32, dampingFraction: 0.82), value: isContactSectionExpanded)
+                        }
                     }
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
 
-                if isContactSectionExpanded {
+                if adventureContactCanCollapse && !isContactSectionExpanded {
+                    compactAdventureContactSummary
+                        .transition(.opacity.combined(with: .scale(scale: 0.98)))
+                } else {
                     VStack(alignment: .leading, spacing: 16) {
                         TextField(
                             "",
@@ -598,35 +637,13 @@ struct AdventureComboBuilderView: View {
                                 get: { adventureComboBuilderViewModel.state.whatsappNumber },
                                 set: { adventureComboBuilderViewModel.setWhatsapp($0) }
                             ),
-                            prompt: Text("WhatsApp opcional")
+                            prompt: Text("WhatsApp para confirmar")
                         )
                         .keyboardType(.phonePad)
                         .focused($focusedContactField, equals: .whatsapp)
                         .appTextFieldStyle(.adventure)
 
-                        HStack(alignment: .top, spacing: 12) {
-                            BrandIconBubble(
-                                theme: .adventure,
-                                systemImage: clientNameIsMissing ? "exclamationmark.circle.fill" : "message.circle.fill",
-                                size: 38
-                            )
-
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(clientNameIsMissing ? "Falta el nombre" : "WhatsApp opcional")
-                                    .font(.subheadline.weight(.semibold))
-
-                                Text(
-                                    clientNameIsMissing
-                                    ? "Necesitamos un nombre para identificar tu reserva."
-                                    : "Puedes dejar el número vacío y escribirnos por WhatsApp después de enviar la reserva."
-                                )
-                                .font(.subheadline)
-                                .foregroundStyle(.secondary)
-                            }
-
-                            Spacer()
-                        }
-                        .appCardStyle(.adventure)
+                        improvedAdventureContactHelpCard
                     }
                     .transition(
                         .asymmetric(
@@ -640,7 +657,111 @@ struct AdventureComboBuilderView: View {
             .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
             .listRowBackground(Color.clear)
             .listRowSeparator(.hidden)
+            .onChange(of: adventureContactCanCollapse) { _, canCollapse in
+                if !canCollapse {
+                    isContactSectionExpanded = true
+                }
+            }
         }
+    }
+    
+    private var adventureContactCanCollapse: Bool {
+        !adventureComboBuilderViewModel.state.clientName.trimmed.isEmpty &&
+        !adventureComboBuilderViewModel.state.whatsappNumber.digitsOnly.isEmpty
+    }
+
+    private var adventureWhatsappIsMissing: Bool {
+        adventureComboBuilderViewModel.state.whatsappNumber.digitsOnly.isEmpty
+    }
+
+    private var compactAdventureContactSummary: some View {
+        HStack(alignment: .top, spacing: 12) {
+            BrandIconBubble(
+                theme: .adventure,
+                systemImage: "checkmark.seal.fill",
+                size: 42
+            )
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text(adventureComboBuilderViewModel.state.clientName.trimmed)
+                    .font(.headline)
+                    .foregroundStyle(palette.textPrimary)
+
+                Text("WhatsApp: \(adventureComboBuilderViewModel.state.whatsappNumber.digitsOnly)")
+                    .font(.subheadline)
+                    .foregroundStyle(palette.textSecondary)
+
+                Text("Usaremos estos datos solo para confirmar tu reserva o coordinar cambios.")
+                    .font(.caption)
+                    .foregroundStyle(palette.textTertiary)
+            }
+
+            Spacer()
+
+            Text("Editar")
+                .font(.caption.weight(.bold))
+                .foregroundStyle(palette.primary)
+        }
+        .appCardStyle(.adventure, emphasized: false)
+    }
+
+    private var improvedAdventureContactHelpCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top, spacing: 12) {
+                BrandIconBubble(
+                    theme: .adventure,
+                    systemImage: adventureContactCanCollapse ? "checkmark.circle.fill" : "person.crop.circle.badge.exclamationmark",
+                    size: 38
+                )
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(adventureContactHelpTitle)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(palette.textPrimary)
+
+                    Text(adventureContactHelpMessage)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Spacer()
+            }
+
+            if !adventureContactCanCollapse {
+                Button {
+                    showQuickContactProfileSheet = true
+                } label: {
+                    Label("Completar datos aquí", systemImage: "person.crop.circle.badge.plus")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(BrandSecondaryButtonStyle(theme: .adventure))
+            }
+        }
+        .appCardStyle(.adventure, emphasized: false)
+    }
+
+    private var adventureContactHelpTitle: String {
+        if clientNameIsMissing && adventureWhatsappIsMissing { return "Faltan nombre y WhatsApp" }
+        if clientNameIsMissing { return "Falta el nombre" }
+        if adventureWhatsappIsMissing { return "Falta WhatsApp" }
+        return "Contacto listo"
+    }
+
+    private var adventureContactHelpMessage: String {
+        if clientNameIsMissing && adventureWhatsappIsMissing {
+            return "Puedes completar ambos aquí mismo. Guardaremos esos datos en tu perfil para futuras reservas."
+        }
+
+        if clientNameIsMissing {
+            return "Necesitamos un nombre para identificar tu reserva."
+        }
+
+        if adventureWhatsappIsMissing {
+            return "WhatsApp nos ayuda a confirmar horarios, disponibilidad o cambios de la experiencia."
+        }
+
+        return "Usaremos estos datos para coordinar tu visita si hace falta."
     }
 
     private var summarySection: some View {

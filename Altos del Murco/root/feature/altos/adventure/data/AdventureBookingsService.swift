@@ -25,7 +25,7 @@ final class AdventureBookingsService: AdventureBookingsServiceable {
         auth: Auth = Auth.auth(),
         catalogService: AdventureCatalogServiceable,
         loyaltyRewardsService: LoyaltyRewardsServiceable
-    ) {
+) {
         self.db = db
         self.auth = auth
         self.catalogService = catalogService

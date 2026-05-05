@@ -21,6 +21,8 @@ struct CheckoutView: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.openURL) private var openURL
 
+    @State private var showQuickContactProfileSheet = false
+    @State private var isClientDetailsExpanded = true
     @State private var showMissingWhatsAppConfirmation = false
     @FocusState private var focusedContactField: RestaurantCheckoutContactField?
 
@@ -97,6 +99,29 @@ struct CheckoutView: View {
         } message: {
             Text("Puedes enviar la reserva sin número. Al finalizar abriremos WhatsApp para que nos escribas y podamos confirmar la comida programada.")
         }
+        .sheet(isPresented: $showQuickContactProfileSheet) {
+            QuickContactProfileSheet(
+                theme: .restaurant,
+                title: "Completa tus datos de contacto",
+                message: "Así podemos confirmar pedidos programados sin obligarte a ir a Perfil.",
+                initialName: cartManager.clientName.trimmed.isEmpty
+                    ? (authenticatedProfile?.fullName ?? "")
+                    : cartManager.clientName,
+                initialPhone: cartManager.whatsappNumber.digitsOnly.isEmpty
+                    ? (authenticatedProfile?.phoneNumber ?? "")
+                    : cartManager.whatsappNumber,
+                saveProfile: { name, phone in
+                    try await sessionViewModel.saveQuickContactProfile(
+                        fullName: name,
+                        phoneNumber: phone
+                    )
+                },
+                onSaved: { profile in
+                    cartManager.updateClientName(profile.fullName)
+                    cartManager.updateWhatsappNumber(profile.phoneNumber)
+                }
+            )
+        }
         .onAppear {
             syncProfileFieldsFromSession()
             cartManager.refreshDefaultScheduleIfNeeded()
@@ -123,38 +148,69 @@ struct CheckoutView: View {
 
     private var clientDetailsSection: some View {
         VStack(alignment: .leading, spacing: 16) {
-            BrandSectionHeader(
-                theme: .restaurant,
-                title: "Contacto",
-                subtitle: cartManager.isScheduledForLater
-                    ? "Para reservas de comida, solo el nombre es obligatorio. WhatsApp ayuda a confirmar."
-                    : "Para pedidos inmediatos, solo necesitamos nombre y mesa."
-            )
+            Button {
+                guard checkoutContactCanCollapse else {
+                    withAnimation(.spring(response: 0.35, dampingFraction: 0.86)) {
+                        isClientDetailsExpanded = true
+                    }
+                    return
+                }
 
-            VStack(spacing: 14) {
-                themedField(
-                    title: "Nombre",
-                    text: Binding(
-                        get: { cartManager.clientName },
-                        set: { cartManager.updateClientName($0) }
+                withAnimation(.spring(response: 0.35, dampingFraction: 0.86)) {
+                    isClientDetailsExpanded.toggle()
+                }
+            } label: {
+                HStack(alignment: .center, spacing: 12) {
+                    BrandSectionHeader(
+                        theme: .restaurant,
+                        title: "Contacto",
+                        subtitle: checkoutContactCanCollapse
+                            ? "Datos listos. Toca para revisar o editar."
+                            : "Completa nombre y WhatsApp sin salir del checkout."
                     )
-                )
-                .textInputAutocapitalization(.words)
-                .focused($focusedContactField, equals: .name)
 
-                themedField(
-                    title: cartManager.isScheduledForLater ? "Mesa o referencia" : "Número de mesa",
-                    text: Binding(
-                        get: { cartManager.tableNumber },
-                        set: { cartManager.updateTableNumber($0) }
-                    )
-                )
-                .keyboardType(.default)
-                .focused($focusedContactField, equals: .table)
+                    Spacer()
 
-                if cartManager.isScheduledForLater {
+                    if checkoutContactCanCollapse {
+                        Image(systemName: "chevron.down")
+                            .font(.footnote.weight(.bold))
+                            .foregroundStyle(palette.textSecondary)
+                            .rotationEffect(.degrees(isClientDetailsExpanded ? 180 : 0))
+                    }
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            if checkoutContactCanCollapse && !isClientDetailsExpanded {
+                compactCheckoutContactSummary
+                    .transition(.opacity.combined(with: .scale(scale: 0.98)))
+            } else {
+                VStack(spacing: 14) {
                     themedField(
-                        title: "WhatsApp opcional",
+                        title: "Nombre",
+                        text: Binding(
+                            get: { cartManager.clientName },
+                            set: { cartManager.updateClientName($0) }
+                        )
+                    )
+                    .textInputAutocapitalization(.words)
+                    .focused($focusedContactField, equals: .name)
+
+                    themedField(
+                        title: cartManager.isScheduledForLater ? "Mesa o referencia" : "Número de mesa",
+                        text: Binding(
+                            get: { cartManager.tableNumber },
+                            set: { cartManager.updateTableNumber($0) }
+                        )
+                    )
+                    .keyboardType(.default)
+                    .focused($focusedContactField, equals: .table)
+
+                    themedField(
+                        title: cartManager.isScheduledForLater
+                            ? "WhatsApp para confirmar"
+                            : "WhatsApp del perfil",
                         text: Binding(
                             get: { cartManager.whatsappNumber },
                             set: { cartManager.updateWhatsappNumber($0) }
@@ -162,12 +218,145 @@ struct CheckoutView: View {
                     )
                     .keyboardType(.phonePad)
                     .focused($focusedContactField, equals: .whatsapp)
-                }
 
-                contactHelpCard
+                    improvedContactHelpCard
+                }
+                .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
         .appCardStyle(.restaurant)
+        .onChange(of: checkoutContactCanCollapse) { _, canCollapse in
+            if !canCollapse {
+                isClientDetailsExpanded = true
+            }
+        }
+    }
+    
+    private var checkoutContactCanCollapse: Bool {
+        !cartManager.clientName.trimmed.isEmpty &&
+        !cartManager.whatsappNumber.digitsOnly.isEmpty &&
+        !tableIsMissingForImmediateOrder
+    }
+
+    private var profileNameIsMissing: Bool {
+        let profileName = authenticatedProfile?.fullName.trimmed ?? ""
+        return profileName.isEmpty || cartManager.clientName.trimmed.isEmpty
+    }
+
+    private var profileWhatsappIsMissing: Bool {
+        let profilePhone = authenticatedProfile?.phoneNumber.digitsOnly ?? ""
+        return profilePhone.isEmpty || cartManager.whatsappNumber.digitsOnly.isEmpty
+    }
+
+    private var shouldShowProfileUpdateAction: Bool {
+        profileNameIsMissing || profileWhatsappIsMissing
+    }
+
+    private var compactCheckoutContactSummary: some View {
+        HStack(alignment: .top, spacing: 12) {
+            BrandIconBubble(
+                theme: .restaurant,
+                systemImage: "checkmark.seal.fill",
+                size: 42
+            )
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text(cartManager.clientName.trimmed)
+                    .font(.headline)
+                    .foregroundStyle(palette.textPrimary)
+
+                Text("WhatsApp: \(cartManager.whatsappNumber.digitsOnly)")
+                    .font(.subheadline)
+                    .foregroundStyle(palette.textSecondary)
+
+                Text(
+                    cartManager.isScheduledForLater
+                        ? "Usaremos estos datos para confirmar tu comida programada."
+                        : "El pedido inmediato no guardará WhatsApp, pero tu perfil queda actualizado."
+                )
+                .font(.caption)
+                .foregroundStyle(palette.textTertiary)
+            }
+
+            Spacer()
+
+            Text("Editar")
+                .font(.caption.weight(.bold))
+                .foregroundStyle(palette.primary)
+        }
+        .appCardStyle(.restaurant, emphasized: false)
+    }
+
+    private var improvedContactHelpCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top, spacing: 12) {
+                BrandIconBubble(
+                    theme: .restaurant,
+                    systemImage: contactHelpIcon,
+                    size: 38
+                )
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(contactHelpTitle)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(palette.textPrimary)
+
+                    Text(contactHelpMessage)
+                        .font(.caption)
+                        .foregroundStyle(palette.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Spacer()
+            }
+
+            if shouldShowProfileUpdateAction {
+                Button {
+                    showQuickContactProfileSheet = true
+                } label: {
+                    Label("Completar datos aquí", systemImage: "person.crop.circle.badge.plus")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(BrandSecondaryButtonStyle(theme: .restaurant))
+            }
+        }
+        .appCardStyle(.restaurant, emphasized: false)
+    }
+
+    private var contactHelpIcon: String {
+        if clientNameIsMissing { return "exclamationmark.circle.fill" }
+        if tableIsMissingForImmediateOrder { return "tablecells.badge.ellipsis" }
+        if whatsappIsMissingForScheduledOrder { return "message.badge.circle.fill" }
+        return "checkmark.circle.fill"
+    }
+
+    private var contactHelpTitle: String {
+        if clientNameIsMissing { return "Falta el nombre" }
+        if tableIsMissingForImmediateOrder { return "Falta la mesa" }
+        if whatsappIsMissingForScheduledOrder { return "Falta WhatsApp" }
+        return cartManager.isScheduledForLater ? "Reserva lista para confirmar" : "Pedido listo"
+    }
+
+    private var contactHelpMessage: String {
+        if clientNameIsMissing && whatsappIsMissingForScheduledOrder {
+            return "Agrega tu nombre y WhatsApp aquí mismo. Guardaremos esos datos en tu perfil para futuras reservas."
+        }
+
+        if clientNameIsMissing {
+            return "Necesitamos un nombre para identificar el pedido."
+        }
+
+        if tableIsMissingForImmediateOrder {
+            return "En pedidos inmediatos necesitamos la mesa para llevar la comida correctamente."
+        }
+
+        if whatsappIsMissingForScheduledOrder {
+            return "Si programas comida, WhatsApp nos ayuda a confirmar disponibilidad y cambios sin molestarte después."
+        }
+
+        return cartManager.isScheduledForLater
+            ? "Usaremos estos datos para confirmar la comida programada."
+            : "El pedido se enviará como inmediato. WhatsApp queda solo en tu perfil."
     }
 
     private var contactHelpCard: some View {
@@ -192,38 +381,6 @@ struct CheckoutView: View {
             Spacer()
         }
         .appCardStyle(.restaurant, emphasized: false)
-    }
-
-    private var contactHelpIcon: String {
-        if clientNameIsMissing { return "exclamationmark.circle.fill" }
-        if tableIsMissingForImmediateOrder { return "tablecells.badge.ellipsis" }
-        if whatsappIsMissingForScheduledOrder { return "message.circle.fill" }
-        return cartManager.isScheduledForLater ? "calendar.badge.clock" : "checkmark.circle.fill"
-    }
-
-    private var contactHelpTitle: String {
-        if clientNameIsMissing { return "Falta el nombre" }
-        if tableIsMissingForImmediateOrder { return "Falta la mesa" }
-        if whatsappIsMissingForScheduledOrder { return "WhatsApp opcional" }
-        return cartManager.isScheduledForLater ? "Reserva lista para enviar" : "Pedido listo para enviar"
-    }
-
-    private var contactHelpMessage: String {
-        if clientNameIsMissing {
-            return "Necesitamos un nombre para identificar el pedido."
-        }
-
-        if tableIsMissingForImmediateOrder {
-            return "En pedidos inmediatos necesitamos la mesa para llevar la comida correctamente."
-        }
-
-        if whatsappIsMissingForScheduledOrder {
-            return "Puedes dejarlo vacío y escribirnos por WhatsApp después de enviar la reserva."
-        }
-
-        return cartManager.isScheduledForLater
-            ? "Usaremos estos datos para confirmar la comida programada."
-            : "El pedido se enviará como inmediato y no guardará WhatsApp."
     }
 
     private var scheduleSection: some View {

@@ -142,6 +142,63 @@ final class AppSessionViewModel: ObservableObject {
             }
         )
     }
+    
+    func saveQuickContactProfile(
+        fullName: String,
+        phoneNumber: String
+    ) async throws -> ClientProfile {
+        guard let currentProfile = authenticatedProfile else {
+            throw NSError(
+                domain: "AppSessionViewModel",
+                code: 1,
+                userInfo: [NSLocalizedDescriptionKey: "Debes iniciar sesión nuevamente para actualizar tus datos."]
+            )
+        }
+
+        let cleanName = fullName.trimmed
+        let cleanPhone = phoneNumber.digitsOnly
+
+        guard !cleanName.isEmpty else {
+            throw NSError(
+                domain: "AppSessionViewModel",
+                code: 2,
+                userInfo: [NSLocalizedDescriptionKey: "Agrega tu nombre para continuar."]
+            )
+        }
+
+        guard cleanPhone.count >= 8 else {
+            throw NSError(
+                domain: "AppSessionViewModel",
+                code: 3,
+                userInfo: [NSLocalizedDescriptionKey: "Agrega un WhatsApp válido para que podamos contactarte."]
+            )
+        }
+
+        let now = Date()
+
+        let updatedProfile = ClientProfile(
+            id: currentProfile.id,
+            email: currentProfile.email,
+            appleUserIdentifier: currentProfile.appleUserIdentifier,
+            fullName: cleanName,
+            phoneNumber: cleanPhone,
+            birthday: currentProfile.birthday,
+            address: currentProfile.address,
+            emergencyContactName: currentProfile.emergencyContactName,
+            emergencyContactPhone: currentProfile.emergencyContactPhone,
+            isProfileComplete: true,
+            createdAt: currentProfile.createdAt,
+            updatedAt: now,
+            profileCompletedAt: currentProfile.profileCompletedAt ?? now,
+            profileImageURL: currentProfile.profileImageURL,
+            profileImagePath: currentProfile.profileImagePath
+        )
+
+        try await completeClientProfileUseCase.execute(profile: updatedProfile)
+        state = .authenticated(updatedProfile)
+
+        return updatedProfile
+    }
 
     func makeProfileViewModelFactory(appPreferences: AppPreferences) -> (() -> ProfileViewModel)? {
         guard let profile = authenticatedProfile else { return nil }
