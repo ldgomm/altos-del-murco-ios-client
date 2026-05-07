@@ -12,5 +12,5 @@ protocol AdventureCatalogServiceable {
 
     func observeCatalog(
         onChange: @escaping (Result<AdventureCatalogSnapshot, Error>) -> Void
-    ) -> AdventureListenerToken
+    ) -> AdventureListenerTokenable
 }

@@ -20,7 +20,7 @@ struct ObserveAdventureCatalogUseCase {
 
     func execute(
         onChange: @escaping (Result<AdventureCatalogSnapshot, Error>) -> Void
-    ) -> AdventureListenerToken {
+    ) -> AdventureListenerTokenable {
         service.observeCatalog(onChange: onChange)
     }
 }

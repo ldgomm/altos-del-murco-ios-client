@@ -54,7 +54,7 @@ final class AdventureComboBuilderViewModel: ObservableObject {
     private let loyaltyRewardsService: LoyaltyRewardsServiceable
 
     private var hasLoadedCatalog = false
-    private var catalogListenerToken: AdventureListenerToken?
+    private var listenerTokenable: AdventureListenerTokenable?
     private var rewardsListenerToken: LoyaltyRewardsListenerToken?
 
     init(
@@ -92,17 +92,17 @@ final class AdventureComboBuilderViewModel: ObservableObject {
     }
 
     func onDisappear() {
-        catalogListenerToken?.remove()
-        catalogListenerToken = nil
+        listenerTokenable?.remove()
+        listenerTokenable = nil
 
         rewardsListenerToken?.remove()
         rewardsListenerToken = nil
     }
 
     private func startCatalogObservationIfNeeded() {
-        guard catalogListenerToken == nil else { return }
+        guard listenerTokenable == nil else { return }
 
-        catalogListenerToken = observeAdventureCatalogUseCase.execute { [weak self] result in
+        listenerTokenable = observeAdventureCatalogUseCase.execute { [weak self] result in
             Task { @MainActor in
                 guard let self else { return }
 

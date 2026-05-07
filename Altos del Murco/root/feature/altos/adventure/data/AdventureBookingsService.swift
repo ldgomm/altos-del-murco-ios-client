@@ -9,7 +9,7 @@ import Foundation
 import FirebaseAuth
 import FirebaseFirestore
 
-private final class EmptyAdventureListenerToken: AdventureListenerToken {
+private final class EmptyAdventureListenerToken: AdventureListenerTokenable {
     func remove() { }
 }
 
@@ -34,7 +34,7 @@ final class AdventureBookingsService: AdventureBookingsServiceable {
 
     func observeBookings(
         onChange: @escaping (Result<[AdventureBooking], Error>) -> Void
-    ) -> AdventureListenerToken {
+    ) -> AdventureListenerTokenable {
         guard let uid = auth.currentUser?.uid.trimmingCharacters(in: .whitespacesAndNewlines),
               !uid.isEmpty else {
             onChange(.success([]))
@@ -71,7 +71,7 @@ final class AdventureBookingsService: AdventureBookingsServiceable {
                 onChange(.success(bookings))
             }
 
-        return FirestoreAdventureListenerToken(registration: registration)
+        return AdventureListenerToken(registration: registration)
     }
 
     func fetchAvailability(

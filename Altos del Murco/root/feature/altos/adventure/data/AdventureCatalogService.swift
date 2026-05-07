@@ -8,7 +8,7 @@
 import Foundation
 import FirebaseFirestore
 
-private final class CompositeAdventureListenerToken: AdventureListenerToken {
+private final class CompositeAdventureListenerToken: AdventureListenerTokenable {
     private var registrations: [ListenerRegistration]
 
     init(registrations: [ListenerRegistration]) {
@@ -94,7 +94,7 @@ final class AdventureCatalogService: AdventureCatalogServiceable {
 
     func observeCatalog(
         onChange: @escaping (Result<AdventureCatalogSnapshot, Error>) -> Void
-    ) -> AdventureListenerToken {
+    ) -> AdventureListenerTokenable {
         let coordinator = AdventureCatalogObservationCoordinator(
             makeSnapshot: { [weak self] activitiesSnapshot, packagesSnapshot in
                 guard let self else {

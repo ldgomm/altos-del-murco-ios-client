@@ -139,7 +139,7 @@ final class AdventureBookingsViewModel: ObservableObject {
     private let observeBookingsUseCase: ObserveAdventureBookingsUseCase
     private let cancelBookingUseCase: CancelAdventureBookingUseCase
 
-    private var listenerToken: AdventureListenerToken?
+    private var listenerTokenable: AdventureListenerTokenable?
 
     init(
         observeBookingsUseCase: ObserveAdventureBookingsUseCase,
@@ -155,8 +155,8 @@ final class AdventureBookingsViewModel: ObservableObject {
     }
 
     func onDisappear() {
-        listenerToken?.remove()
-        listenerToken = nil
+        listenerTokenable?.remove()
+        listenerTokenable = nil
     }
 
     func setTimelineFilter(_ filter: AdventureReservationTimelineFilter) {
@@ -258,9 +258,9 @@ final class AdventureBookingsViewModel: ObservableObject {
         state.errorMessage = nil
         state.now = Date()
 
-        listenerToken?.remove()
+        listenerTokenable?.remove()
 
-        listenerToken = observeBookingsUseCase.execute() { [weak self] result in
+        listenerTokenable = observeBookingsUseCase.execute() { [weak self] result in
             Task { @MainActor in
                 guard let self else { return }
 

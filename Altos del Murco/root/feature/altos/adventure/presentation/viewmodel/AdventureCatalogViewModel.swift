@@ -20,7 +20,7 @@ final class AdventureCatalogViewModel: ObservableObject {
 
     private let fetchAdventureCatalogUseCase: FetchAdventureCatalogUseCase
     private let observeAdventureCatalogUseCase: ObserveAdventureCatalogUseCase
-    private var listenerToken: AdventureListenerToken?
+    private var listenerTokenable: AdventureListenerTokenable?
 
     init(service: AdventureCatalogServiceable) {
         self.fetchAdventureCatalogUseCase = FetchAdventureCatalogUseCase(service: service)
@@ -36,12 +36,12 @@ final class AdventureCatalogViewModel: ObservableObject {
     }
 
     func onAppear() {
-        guard listenerToken == nil else { return }
+        guard listenerTokenable == nil else { return }
 
         state.isLoading = true
         state.errorMessage = nil
 
-        listenerToken = observeAdventureCatalogUseCase.execute { [weak self] result in
+        listenerTokenable = observeAdventureCatalogUseCase.execute { [weak self] result in
             Task { @MainActor in
                 guard let self else { return }
 
@@ -59,8 +59,8 @@ final class AdventureCatalogViewModel: ObservableObject {
     }
 
     func onDisappear() {
-        listenerToken?.remove()
-        listenerToken = nil
+        listenerTokenable?.remove()
+        listenerTokenable = nil
     }
 
     func refresh() {

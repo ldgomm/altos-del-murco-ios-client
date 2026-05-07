@@ -8,11 +8,11 @@
 import Foundation
 import FirebaseFirestore
 
-protocol AdventureListenerToken {
+protocol AdventureListenerTokenable {
     func remove()
 }
 
-final class FirestoreAdventureListenerToken: AdventureListenerToken {
+final class AdventureListenerToken: AdventureListenerTokenable {
     private var registration: ListenerRegistration?
     
     init(registration: ListenerRegistration) {

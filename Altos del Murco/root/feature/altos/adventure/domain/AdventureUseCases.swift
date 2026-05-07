@@ -38,7 +38,7 @@ struct ObserveAdventureBookingsUseCase {
 
     func execute(
         onChange: @escaping (Result<[AdventureBooking], Error>) -> Void
-    ) -> AdventureListenerToken {
+    ) -> AdventureListenerTokenable {
         service.observeBookings(
             onChange: onChange
         )
