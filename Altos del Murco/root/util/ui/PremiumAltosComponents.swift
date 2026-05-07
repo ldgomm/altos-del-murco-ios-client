@@ -8,9 +8,17 @@ struct PremiumAltosCopy {
 }
 
 struct PremiumCard<Content: View>: View {
+    let theme: AppSectionTheme
+    let emphasized: Bool
     let content: Content
 
-    init(@ViewBuilder content: () -> Content) {
+    init(
+        theme: AppSectionTheme = .neutral,
+        emphasized: Bool = false,
+        @ViewBuilder content: () -> Content
+    ) {
+        self.theme = theme
+        self.emphasized = emphasized
         self.content = content()
     }
 
@@ -18,19 +26,11 @@ struct PremiumCard<Content: View>: View {
         VStack(alignment: .leading, spacing: 14) {
             content
         }
-        .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 26, style: .continuous)
-                .fill(.ultraThinMaterial)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 26, style: .continuous)
-                .stroke(Color.primary.opacity(0.08), lineWidth: 1)
-        )
-        .shadow(color: .black.opacity(0.06), radius: 16, x: 0, y: 8)
+        .appSeasonalCardStyle(theme, emphasized: emphasized)
     }
 }
+
 
 struct PremiumSectionHeader: View {
     let title: String

@@ -690,38 +690,20 @@ struct BrandScreenModifier: ViewModifier {
 struct BrandCardModifier: ViewModifier {
     let theme: AppSectionTheme
     var emphasized: Bool = false
-    
+
     @Environment(\.colorScheme) private var colorScheme
-    
+
     func body(content: Content) -> some View {
-        let palette = AppTheme.palette(for: theme, scheme: colorScheme)
-        
-        content
-            .padding(AppTheme.Metrics.cardPadding)
-            .background(
-                RoundedRectangle(cornerRadius: AppTheme.Radius.xLarge, style: .continuous)
-                    .fill(palette.cardGradient)
+        content.modifier(
+            SeasonalBrandCardModifier(
+                theme: theme,
+                emphasized: emphasized,
+                seasonalTheme: EcuadorSeasonalCalendar.activeTheme()
             )
-            .overlay(
-                RoundedRectangle(cornerRadius: AppTheme.Radius.xLarge, style: .continuous)
-                    .stroke(palette.stroke, lineWidth: 1)
-            )
-            .overlay(alignment: .topLeading) {
-                if emphasized {
-                    Capsule()
-                        .fill(palette.heroGradient)
-                        .frame(width: 62, height: 6)
-                        .padding(16)
-                }
-            }
-            .shadow(
-                color: palette.shadow.opacity(colorScheme == .dark ? 0.24 : 0.10),
-                radius: AppTheme.Metrics.shadowRadius,
-                x: 0,
-                y: AppTheme.Metrics.shadowY
-            )
+        )
     }
 }
+
 
 struct BrandTextFieldModifier: ViewModifier {
     let theme: AppSectionTheme
