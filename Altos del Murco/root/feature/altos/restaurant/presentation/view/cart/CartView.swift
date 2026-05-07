@@ -9,6 +9,7 @@ import SwiftUI
 
 struct CartView: View {
     @ObservedObject var viewModel: CheckoutViewModel
+    let onCheckout: () -> Void
 
     @EnvironmentObject private var cartManager: CartManager
     @State private var showClearCartAlert = false
@@ -127,7 +128,7 @@ struct CartView: View {
 
                         Spacer()
 
-                        NavigationLink(value: Route.checkout) {
+                        Button(action: onCheckout) {
                             Text("Finalizar compra")
                                 .font(.headline)
                                 .frame(minWidth: 140)
@@ -137,6 +138,7 @@ struct CartView: View {
                                 .foregroundStyle(Color.white)
                                 .clipShape(RoundedRectangle(cornerRadius: 16))
                         }
+                        .buttonStyle(.plain)
                     }
                     .padding(.horizontal)
                     .padding(.top, 10)

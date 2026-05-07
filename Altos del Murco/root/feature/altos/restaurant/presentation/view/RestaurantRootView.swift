@@ -80,7 +80,12 @@ struct RestaurantRootView: View {
                 systemImage: "cart.fill",
                 theme: .restaurant
             ) {
-                CartView(viewModel: checkoutViewModel)
+                CartView(
+                    viewModel: checkoutViewModel,
+                    onCheckout: {
+                        path.append(Route.checkout)
+                    }
+                )
             }
 
         case .checkout:

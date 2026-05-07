@@ -7,10 +7,6 @@
 
 import SwiftUI
 
-enum RestaurantMenuRoute: Hashable {
-    case menuDetail(MenuItem, String)
-}
-
 private struct DishGroup: Identifiable, Hashable {
     let id: String
     let title: String
@@ -225,24 +221,6 @@ struct MenuListView: View {
             syncIdentityAndRefreshRewards()
         }
         .toolbar { toolbarContent }
-        .navigationDestination(for: RestaurantMenuRoute.self) { route in
-            switch route {
-            case let .menuDetail(item, categoryTitle):
-                MenuItemDetailView(
-                    item: item,
-                    categoryTitle: categoryTitle,
-                    rewardPresentationProvider: { item, quantity in
-                        menuViewModel.rewardPresentation(for: item, quantity: quantity)
-                    },
-                    displayedPriceProvider: { item, quantity in
-                        menuViewModel.displayedPrice(for: item, quantity: quantity)
-                    },
-                    incrementalDiscountProvider: { item, quantity in
-                        menuViewModel.incrementalDiscount(for: item, quantity: quantity)
-                    }
-                )
-            }
-        }
     }
 
     private var heroSection: some View {
@@ -348,7 +326,7 @@ struct MenuListView: View {
 //                HStack(spacing: 14) {
 //                    ForEach(featuredItems.prefix(8)) { item in
 //                        Button {
-//                            path.append(RestaurantMenuRoute.menuDetail(item, categoryTitle(for: item.categoryId)))
+//                            path.append(Route.menuDetail(item, categoryTitle(for: item.categoryId)))
 //                        } label: {
 //                            PremiumDishHeroCard(item: item, reward: reward(for: item))
 //                        }
@@ -408,7 +386,7 @@ struct MenuListView: View {
                             categoryTitle: section.category.title,
                             rewardProvider: reward(for:),
                             onOpen: { item in
-                                path.append(RestaurantMenuRoute.menuDetail(item, section.category.title))
+                                path.append(Route.menuDetail(item, section.category.title))
                             }
                         )
                     }
@@ -439,7 +417,7 @@ struct MenuListView: View {
                 ) {
                     ForEach(filteredSearchItems) { item in
                         Button {
-                            path.append(RestaurantMenuRoute.menuDetail(item, categoryTitle(for: item.categoryId)))
+                            path.append(Route.menuDetail(item, categoryTitle(for: item.categoryId)))
                         } label: {
                             PremiumDishTile(item: item, reward: reward(for: item))
                         }
@@ -541,15 +519,8 @@ struct MenuListView: View {
                 Image(systemName: "list.bullet.clipboard.fill")
             }
 
-            NavigationLink {
-                ProtectedAccessRequiredView(
-                    title: "Inicia sesión para finalizar tu pedido",
-                    message: "Puedes explorar el menú libremente. Para enviar el pedido necesitamos tu cuenta.",
-                    systemImage: "cart.fill",
-                    theme: .restaurant
-                ) {
-                    CartView(viewModel: checkoutViewModel)
-                }
+            Button {
+                path.append(Route.cart)
             } label: {
                 ZStack(alignment: .topTrailing) {
                     Image(systemName: "cart.fill")
