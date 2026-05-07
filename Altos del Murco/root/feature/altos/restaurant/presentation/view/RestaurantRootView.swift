@@ -10,11 +10,21 @@ import SwiftUI
 struct RestaurantRootView: View {
     @ObservedObject var ordersViewModel: OrdersViewModel
     @ObservedObject var checkoutViewModel: CheckoutViewModel
-    @ObservedObject var adventureComboBuilderViewModel: AdventureComboBuilderViewModel
     @ObservedObject var menuViewModel: MenuViewModel
-    
+
     @State private var path = NavigationPath()
-    
+
+    init(
+        ordersViewModel: OrdersViewModel,
+        checkoutViewModel: CheckoutViewModel,
+        adventureComboBuilderViewModel: AdventureComboBuilderViewModel,
+        menuViewModel: MenuViewModel
+    ) {
+        self.ordersViewModel = ordersViewModel
+        self.checkoutViewModel = checkoutViewModel
+        self.menuViewModel = menuViewModel
+    }
+
     var body: some View {
         NavigationStack(path: $path) {
             Group {
@@ -25,7 +35,6 @@ struct RestaurantRootView: View {
                         sections: menuViewModel.state.sections,
                         checkoutViewModel: checkoutViewModel,
                         ordersViewModel: ordersViewModel,
-                        adventureComboBuilderViewModel: adventureComboBuilderViewModel,
                         menuViewModel: menuViewModel,
                         path: $path
                     )
@@ -34,10 +43,7 @@ struct RestaurantRootView: View {
         }
         .onAppear {
             menuViewModel.onAppear()
-
-            RemoteImageLoader.prefetch(
-                urls: menuViewModel.state.sections.menuImageURLs
-            )
+            RemoteImageLoader.prefetch(urls: menuViewModel.state.sections.menuImageURLs)
         }
         .onChange(of: menuViewModel.state.sections) { _, sections in
             RemoteImageLoader.prefetch(urls: sections.menuImageURLs)
