@@ -194,7 +194,7 @@ struct MenuListView: View {
                     if isSearching {
                         searchResultsSection
                     } else {
-                        if !featuredItems.isEmpty { featuredSection }
+//                        if !featuredItems.isEmpty { featuredSection }
                         categoryJourneySection(scrollProxy: proxy)
                         selectedCategoryContent
                     }
@@ -323,28 +323,28 @@ struct MenuListView: View {
     }
 
 
-    private var featuredSection: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            BrandSectionHeader(
-                theme: .restaurant,
-                title: "Primer antojo",
-                subtitle: "Platos destacados para decidir en segundos."
-            )
-
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 14) {
-                    ForEach(featuredItems.prefix(8)) { item in
-                        Button {
-                            path.append(RestaurantMenuRoute.menuDetail(item, categoryTitle(for: item.categoryId)))
-                        } label: {
-                            PremiumDishHeroCard(item: item, reward: reward(for: item))
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-            }
-        }
-    }
+//    private var featuredSection: some View {
+//        VStack(alignment: .leading, spacing: 14) {
+//            BrandSectionHeader(
+//                theme: .restaurant,
+//                title: "Primer antojo",
+//                subtitle: "Platos destacados para decidir en segundos."
+//            )
+//
+//            ScrollView(.horizontal, showsIndicators: false) {
+//                HStack(spacing: 14) {
+//                    ForEach(featuredItems.prefix(8)) { item in
+//                        Button {
+//                            path.append(RestaurantMenuRoute.menuDetail(item, categoryTitle(for: item.categoryId)))
+//                        } label: {
+//                            PremiumDishHeroCard(item: item, reward: reward(for: item))
+//                        }
+//                        .buttonStyle(.plain)
+//                    }
+//                }
+//            }
+//        }
+//    }
 
     private func categoryJourneySection(scrollProxy: ScrollViewProxy) -> some View {
         VStack(alignment: .leading, spacing: 14) {
