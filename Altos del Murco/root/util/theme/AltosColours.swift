@@ -704,7 +704,6 @@ struct BrandCardModifier: ViewModifier {
     }
 }
 
-
 struct BrandTextFieldModifier: ViewModifier {
     let theme: AppSectionTheme
     

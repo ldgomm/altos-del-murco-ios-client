@@ -239,12 +239,21 @@ struct HomeView: View {
 
     private var heroSection: some View {
         let firstName = profile?.fullName.split(separator: " ").first.map(String.init)
-        let title = firstName.map { "Hola, \($0)\nVive Los Altos" } ?? "Vive Los Altos"
+        let seasonalTheme = EcuadorSeasonalCalendar.activeTheme()
+
+        let title = seasonalTheme?.homeHeroTitle(firstName: firstName)
+            ?? firstName.map { "Hola, \($0)\nVive Los Altos" }
+            ?? "Vive Los Altos"
+
+        let subtitle = seasonalTheme?.homeHeroSubtitle
+            ?? "Pide comida, reserva experiencias, revisa combos y aprovecha premios desde una sola cuenta."
+
+        let badge = seasonalTheme?.shortPromise ?? "Restaurante + Experiencias"
 
         return PremiumHero(
             title: title,
-            subtitle: "Pide comida, reserva experiencias, revisa combos y aprovecha premios  desde una sola cuenta.",
-            badge: "Restaurante + Experiencias"
+            subtitle: subtitle,
+            badge: badge
         ) {
             Button {
                 selectedTab = .restaurant
@@ -267,6 +276,7 @@ struct HomeView: View {
             .controlSize(.large)
             .tint(.white)
         }
+        .seasonalCardOverlay(cornerRadius: 34)
     }
 
     private var quickMetricsSection: some View {
@@ -479,17 +489,7 @@ private struct HomeActionMetricTile: View {
         }
         .padding(14)
         .frame(maxWidth: .infinity, minHeight: 166, alignment: .leading)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .stroke(Color.primary.opacity(colorScheme == .dark ? 0.12 : 0.08), lineWidth: 1)
-        )
-        .shadow(
-            color: palette.shadow.opacity(colorScheme == .dark ? 0.16 : 0.07),
-            radius: 12,
-            x: 0,
-            y: 7
-        )
+        .appSeasonalCardStyle(.neutral, emphasized: false)
     }
 }
 
@@ -558,65 +558,114 @@ private struct HomeFeaturedMenuCard: View {
         AppTheme.palette(for: .restaurant, scheme: colorScheme)
     }
 
+    private var seasonalTheme: AltosSeasonalTheme? {
+        EcuadorSeasonalCalendar.activeTheme()
+    }
+
+    private var cornerRadius: CGFloat { 28 }
+
+    private var cardShape: RoundedRectangle {
+        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .top) {
-                PremiumIconBubble(systemImage: "fork.knife", selected: true)
-
-                Spacer()
-
-                Image(systemName: "arrow.up.right.circle.fill")
-                    .foregroundStyle(palette.primary)
-            }
-
-            VStack(alignment: .leading, spacing: 6) {
-                HStack(spacing: 6) {
-                    Text("Destacado")
-                        .font(.caption2.bold())
-                        .foregroundStyle(palette.primary)
-
-                    if let reward {
-                        Text(reward.badge)
-                            .font(.caption2.bold())
-                            .foregroundStyle(.green)
-                    }
-                }
-
-                Text(item.name)
-                    .font(.headline)
-                    .foregroundStyle(palette.textPrimary)
-                    .lineLimit(2)
-
-                Text(item.description)
-                    .font(.caption)
-                    .foregroundStyle(palette.textSecondary)
-                    .lineLimit(2)
-
-                priceLine
-
-                Text(item.canBeOrdered ? "Disponible hoy" : "No disponible hoy / reservas futuras")
-                    .font(.caption.bold())
-                    .foregroundStyle(item.canBeOrdered ? .green : .red)
-            }
-
-            HStack(spacing: 6) {
-                Text("Ver detalle")
-                    .font(.caption.bold())
-                Image(systemName: "chevron.right")
-                    .font(.caption2.bold())
-            }
-            .foregroundStyle(palette.primary)
+            header
+            content
+            footer
         }
         .padding(16)
-        .frame(width: 236)
-        .frame(minHeight: 232)
-        .frame(alignment: .leading)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 28, style: .continuous)
-                .stroke(Color.primary.opacity(0.08), lineWidth: 1)
+        .frame(width: 236, alignment: .leading)
+        .frame(minHeight: 232,)
+        .background {
+            ZStack {
+                cardShape.fill(palette.cardGradient)
+
+                if colorScheme == .dark {
+                    cardShape.fill(Color.black.opacity(0.10))
+                }
+
+                SeasonalAnimatedCardBackdrop(
+                    seasonalTheme: seasonalTheme,
+                    cornerRadius: cornerRadius,
+                    intensity: 1.08
+                )
+            }
+        }
+        .overlay {
+            cardShape.stroke(
+                palette.stroke.opacity(seasonalTheme == nil ? 0.95 : 0.70),
+                lineWidth: 1
+            )
+        }
+        .shadow(
+            color: palette.shadow.opacity(colorScheme == .dark ? 0.22 : 0.11),
+            radius: seasonalTheme == nil ? 14 : 18,
+            x: 0,
+            y: seasonalTheme == nil ? 8 : 10
         )
-        .shadow(color: palette.shadow.opacity(colorScheme == .dark ? 0.16 : 0.08), radius: 14, x: 0, y: 8)
+    }
+
+    private var header: some View {
+        HStack(alignment: .top, spacing: 10) {
+            PremiumIconBubble(systemImage: "fork.knife", selected: true)
+
+            Spacer(minLength: 8)
+
+            if let seasonalTheme {
+                SeasonalTinyBadge(theme: seasonalTheme, palette: palette)
+                    .frame(maxWidth: 118, alignment: .trailing)
+            } else {
+                Image(systemName: "arrow.up.right.circle.fill")
+                    .font(.title3)
+                    .foregroundStyle(palette.primary)
+            }
+        }
+    }
+
+    private var content: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            HStack(spacing: 6) {
+                Text(seasonalTheme?.restaurantHeroTitle ?? "Destacado")
+                    .font(.caption2.bold())
+                    .foregroundStyle(palette.primary)
+                    .lineLimit(1)
+
+                if let reward {
+                    Text(reward.badge)
+                        .font(.caption2.bold())
+                        .foregroundStyle(palette.success)
+                        .lineLimit(1)
+                }
+            }
+
+            Text(item.name)
+                .font(.headline)
+                .foregroundStyle(palette.textPrimary)
+                .lineLimit(2)
+
+            Text(item.description)
+                .font(.caption)
+                .foregroundStyle(palette.textSecondary)
+                .lineLimit(2)
+
+            priceLine
+
+            Text(item.canBeOrdered ? "Disponible hoy" : "No disponible hoy / reservas futuras")
+                .font(.caption.bold())
+                .foregroundStyle(item.canBeOrdered ? palette.success : palette.destructive)
+        }
+    }
+
+    private var footer: some View {
+        HStack(spacing: 6) {
+            Text(seasonalTheme == nil ? "Ver detalle" : "Ver detalle especial")
+                .font(.caption.bold())
+
+            Image(systemName: "chevron.right")
+                .font(.caption2.bold())
+        }
+        .foregroundStyle(palette.primary)
     }
 
     @ViewBuilder
@@ -631,7 +680,7 @@ private struct HomeFeaturedMenuCard: View {
 
             Text(item.finalPrice.priceText)
                 .font(.subheadline.bold())
-                .foregroundStyle(.green)
+                .foregroundStyle(palette.success)
         }
     }
 }
@@ -769,6 +818,16 @@ private struct HomePackageCard: View {
         AppTheme.palette(for: .adventure, scheme: colorScheme)
     }
 
+    private var seasonalTheme: AltosSeasonalTheme? {
+        EcuadorSeasonalCalendar.activeTheme()
+    }
+
+    private var cornerRadius: CGFloat { 28 }
+
+    private var cardShape: RoundedRectangle {
+        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+    }
+
     private var menuItemsById: [String: MenuItem] {
         Dictionary(
             uniqueKeysWithValues: menuSections
@@ -838,47 +897,40 @@ private struct HomePackageCard: View {
             }
 
             Divider()
+                .overlay(palette.stroke.opacity(0.8))
 
-            HStack(alignment: .firstTextBaseline) {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("Total estimado")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-
-                    if totalSavings > 0 {
-                        Text("Ahorras \(totalSavings.priceText)")
-                            .font(.caption2.weight(.semibold))
-                            .foregroundStyle(.green)
-                    }
-                }
-
-                Spacer(minLength: 12)
-
-                Text(finalTotal.priceText)
-                    .font(.title3.weight(.bold))
-                    .foregroundStyle(.primary)
-                    .monospacedDigit()
-            }
-
-            HStack(spacing: 6) {
-                Text("Ver detalle del combo")
-                    .font(.caption.bold())
-                Image(systemName: "chevron.right")
-                    .font(.caption2.bold())
-            }
-            .foregroundStyle(palette.primary)
+            totalSection
+            footer
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 26, style: .continuous)
-                .fill(.ultraThinMaterial)
+        .background {
+            ZStack {
+                cardShape.fill(palette.cardGradient)
+
+                if colorScheme == .dark {
+                    cardShape.fill(Color.black.opacity(0.08))
+                }
+
+                SeasonalAnimatedCardBackdrop(
+                    seasonalTheme: seasonalTheme,
+                    cornerRadius: cornerRadius,
+                    intensity: 1.0
+                )
+            }
+        }
+        .overlay {
+            cardShape.stroke(
+                palette.stroke.opacity(seasonalTheme == nil ? 0.95 : 0.72),
+                lineWidth: 1
+            )
+        }
+        .shadow(
+            color: palette.shadow.opacity(colorScheme == .dark ? 0.24 : 0.12),
+            radius: seasonalTheme == nil ? 16 : 20,
+            x: 0,
+            y: seasonalTheme == nil ? 8 : 10
         )
-        .overlay(
-            RoundedRectangle(cornerRadius: 26, style: .continuous)
-                .stroke(Color.primary.opacity(0.08), lineWidth: 1)
-        )
-        .shadow(color: palette.shadow.opacity(colorScheme == .dark ? 0.16 : 0.07), radius: 16, x: 0, y: 8)
     }
 
     private var header: some View {
@@ -889,16 +941,8 @@ private struct HomePackageCard: View {
             )
             .fixedSize()
 
-            VStack(alignment: .leading, spacing: 5) {
-                HStack(spacing: 8) {
-                    if let badge = package.badge, !badge.isEmpty {
-                        BrandBadge(theme: .adventure, title: badge, selected: true)
-                    }
-
-                    if comboDiscount > 0 {
-                        BrandBadge(theme: .adventure, title: "Oferta", selected: true)
-                    }
-                }
+            VStack(alignment: .leading, spacing: 6) {
+                badgeRow
 
                 Text(package.title)
                     .font(.headline)
@@ -919,10 +963,29 @@ private struct HomePackageCard: View {
         }
     }
 
+    private var badgeRow: some View {
+        HStack(spacing: 8) {
+            if let seasonalTheme {
+                SeasonalTinyBadge(theme: seasonalTheme, palette: palette)
+            }
+
+            if let badge = package.badge, !badge.isEmpty {
+                BrandBadge(theme: .adventure, title: badge, selected: true)
+            }
+
+            if comboDiscount > 0 {
+                BrandBadge(theme: .adventure, title: "Oferta", selected: true)
+            }
+        }
+    }
+
     private var packageBreakdown: some View {
         VStack(alignment: .leading, spacing: 9) {
             if !activitiesText.isEmpty {
-                HomeIconLine(systemImage: "figure.hiking", text: activitiesText)
+                HomeIconLine(
+                    systemImage: seasonalTheme?.badgeSystemImage ?? "figure.hiking",
+                    text: activitiesText
+                )
             }
 
             if let foodText {
@@ -931,14 +994,51 @@ private struct HomePackageCard: View {
 
             HStack(spacing: 10) {
                 HomeMiniPricePill(title: "Aventura", value: activitySubtotal.priceText)
+
                 if foodSubtotal > 0 {
                     HomeMiniPricePill(title: "Comida", value: foodSubtotal.priceText)
                 }
+
                 if comboDiscount > 0 {
                     HomeMiniPricePill(title: "Descuento", value: "-\(comboDiscount.priceText)")
                 }
             }
         }
+    }
+
+    private var totalSection: some View {
+        HStack(alignment: .firstTextBaseline) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(seasonalTheme?.shortPromise ?? "Total estimado")
+                    .font(.caption)
+                    .foregroundStyle(palette.textSecondary)
+                    .lineLimit(1)
+
+                if totalSavings > 0 {
+                    Text("Ahorras \(totalSavings.priceText)")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(palette.success)
+                }
+            }
+
+            Spacer(minLength: 12)
+
+            Text(finalTotal.priceText)
+                .font(.title3.weight(.bold))
+                .foregroundStyle(palette.textPrimary)
+                .monospacedDigit()
+        }
+    }
+
+    private var footer: some View {
+        HStack(spacing: 6) {
+            Text(seasonalTheme == nil ? "Ver detalle del combo" : "Ver combo de temporada")
+                .font(.caption.bold())
+
+            Image(systemName: "chevron.right")
+                .font(.caption2.bold())
+        }
+        .foregroundStyle(palette.primary)
     }
 }
 

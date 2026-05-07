@@ -246,10 +246,22 @@ struct MenuListView: View {
     }
 
     private var heroSection: some View {
-        ZStack(alignment: .bottomLeading) {
+        let seasonalTheme = EcuadorSeasonalCalendar.activeTheme()
+        let title = seasonalTheme?.restaurantHeroTitle ?? "Elige con antojo"
+        let subtitle = seasonalTheme?.restaurantHeroSubtitle
+            ?? "Busca rápido o avanza paso a paso: entrada, sopa, plato fuerte, extra, postre y bebida."
+        let heroIcon = seasonalTheme?.badgeSystemImage ?? "fork.knife.circle.fill"
+
+        return ZStack(alignment: .bottomLeading) {
             RoundedRectangle(cornerRadius: 30, style: .continuous)
                 .fill(palette.heroGradient)
                 .shadow(color: palette.shadow.opacity(0.22), radius: 24, y: 14)
+
+            SeasonalAnimatedCardBackdrop(
+                seasonalTheme: seasonalTheme,
+                cornerRadius: 30,
+                intensity: seasonalTheme == .valentinesDay ? 1.25 : 1.02
+            )
 
             Circle()
                 .fill(Color.white.opacity(0.12))
@@ -259,11 +271,11 @@ struct MenuListView: View {
             VStack(alignment: .leading, spacing: 16) {
                 HStack(alignment: .top) {
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("Elige con antojo")
-                            .font(.system(size: 31, weight: .black, design: .rounded))
+                        Text(title)
+                            .font(.system(size: 31, weight: .black))
                             .foregroundStyle(Color.white)
 
-                        Text("Busca rápido o avanza paso a paso: entrada, sopa, plato fuerte, extra, postre y bebida.")
+                        Text(subtitle)
                             .font(.subheadline.weight(.medium))
                             .foregroundStyle(Color.white.opacity(0.92))
                             .fixedSize(horizontal: false, vertical: true)
@@ -271,19 +283,20 @@ struct MenuListView: View {
 
                     Spacer(minLength: 12)
 
-                    Image(systemName: "fork.knife.circle.fill")
+                    Image(systemName: heroIcon)
                         .font(.system(size: 46, weight: .bold))
                         .foregroundStyle(Color.white.opacity(0.96))
                 }
 
                 HStack(spacing: 9) {
-                    HeroMicroBadge(title: "Sin pestaña Todo", systemImage: "square.grid.2x2")
+                    HeroMicroBadge(title: seasonalTheme?.shortPromise ?? "Sin pestaña Todo", systemImage: seasonalTheme?.badgeSystemImage ?? "square.grid.2x2")
                     HeroMicroBadge(title: "Buscar", systemImage: "magnifyingglass")
                     HeroMicroBadge(title: "Fotos", systemImage: "photo.fill")
                 }
             }
             .padding(22)
         }
+        .clipShape(RoundedRectangle(cornerRadius: 30, style: .continuous))
     }
 
     private var searchSection: some View {
@@ -946,6 +959,7 @@ private struct PremiumDishTile: View {
             RoundedRectangle(cornerRadius: 22, style: .continuous)
                 .stroke(palette.stroke, lineWidth: 1)
         )
+        .seasonalCardOverlay(cornerRadius: 22)
         .shadow(color: palette.shadow.opacity(colorScheme == .dark ? 0.16 : 0.07), radius: 10, y: 6)
         .opacity(item.canBeOrdered ? 1 : 0.58)
     }

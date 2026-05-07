@@ -13,6 +13,7 @@ enum AltosSeasonalTheme: String, CaseIterable, Identifiable, Hashable {
     case newYear
     case diablada
     case carnival
+    case valentinesDay
     case pawkarRaymi
     case holyWeek
     case mothersDay
@@ -38,6 +39,7 @@ enum AltosSeasonalTheme: String, CaseIterable, Identifiable, Hashable {
         case .newYear: return "Año Nuevo"
         case .diablada: return "Diablada"
         case .carnival: return "Carnaval"
+        case .valentinesDay: return "San Valentín"
         case .pawkarRaymi: return "Pawkar Raymi"
         case .holyWeek: return "Semana Santa"
         case .mothersDay: return "Día de Mamá"
@@ -63,6 +65,7 @@ enum AltosSeasonalTheme: String, CaseIterable, Identifiable, Hashable {
         case .newYear: return "sparkles"
         case .diablada: return "theatermasks.fill"
         case .carnival: return "party.popper.fill"
+        case .valentinesDay: return "heart.circle.fill"
         case .pawkarRaymi: return "leaf.fill"
         case .holyWeek: return "flame.fill"
         case .mothersDay: return "heart.fill"
@@ -91,6 +94,8 @@ enum AltosSeasonalTheme: String, CaseIterable, Identifiable, Hashable {
             return ["theatermasks.fill", "flame.fill", "sparkles", "circle.fill"]
         case .carnival:
             return ["party.popper.fill", "sparkles", "circle.fill", "star.fill", "paintpalette.fill"]
+        case .valentinesDay:
+            return ["heart.fill", "heart.circle.fill", "camera.macro", "gift.fill", "sparkles", "circle.fill", "seal.fill"]
         case .pawkarRaymi:
             return ["leaf.fill", "camera.macro", "sun.max.fill", "sparkles"]
         case .holyWeek:
@@ -130,7 +135,8 @@ enum AltosSeasonalTheme: String, CaseIterable, Identifiable, Hashable {
 
     var particleCount: Int {
         switch self {
-        case .christmas, .carnival, .newYearsEve: return 20
+        case .valentinesDay: return 30
+        case .christmas, .carnival, .newYearsEve: return 22
         case .halloween, .intiRaymi, .yamor: return 18
         default: return 14
         }
@@ -142,6 +148,8 @@ enum AltosSeasonalTheme: String, CaseIterable, Identifiable, Hashable {
             return .wind
         case .newYear, .newYearsEve, .carnival:
             return .burst
+        case .valentinesDay:
+            return .bloom
         case .intiRaymi, .pawkarRaymi, .yamor:
             return .orbit
         default:
@@ -163,6 +171,8 @@ enum AltosSeasonalTheme: String, CaseIterable, Identifiable, Hashable {
             return [c(0xE03131), c(0xF59F00), c(0x212529, alpha: 0.75), c(0xFFFFFF, alpha: 0.82)]
         case .carnival:
             return [c(0xF783AC), c(0x4DABF7), c(0x69DB7C), c(0xFFD43B), c(0xB197FC)]
+        case .valentinesDay:
+            return [c(0xFF4D8D), c(0xFFB3C7), c(0xF783AC), c(0xE64980), c(0xFFF0F6), c(0xC2255C)]
         case .pawkarRaymi:
             return [c(0x69DB7C), c(0xFFD43B), c(0xFF922B), c(0x38D9A9)]
         case .holyWeek:
@@ -204,6 +214,7 @@ enum SeasonalMotionStyle {
     case wind
     case orbit
     case burst
+    case bloom
 }
 
 // MARK: - Ecuador Date Resolver
@@ -256,7 +267,8 @@ enum EcuadorSeasonalCalendar {
            rangeAround(fathersDay, before: 2, after: 1) { return .fathersDay }
         if range(5, 22, 5, 24) { return .pichincha }
         if let mothersDay = nthWeekday(year: year, month: 5, weekday: 1, nth: 2, calendar: calendar),
-           rangeAround(mothersDay, before: 8, after: 1) { return .mothersDay }
+           rangeAround(mothersDay, before: 3, after: 1) { return .mothersDay }
+        if range(2, 10, 2, 14) { return .valentinesDay }
         if rangeAround(easter, before: 7, after: 0) { return .holyWeek }
         if rangeAround(easter, before: 50, after: -46) { return .carnival }
         if range(3, 18, 3, 23) { return .pawkarRaymi }
@@ -432,7 +444,7 @@ private struct SeasonalParticle {
         self.duration = Self.random(index * 43 + 7, min: theme.motionStyle == .burst ? 5.2 : 8.0, max: theme.motionStyle == .burst ? 9.0 : 15.0)
         self.drift = Self.random(index * 47 + 11, min: 16.0, max: 88.0)
         self.phase = Self.random(index * 53 + 13, min: 0.0, max: .pi * 2)
-        self.size = CGFloat(Self.random(index * 59 + 17, min: 10.0, max: theme.motionStyle == .burst ? 30.0 : 24.0))
+        self.size = CGFloat(Self.random(index * 59 + 17, min: 10.0, max: theme.motionStyle == .burst || theme.motionStyle == .bloom ? 30.0 : 24.0))
         self.opacity = Self.random(index * 61 + 19, min: 0.20, max: 0.52)
     }
 
@@ -472,6 +484,17 @@ private struct SeasonalParticle {
                 x: originX + cos(angle + phase * 0.15) * distance,
                 y: originY + sin(angle + phase * 0.15) * distance
             )
+
+        case .bloom:
+            let centerX = width * (0.18 + baseX * 0.64)
+            let centerY = height * (0.18 + baseY * 0.64)
+            let petalRadius = drift * (0.18 + progress * 0.58)
+            let angle = progress * .pi * 2 + phase
+            let floatY = sin(progress * .pi + phase) * 14 - progress * 18
+            return CGPoint(
+                x: centerX + cos(angle) * petalRadius + sin(progress * .pi * 4 + phase) * 8,
+                y: centerY + sin(angle) * petalRadius + floatY
+            )
         }
     }
 
@@ -481,6 +504,7 @@ private struct SeasonalParticle {
         case .burst: return progress * 280
         case .wind: return sin(progress * .pi * 2 + phase) * 24
         case .fall: return progress * 160 + phase * 8
+        case .bloom: return sin(progress * .pi * 2 + phase) * 32 + progress * 90
         }
     }
 
@@ -488,6 +512,8 @@ private struct SeasonalParticle {
         switch style {
         case .burst:
             return 0.72 + sin(progress * .pi) * 0.42
+        case .bloom:
+            return 0.74 + sin(progress * .pi) * 0.36
         default:
             return 0.86 + sin(progress * .pi * 2 + phase) * 0.14
         }
@@ -497,6 +523,86 @@ private struct SeasonalParticle {
         let raw = sin(Double(seed) * 12.9898) * 43758.5453
         let normalized = raw - floor(raw)
         return min + normalized * (max - min)
+    }
+}
+
+
+// MARK: - Seasonal Copy
+
+extension AltosSeasonalTheme {
+    var shortPromise: String {
+        switch self {
+        case .valentinesDay: return "Flores, corazones y planes para dos"
+        case .christmas: return "Navidad con sabor de casa"
+        case .newYearsEve: return "Despedimos el año en familia"
+        case .carnival: return "Carnaval, color y antojos serranos"
+        case .intiRaymi: return "Sol, cosecha y montaña"
+        case .mothersDay: return "Un detalle bonito para mamá"
+        case .fathersDay: return "Un plan para celebrar a papá"
+        case .difuntos: return "Tradición, colada morada y memoria"
+        default: return title
+        }
+    }
+
+    func homeHeroTitle(firstName: String?) -> String {
+        let greeting = firstName.map { "Hola, \($0)" } ?? "Bienvenido"
+        switch self {
+        case .valentinesDay: return "\(greeting)\nCelebra con amor en Los Altos"
+        case .christmas: return "\(greeting)\nNavidad sabe mejor en familia"
+        case .newYearsEve: return "\(greeting)\nCierra el año en Los Altos"
+        case .carnival: return "\(greeting)\nCarnaval con sabor y aventura"
+        case .intiRaymi: return "\(greeting)\nCelebra el sol y la montaña"
+        case .mothersDay: return "\(greeting)\nMamá merece Los Altos"
+        case .fathersDay: return "\(greeting)\nPapá merece una aventura"
+        case .difuntos: return "\(greeting)\nTradición que abraza"
+        default: return "\(greeting)\nVive Los Altos"
+        }
+    }
+
+    var homeHeroSubtitle: String {
+        switch self {
+        case .valentinesDay:
+            return "Arma un plan con comida, flores visuales, corazones y experiencias para compartir sin complicarte."
+        case .christmas:
+            return "Reserva comida, experiencias y combos para compartir con esa sensación de casa que no se improvisa."
+        case .newYearsEve:
+            return "Comida, aventura y últimos recuerdos del año con descuentos y reservas desde una sola cuenta."
+        case .carnival:
+            return "Color, música, comida serrana y experiencias para venir con amigos o familia."
+        case .intiRaymi:
+            return "Sol, cosecha, montaña y experiencias para reconectar con lo nuestro."
+        case .mothersDay:
+            return "Sorprende a mamá con comida rica, paisajes y un plan familiar completo."
+        case .fathersDay:
+            return "Comida fuerte, aventura y un día distinto para celebrar a papá."
+        case .difuntos:
+            return "Sabores tradicionales, familia y un momento tranquilo para recordar y compartir."
+        default:
+            return "Pide comida, reserva experiencias, revisa combos y aprovecha premios desde una sola cuenta."
+        }
+    }
+
+    var restaurantHeroTitle: String {
+        switch self {
+        case .valentinesDay: return "Sabores para enamorar"
+        case .christmas: return "Mesa navideña en Los Altos"
+        case .newYearsEve: return "Último antojo del año"
+        case .carnival: return "Antojos de Carnaval"
+        case .mothersDay: return "Mamá elige primero"
+        case .fathersDay: return "Para papá, bien servido"
+        case .difuntos: return "Tradición en la mesa"
+        default: return "Elige con antojo"
+        }
+    }
+
+    var restaurantHeroSubtitle: String {
+        switch self {
+        case .valentinesDay: return "Platos para compartir, detalles románticos y un ambiente cálido para venir en pareja o familia."
+        case .christmas: return "Sabores de casa, parrilladas, bebidas y platos para compartir sin correr en cocina."
+        case .newYearsEve: return "Cierra el año con algo rico antes de los monigotes, cábalas y abrazos."
+        case .difuntos: return "Una fecha para sabores tradicionales, calma y conversación en familia."
+        default: return "Busca rápido o avanza paso a paso: entrada, sopa, plato fuerte, extra, postre y bebida."
+        }
     }
 }
 
@@ -530,20 +636,6 @@ struct SeasonalBrandCardModifier: ViewModifier {
             .overlay {
                 shape.stroke(palette.stroke.opacity(seasonalTheme == nil ? 1 : 0.72), lineWidth: 1)
             }
-            .overlay(alignment: .topLeading) {
-                if emphasized {
-                    Capsule()
-                        .fill(palette.heroGradient)
-                        .frame(width: 62, height: 6)
-                        .padding(16)
-                }
-            }
-//            .overlay(alignment: .topTrailing) {
-//                if let seasonalTheme {
-//                    SeasonalTinyBadge(theme: seasonalTheme, palette: palette)
-//                        .padding(12)
-//                }
-//            }
             .shadow(
                 color: palette.shadow.opacity(colorScheme == .dark ? 0.26 : 0.12),
                 radius: AppTheme.Metrics.shadowRadius,

@@ -31,7 +31,6 @@ struct PremiumCard<Content: View>: View {
     }
 }
 
-
 struct PremiumSectionHeader: View {
     let title: String
     var subtitle: String? = nil
