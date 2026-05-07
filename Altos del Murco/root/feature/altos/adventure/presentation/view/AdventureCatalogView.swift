@@ -193,7 +193,7 @@ struct AdventureCatalogView: View {
 
                 VStack(alignment: .leading, spacing: 10) {
                     Text(title)
-                        .font(.system(size: 31, weight: .black, design: .rounded))
+                        .font(.system(size: 31, weight: .black))
                         .foregroundStyle(Color.white)
                         .lineLimit(3)
                         .minimumScaleFactor(0.86)
