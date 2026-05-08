@@ -10,7 +10,7 @@ import FirebaseFirestore
 
 final class FeaturedFeedRepository: FeaturedFeedRepositoriable {
     private let db: Firestore
-    private let collectionName = "featured_posts"
+    private let collectionName = FirestoreConstants.featured_posts
 
     init(db: Firestore = Firestore.firestore()) {
         self.db = db
