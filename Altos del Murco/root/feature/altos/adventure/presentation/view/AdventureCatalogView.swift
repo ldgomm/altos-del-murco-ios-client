@@ -76,73 +76,12 @@ struct AdventureCatalogView: View {
             .first
             .map(String.init)
 
-        let greeting = firstName.map { "Hola, \($0)" } ?? "Bienvenido"
+        let title = seasonalTheme?.adventureHeroTitle(firstName: firstName)
+            ?? firstName.map { "Hola, \($0)\nVive la aventura en Los Altos" }
+            ?? "Vive la aventura en Los Altos"
 
-        let title: String = {
-            guard let seasonalTheme else {
-                return "\(greeting)\nConstruye tu combo perfecto"
-            }
-
-            switch seasonalTheme {
-            case .valentinesDay:
-                return "\(greeting)\nUna aventura para compartir"
-            case .carnival:
-                return "\(greeting)\nCarnaval con adrenalina y sabor"
-            case .pawkarRaymi:
-                return "\(greeting)\nFlorece una nueva aventura"
-            case .holyWeek:
-                return "\(greeting)\nEscápate con calma a la montaña"
-            case .mothersDay:
-                return "\(greeting)\nMamá también merece aventura"
-            case .fathersDay:
-                return "\(greeting)\nPapá merece ruta y parrilla"
-            case .intiRaymi:
-                return "\(greeting)\nCelebra el sol en la montaña"
-            case .christmas:
-                return "\(greeting)\nNavidad con aventura familiar"
-            case .newYearsEve:
-                return "\(greeting)\nCierra el año con una gran ruta"
-            case .newYear:
-                return "\(greeting)\nEmpieza el año en Los Altos"
-            case .difuntos:
-                return "\(greeting)\nTradición, paisaje y familia"
-            case .quito:
-                return "\(greeting)\nFiestas, montaña y experiencias"
-            default:
-                return "\(greeting)\nVive una aventura especial"
-            }
-        }()
-
-        let subtitle: String = {
-            guard let seasonalTheme else {
-                return "Actividades, paquetes destacados, comida del restaurante, horarios y premios Murco Loyalty en una sola reserva."
-            }
-
-            switch seasonalTheme {
-            case .valentinesDay:
-                return "Elige una ruta, añade comida y arma un plan para dos con corazones, flores y montaña sin complicarte."
-            case .carnival:
-                return "Combina cuadrones, paintball, go karts o camping con comida para venir con amigos y disfrutar sin improvisar."
-            case .pawkarRaymi:
-                return "Aprovecha la temporada del florecimiento: aire libre, comida serrana y experiencias para reconectar."
-            case .holyWeek:
-                return "Reserva una escapada tranquila, con horarios claros, comida incluida y experiencias familiares."
-            case .mothersDay:
-                return "Prepara un día completo para mamá: paisaje, comida rica, fotos y una experiencia que se recuerde."
-            case .fathersDay:
-                return "Arma una salida con ruta, adrenalina y una buena comida para celebrar a papá como se merece."
-            case .intiRaymi:
-                return "Sol, cosecha y montaña: actividades al aire libre con el sabor de Los Altos al final del camino."
-            case .christmas:
-                return "Trae a la familia, reserva una experiencia y acompáñala con comida de casa en ambiente navideño."
-            case .newYearsEve:
-                return "Cierra el año con una ruta, fotos, comida y una reserva lista antes de los abrazos de medianoche."
-            case .difuntos:
-                return "Una salida tranquila para compartir, recordar y disfrutar sabores tradicionales cerca de la montaña."
-            default:
-                return "Elige paquetes, actividades individuales o crea tu propio combo con comida incluida y premios disponibles."
-            }
-        }()
+        let subtitle = seasonalTheme?.adventureHeroSubtitle
+            ?? "Pide comida, reserva experiencias, revisa combos y aprovecha premios desde una sola cuenta."
 
         let badgeTitle = seasonalTheme?.shortPromise ?? "Experiencias de montaña"
         let heroIcon = seasonalTheme?.badgeSystemImage ?? "mountain.2.fill"
