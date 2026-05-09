@@ -209,36 +209,36 @@ enum AltosSeasonalTheme: String, CaseIterable, Identifiable, Hashable {
     
     var particleCount: Int {
         switch self {
-        case .newYear: return 8
-        case .diablada: return 7
-        case .reyes: return 6
-        case .carnival: return 10
-        case .valentinesDay: return 10
-        case .flowersFruits: return 10
-        case .pawkarRaymi: return 7
-        case .easterWeek: return 6
-        case .kasama: return 7
-        case .chirimoya: return 6
-        case .mothersDay: return 9
-        case .pichincha: return 6
-        case .corpusChristi: return 6
-        case .fathersDay: return 7
-        case .intiRaymi: return 8
-        case .sanPedro: return 7
-        case .chagrasMachachi: return 7
-        case .guayaquilJuly: return 7
-        case .augustIndependence: return 7
-        case .virgenDelCisne: return 6
-        case .yamor: return 7
-        case .guayaquilOctober: return 7
-        case .rodeoMontuvio: return 7
-        case .halloween: return 7
-        case .difuntos: return 6
-        case .cuencaIndependence: return 6
-        case .mamaNegra: return 8
-        case .quito: return 7
-        case .christmas: return 9
-        case .newYearsEve: return 10
+        case .newYear: return 3
+        case .diablada: return 3
+        case .reyes: return 3
+        case .carnival: return 3
+        case .valentinesDay: return 3
+        case .flowersFruits: return 3
+        case .pawkarRaymi: return 3
+        case .easterWeek: return 3
+        case .kasama: return 3
+        case .chirimoya: return 3
+        case .mothersDay: return 3
+        case .pichincha: return 3
+        case .corpusChristi: return 3
+        case .fathersDay: return 3
+        case .intiRaymi: return 3
+        case .sanPedro: return 3
+        case .chagrasMachachi: return 3
+        case .guayaquilJuly: return 3
+        case .augustIndependence: return 3
+        case .virgenDelCisne: return 3
+        case .yamor: return 3
+        case .guayaquilOctober: return 3
+        case .rodeoMontuvio: return 3
+        case .halloween: return 3
+        case .difuntos: return 3
+        case .cuencaIndependence:  return 3
+        case .mamaNegra: return 3
+        case .quito: return 3
+        case .christmas: return 3
+        case .newYearsEve: return 3
         }
     }
     
