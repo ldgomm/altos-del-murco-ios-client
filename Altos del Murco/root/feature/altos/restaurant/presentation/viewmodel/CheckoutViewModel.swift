@@ -69,6 +69,14 @@ final class CheckoutViewModel: ObservableObject {
         }
     }
 
+    func refreshRewardsForCurrentUser() {
+        startWalletObservation()
+
+        Task { @MainActor in
+            await refreshRewardPreview()
+        }
+    }
+
     func refreshRewardPreviewIfPossible() async {
         await refreshRewardPreview()
     }
@@ -227,6 +235,7 @@ final class CheckoutViewModel: ObservableObject {
         walletListenerToken = nil
 
         state.isLoadingRewards = true
+        state.errorMessage = nil
 
         walletListenerToken = loyaltyRewardsService.observeWalletSnapshot() { [weak self] result in
             Task { @MainActor in
@@ -322,5 +331,4 @@ final class CheckoutViewModel: ObservableObject {
     private func roundMoney(_ value: Double) -> Double {
         (value * 100).rounded() / 100
     }
-}
-
+} 

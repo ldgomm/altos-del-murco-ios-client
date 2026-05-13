@@ -7,6 +7,7 @@
 
 import Combine
 import AuthenticationServices
+import FirebaseAuth
 
 @MainActor
 final class AppSessionViewModel: ObservableObject {
@@ -59,13 +60,22 @@ final class AppSessionViewModel: ObservableObject {
         }
     }
 
+    var currentAuthUserId: String? {
+        let value = Auth.auth().currentUser?.uid.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return value.isEmpty ? nil : value
+    }
+
+    var authIdentityKey: String {
+        currentAuthUserId ?? "signedOut"
+    }
+
     var isAuthenticated: Bool {
-        authenticatedProfile != nil
+        currentAuthUserId != nil
     }
 
     var authenticatedProfile: ClientProfile? {
         guard case .authenticated(let profile) = state else { return nil }
-        return profile
+        return profile 
     }
 
     func bootstrap() async {
@@ -307,7 +317,7 @@ final class AppSessionViewModel: ObservableObject {
     }
 
     private func verifySessionStillValid() async {
-        guard case .authenticated = state else { return }
+        guard isAuthenticated else { return }
 
         do {
             try await verifyCurrentUserSessionUseCase.execute()

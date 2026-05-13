@@ -61,6 +61,10 @@ final class MenuViewModel: ObservableObject {
         }
     }
 
+    func refreshRewardsForCurrentUser() {
+        startWalletObservation()
+    }
+
     func onDisappear() {
         listenerToken?.remove()
         listenerToken = nil
@@ -71,6 +75,9 @@ final class MenuViewModel: ObservableObject {
     private func startWalletObservation() {
         walletListenerToken?.remove()
         walletListenerToken = nil
+
+        state.isLoadingRewards = true
+        state.errorMessage = nil
 
         walletListenerToken = loyaltyRewardsService.observeWalletSnapshot() { [weak self] result in
             Task { @MainActor in

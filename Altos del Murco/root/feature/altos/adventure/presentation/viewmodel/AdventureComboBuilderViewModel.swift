@@ -99,6 +99,14 @@ final class AdventureComboBuilderViewModel: ObservableObject {
         rewardsListenerToken = nil
     }
 
+    func refreshRewardsForCurrentUser() {
+        startRewardsObservation()
+
+        Task { @MainActor in
+            await refreshRewardPreview()
+        }
+    }
+
     private func startCatalogObservationIfNeeded() {
         guard listenerTokenable == nil else { return }
 
@@ -124,6 +132,7 @@ final class AdventureComboBuilderViewModel: ObservableObject {
         rewardsListenerToken = nil
 
         state.isLoadingRewards = true
+        state.errorMessage = nil
 
         rewardsListenerToken = loyaltyRewardsService.observeWalletSnapshot(
         ) { [weak self] result in
@@ -131,7 +140,7 @@ final class AdventureComboBuilderViewModel: ObservableObject {
                 guard let self else { return }
 
                 switch result {
-                case .success(let wallet):
+                case .success:
                     await self.refreshRewardPreview()
                 case .failure(let error):
                     self.state.isLoadingRewards = false
@@ -1334,3 +1343,4 @@ final class AdventureComboBuilderViewModel: ObservableObject {
         (value * 100).rounded() / 100
     }
 }
+ 
