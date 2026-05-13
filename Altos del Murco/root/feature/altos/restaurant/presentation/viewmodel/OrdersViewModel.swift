@@ -36,8 +36,8 @@ final class OrdersViewModel: ObservableObject {
     }
 
     func cancel(_ order: Order, reason: String? = nil) {
-        guard order.status == .pending else {
-            state.errorMessage = "Solo puedes cancelar pedidos pendientes. Si ya fue confirmado, escríbenos por WhatsApp."
+        guard order.canClientCancel else {
+            state.errorMessage = order.clientCancellationBlockedMessage
             return
         }
 
@@ -86,3 +86,4 @@ final class OrdersViewModel: ObservableObject {
         observeTask?.cancel()
     }
 }
+ 

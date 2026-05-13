@@ -17,6 +17,7 @@ enum ClientOrdersServiceError: LocalizedError {
     case menuItemUnavailable(String)
     case insufficientStock(String)
     case cancelNotAllowed
+    case deliveredOrderMustBePaid
 
     var errorDescription: String? {
         switch self {
@@ -34,6 +35,8 @@ enum ClientOrdersServiceError: LocalizedError {
             return "No hay suficiente stock para \(name)."
         case .cancelNotAllowed:
             return "Solo puedes cancelar pedidos pendientes. Si ya fue confirmado, escríbenos por WhatsApp."
+        case .deliveredOrderMustBePaid:
+            return "Este pedido ya tiene platos servidos. No se puede cancelar desde la app; debe cobrarse lo servido."
         }
     }
 }
@@ -136,12 +139,16 @@ final class OrdersService: OrdersServiceable {
                     throw ClientOrdersServiceError.forbidden
                 }
 
-                guard order.status == .pending else {
+                guard !order.hasDeliveredItems else {
+                    throw ClientOrdersServiceError.deliveredOrderMustBePaid
+                }
+
+                guard order.canClientCancel else {
                     throw ClientOrdersServiceError.cancelNotAllowed
                 }
 
-                let updated = order.canceling(reason: reason, now: Date())
-                shouldReleaseRewards = updated.hasLoyaltyRewards
+                let updated = order.cancelingFully(reason: reason, now: Date())
+                shouldReleaseRewards = order.hasLoyaltyRewards
 
                 try Self.setOrder(
                     OrderDto(domain: updated),

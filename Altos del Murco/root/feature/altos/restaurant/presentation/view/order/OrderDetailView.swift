@@ -195,7 +195,7 @@ struct OrderDetailView: View {
             if effectiveStatus == .readyForPayment {
                 statusNoticeCard(
                     title: "Pedido servido",
-                    message: "Tu pedido ya fue servido y está listo para pagar.",
+                    message: readyForPaymentMessage,
                     systemImage: "checkmark.seal.fill",
                     tint: palette.success
                 )
@@ -233,6 +233,14 @@ struct OrderDetailView: View {
             }
         }
         .appCardStyle(.restaurant, emphasized: false)
+    }
+
+    private var readyForPaymentMessage: String {
+        if !order.canceledItems.isEmpty && order.hasDeliveredItems {
+            return "Se anuló lo no servido. Los platos servidos quedan listos para pagar."
+        }
+
+        return "Tu pedido ya fue servido y está listo para pagar."
     }
 
     private var paidMessage: String {

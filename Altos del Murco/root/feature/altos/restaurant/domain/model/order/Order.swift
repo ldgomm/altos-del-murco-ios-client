@@ -138,6 +138,39 @@ struct Order: Identifiable, Hashable, Codable {
         activeItems.filter { $0.status == .delivered }
     }
 
+    var billableDeliveredItems: [OrderItem] {
+        items.filter { $0.status == .delivered }
+    }
+
+    var hasDeliveredItems: Bool {
+        !billableDeliveredItems.isEmpty
+    }
+
+    /// Client-side cancellation must stay stricter than admin cancellation.
+    /// A client may cancel only before the restaurant confirms the order and before anything is delivered.
+    var canClientCancel: Bool {
+        status == .pending && !hasDeliveredItems
+    }
+
+    var clientCancellationBlockedMessage: String {
+        if hasDeliveredItems {
+            return "Este pedido ya tiene platos servidos y debe cobrarse. Si necesitas ayuda, escríbenos por WhatsApp."
+        }
+
+        switch status {
+        case .pending:
+            return "Este pedido aún puede cancelarse."
+        case .confirmed, .preparing, .readyForPayment, .paid:
+            return "Solo puedes cancelar pedidos pendientes. Si ya fue confirmado, escríbenos por WhatsApp."
+        case .canceled:
+            return "Este pedido ya fue cancelado."
+        }
+    }
+
+    var billableDeliveredSubtotal: Double {
+        billableDeliveredItems.reduce(0) { $0 + $1.totalPrice }.roundedMoney
+    }
+
     var pendingOrPreparingItems: [OrderItem] {
         activeItems.filter { item in
             item.status == .pending || item.status == .preparing
@@ -270,7 +303,17 @@ struct Order: Identifiable, Hashable, Codable {
         )
     }
 
+    /// Safe cancellation entry point.
+    /// If no food was delivered, the whole order is canceled.
+    /// If at least one plate was delivered, delivered items remain billable, unserved items are canceled,
+    /// totals are recalculated from delivered items only, and the order moves to readyForPayment.
     func canceling(reason: String? = nil, now: Date = Date()) -> Order {
+        hasDeliveredItems
+            ? cancelingUnservedItemsForPayment(reason: reason, now: now)
+            : cancelingFully(reason: reason, now: now)
+    }
+
+    func cancelingFully(reason: String? = nil, now: Date = Date()) -> Order {
         let canceledItems = items.map { item in
             item.status == .canceled
                 ? item
@@ -281,6 +324,34 @@ struct Order: Identifiable, Hashable, Codable {
             updatedAt: now,
             items: canceledItems,
             status: .canceled
+        )
+    }
+
+    func cancelingUnservedItemsForPayment(reason: String? = nil, now: Date = Date()) -> Order {
+        let updatedItems = items.map { item in
+            switch item.status {
+            case .delivered, .canceled:
+                return item
+            case .pending, .preparing, .readyForDelivery:
+                return item.updatingStatus(.canceled, now: now, reason: reason)
+            }
+        }
+
+        let deliveredSubtotal = updatedItems
+            .filter { $0.status == .delivered }
+            .reduce(0) { $0 + $1.totalPrice }
+            .roundedMoney
+
+        return replacing(
+            updatedAt: now,
+            items: updatedItems,
+            subtotal: deliveredSubtotal,
+            loyaltyDiscountAmount: 0,
+            appliedRewards: [],
+            totalAmount: deliveredSubtotal,
+            status: .readyForPayment,
+            revision: revision + 1,
+            readyForPaymentAt: readyForPaymentAt ?? now
         )
     }
 
@@ -456,3 +527,4 @@ private extension Double {
         (self * 100).rounded() / 100
     }
 }
+ 

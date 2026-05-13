@@ -957,7 +957,6 @@ enum AdventurePlanner {
     }
 }
 
-
 extension String {
     var nilIfBlank: String? {
         let value = trimmingCharacters(in: .whitespacesAndNewlines)
