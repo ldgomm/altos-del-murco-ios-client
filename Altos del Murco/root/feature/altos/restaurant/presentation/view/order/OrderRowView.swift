@@ -8,10 +8,50 @@
 import SwiftUI
 
 struct OrderRowView: View {
+    let order: Order
+
     @Environment(\.colorScheme) private var colorScheme
 
     private var palette: ThemePalette {
         AppTheme.palette(for: .restaurant, scheme: colorScheme)
+    }
+
+    private var effectiveStatus: OrderStatus {
+        order.recalculatedStatus()
+    }
+
+    private var activeItemsCount: Int {
+        max(1, order.activeItems.count)
+    }
+
+    private var deliveredItemsCount: Int {
+        order.deliveredItems.count
+    }
+
+    private var progressValue: Double {
+        guard !order.activeItems.isEmpty else { return 0 }
+        return Double(deliveredItemsCount) / Double(activeItemsCount)
+    }
+
+    private var progressText: String {
+        switch effectiveStatus {
+        case .pending:
+            return "Pedido enviado"
+        case .confirmed:
+            return "Confirmado, esperando cocina"
+        case .preparing:
+            let readyCount = order.readyForDeliveryItems.count
+            if readyCount > 0 {
+                return "\(readyCount) listo(s) • \(deliveredItemsCount)/\(activeItemsCount) servidos"
+            }
+            return "\(deliveredItemsCount)/\(activeItemsCount) servidos"
+        case .readyForPayment:
+            return "Pedido servido, listo para pagar"
+        case .paid:
+            return "Pagado"
+        case .canceled:
+            return "Cancelado"
+        }
     }
 
     private var progressColor: Color {
@@ -22,21 +62,13 @@ struct OrderRowView: View {
             return palette.secondary
         case .preparing:
             return palette.accent
-        case .completed:
+        case .readyForPayment:
+            return palette.primary
+        case .paid:
             return palette.success
         case .canceled:
             return palette.destructive
         }
-    }
-
-    let order: Order
-
-    private var effectiveStatus: OrderStatus {
-        order.recalculatedStatus()
-    }
-
-    private var progressText: String {
-        "\(order.preparedItemsCount)/\(order.totalItems) productos"
     }
 
     var body: some View {
@@ -48,8 +80,11 @@ struct OrderRowView: View {
                         .foregroundStyle(palette.textPrimary)
 
                     HStack(spacing: 8) {
-                        Label("Mesa \(order.tableNumber)", systemImage: "tablecells")
-                        Label(order.isScheduledForLater ? order.scheduledDateText : order.createdAt.relativeTimeString, systemImage: order.isScheduledForLater ? "calendar.badge.clock" : "clock")
+                        Label("Mesa \(order.tableNumber.isEmpty ? "—" : order.tableNumber)", systemImage: "tablecells")
+                        Label(
+                            order.isScheduledForLater ? order.scheduledDateText : order.createdAt.relativeTimeString,
+                            systemImage: order.isScheduledForLater ? "calendar.badge.clock" : "clock"
+                        )
                     }
                     .font(.caption)
                     .foregroundStyle(palette.textSecondary)
@@ -100,6 +135,10 @@ struct OrderRowView: View {
                     .tint(progressColor)
             }
 
+            if !order.readyForDeliveryItems.isEmpty {
+                readyItemsBanner
+            }
+
             if order.loyaltyDiscountAmount > 0 || !order.appliedRewards.isEmpty {
                 Divider().overlay(palette.stroke)
 
@@ -128,8 +167,42 @@ struct OrderRowView: View {
         .appCardStyle(.restaurant, emphasized: false)
     }
 
-    private var progressValue: Double {
-        guard order.totalItems > 0 else { return 0 }
-        return Double(order.preparedItemsCount) / Double(order.totalItems)
+    private var readyItemsBanner: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label("Listo para servir", systemImage: "bell.fill")
+                .font(.caption.weight(.black))
+                .foregroundStyle(palette.primary)
+
+            ForEach(order.readyForDeliveryItems.prefix(3)) { item in
+                HStack(alignment: .top, spacing: 8) {
+                    Text(item.displayQuantityText)
+                        .font(.caption.weight(.black))
+                        .foregroundStyle(palette.primary)
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(item.name)
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(palette.textPrimary)
+
+                        if let notes = item.notes {
+                            Text(notes)
+                                .font(.caption2)
+                                .foregroundStyle(palette.textSecondary)
+                        }
+                    }
+
+                    Spacer(minLength: 0)
+                }
+            }
+        }
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(palette.primary.opacity(colorScheme == .dark ? 0.16 : 0.10))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(palette.primary.opacity(0.24), lineWidth: 1)
+        )
     }
 }

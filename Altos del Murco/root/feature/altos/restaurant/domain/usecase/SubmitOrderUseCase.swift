@@ -9,7 +9,7 @@ import Foundation
 
 struct SubmitOrderUseCase {
     let service: OrdersServiceable
-    
+
     func execute(order: Order) async throws {
         try await service.submit(order: order)
     }

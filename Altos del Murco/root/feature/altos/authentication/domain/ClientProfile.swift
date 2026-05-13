@@ -63,10 +63,3 @@ extension ClientProfile {
         )
     }
 }
-
-private extension String {
-    var nilIfBlank: String? {
-        let value = trimmed
-        return value.isEmpty ? nil : value
-    }
-}

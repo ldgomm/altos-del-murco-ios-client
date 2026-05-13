@@ -145,25 +145,27 @@ extension OrderDraft {
             scheduledAt: resolvedScheduledAt
         )
 
-        let orderItems = items.map { item in
-            OrderItem(
+        let orderItems = items.flatMap { item in
+            OrderItem.normalizedUnits(
+                sourceCartItemId: item.id.uuidString,
                 menuItemId: item.menuItem.id,
                 name: item.menuItem.name,
+                itemDescription: item.menuItem.description,
                 unitPrice: item.unitPrice,
                 quantity: item.quantity,
-                notes: item.notes
+                notes: item.notes,
+                createdAt: now
             )
         }
 
         let cleanInputUserId = userId.trimmingCharacters(in: .whitespacesAndNewlines)
-        let resolvedUserId = cleanInputUserId
         let cleanClientName = clientName.trimmingCharacters(in: .whitespacesAndNewlines)
         let cleanTable = tableNumber.trimmingCharacters(in: .whitespacesAndNewlines)
         let cleanWhatsApp = whatsappNumber.trimmingCharacters(in: .whitespacesAndNewlines)
 
         return Order(
             id: orderId,
-            userId: resolvedUserId,
+            userId: cleanInputUserId,
             clientName: cleanClientName,
             tableNumber: cleanTable.isEmpty && resolvedServiceMode == .scheduled ? "Por asignar" : cleanTable,
             whatsappNumber: resolvedServiceMode == .scheduled ? cleanWhatsApp : "",
@@ -179,7 +181,12 @@ extension OrderDraft {
             totalAmount: totalAmount,
             status: status,
             revision: revision ?? 0,
-            lastConfirmedRevision: lastConfirmedRevision
+            lastConfirmedRevision: lastConfirmedRevision,
+            readyForPaymentAt: nil,
+            paidAt: nil,
+            paymentMethod: nil,
+            paymentReference: nil,
+            paidByAdminId: nil
         )
     }
 }

@@ -16,7 +16,7 @@ struct AppliedRewardDto: Codable {
     let note: String
     let affectedMenuItemIds: [String]
     let affectedActivityIds: [String]
-    
+
     init(domain: AppliedReward) {
         self.id = domain.id
         self.templateId = domain.templateId
@@ -26,7 +26,7 @@ struct AppliedRewardDto: Codable {
         self.affectedMenuItemIds = domain.affectedMenuItemIds
         self.affectedActivityIds = domain.affectedActivityIds
     }
-    
+
     func toDomain() -> AppliedReward {
         AppliedReward(
             id: id,
@@ -47,20 +47,25 @@ struct OrderDto: Codable {
     let tableNumber: String
     let whatsappNumber: String?
     let createdAt: Timestamp
-    let updatedAt: Timestamp?
-    let scheduledAt: Timestamp?
-    let scheduledDayKey: String?
-    let serviceMode: String?
+    let updatedAt: Timestamp
+    let scheduledAt: Timestamp
+    let scheduledDayKey: String
+    let serviceMode: String
     let items: [OrderItemDto]
     let subtotal: Double
-    let loyaltyDiscountAmount: Double?
-    let appliedRewards: [AppliedRewardDto]?
+    let loyaltyDiscountAmount: Double
+    let appliedRewards: [AppliedRewardDto]
     let totalAmount: Double
-    let status: String?
-    let revision: Int?
+    let status: String
+    let revision: Int
     let lastConfirmedRevision: Int?
-    
-    init(from domain: Order) {
+    let readyForPaymentAt: Timestamp?
+    let paidAt: Timestamp?
+    let paymentMethod: String?
+    let paymentReference: String?
+    let paidByAdminId: String?
+
+    init(domain: Order) {
         self.id = domain.id
         self.userId = domain.userId
         self.clientName = domain.clientName
@@ -73,7 +78,7 @@ struct OrderDto: Codable {
         self.scheduledAt = Timestamp(date: domain.scheduledAt)
         self.scheduledDayKey = domain.scheduledDayKey
         self.serviceMode = domain.serviceMode.rawValue
-        self.items = domain.items.map(OrderItemDto.init(from:))
+        self.items = domain.items.map(OrderItemDto.init(domain:))
         self.subtotal = domain.subtotal
         self.loyaltyDiscountAmount = domain.loyaltyDiscountAmount
         self.appliedRewards = domain.appliedRewards.map(AppliedRewardDto.init(domain:))
@@ -81,48 +86,49 @@ struct OrderDto: Codable {
         self.status = domain.status.rawValue
         self.revision = domain.revision
         self.lastConfirmedRevision = domain.lastConfirmedRevision
+        self.readyForPaymentAt = domain.readyForPaymentAt.map(Timestamp.init(date:))
+        self.paidAt = domain.paidAt.map(Timestamp.init(date:))
+        self.paymentMethod = domain.paymentMethod
+        self.paymentReference = domain.paymentReference
+        self.paidByAdminId = domain.paidByAdminId
     }
-    
+
+    init(from domain: Order) {
+        self.init(domain: domain)
+    }
+
     func toDomain() -> Order? {
         let domainItems = items.compactMap { $0.toDomain() }
-        guard domainItems.count == items.count else { return nil }
-        
-        let safeStatus = OrderStatus(rawValue: status ?? OrderStatus.pending.rawValue) ?? .pending
-        let safeCreatedAt = createdAt.dateValue()
-        let safeUpdatedAt = updatedAt?.dateValue() ?? safeCreatedAt
-        let safeScheduledAt = scheduledAt?.dateValue() ?? safeCreatedAt
-        let safeServiceMode = OrderServiceMode(rawValue: serviceMode ?? "")
-        ?? OrderScheduleResolver.mode(createdAt: safeCreatedAt, scheduledAt: safeScheduledAt)
-        let safeRevision = revision ?? 1
-        
+        guard domainItems.count == items.count, !domainItems.isEmpty else { return nil }
+        guard let resolvedServiceMode = OrderServiceMode(rawValue: serviceMode) else { return nil }
+        guard let resolvedStatus = OrderStatus(rawValue: status.trimmingCharacters(in: .whitespacesAndNewlines)) else { return nil }
+
         return Order(
             id: id,
             userId: userId,
             clientName: clientName,
             tableNumber: tableNumber,
-            whatsappNumber: safeServiceMode == .scheduled
+            whatsappNumber: resolvedServiceMode == .scheduled
                 ? (whatsappNumber ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
                 : "",
-            createdAt: safeCreatedAt,
-            updatedAt: safeUpdatedAt,
-            scheduledAt: safeScheduledAt,
-            scheduledDayKey: scheduledDayKey ?? OrderScheduleResolver.dayKey(from: safeScheduledAt),
-            serviceMode: safeServiceMode,
+            createdAt: createdAt.dateValue(),
+            updatedAt: updatedAt.dateValue(),
+            scheduledAt: scheduledAt.dateValue(),
+            scheduledDayKey: scheduledDayKey,
+            serviceMode: resolvedServiceMode,
             items: domainItems,
             subtotal: subtotal,
-            loyaltyDiscountAmount: max(0, loyaltyDiscountAmount ?? 0),
-            appliedRewards: (appliedRewards ?? []).map { $0.toDomain() },
+            loyaltyDiscountAmount: loyaltyDiscountAmount,
+            appliedRewards: appliedRewards.map { $0.toDomain() },
             totalAmount: totalAmount,
-            status: safeStatus,
-            revision: safeRevision,
-            lastConfirmedRevision: lastConfirmedRevision
+            status: resolvedStatus,
+            revision: revision,
+            lastConfirmedRevision: lastConfirmedRevision,
+            readyForPaymentAt: readyForPaymentAt?.dateValue(),
+            paidAt: paidAt?.dateValue(),
+            paymentMethod: paymentMethod,
+            paymentReference: paymentReference,
+            paidByAdminId: paidByAdminId
         )
-    }
-}
-
-private extension String {
-    var nilIfBlank: String? {
-        let clean = trimmingCharacters(in: .whitespacesAndNewlines)
-        return clean.isEmpty ? nil : clean
     }
 }

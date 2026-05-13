@@ -40,7 +40,7 @@ private enum BookingsTimelineScope: String, CaseIterable, Identifiable {
         case .upcoming:
             return "Reservas futuras de restaurante, aventura o eventos."
         case .history:
-            return "Reservas pasadas, completadas o canceladas."
+            return "Reservas pasadas, pagadas, completadas o canceladas."
         case .all:
             return "Agenda completa de tus pedidos y experiencias."
         }
@@ -95,6 +95,8 @@ private enum UnifiedReservationStatusFilter: String, CaseIterable, Identifiable 
     case pending
     case confirmed
     case preparing
+    case readyForPayment
+    case paid
     case completed
     case canceled
 
@@ -106,6 +108,8 @@ private enum UnifiedReservationStatusFilter: String, CaseIterable, Identifiable 
         case .pending: return "Pendiente"
         case .confirmed: return "Confirmada"
         case .preparing: return "Preparando"
+        case .readyForPayment: return "Listo para pagar"
+        case .paid: return "Pagado"
         case .completed: return "Completada"
         case .canceled: return "Cancelada"
         }
@@ -121,6 +125,10 @@ private enum UnifiedReservationStatusFilter: String, CaseIterable, Identifiable 
             return reservation.normalizedStatus == .confirmed
         case .preparing:
             return reservation.normalizedStatus == .preparing
+        case .readyForPayment:
+            return reservation.normalizedStatus == .readyForPayment
+        case .paid:
+            return reservation.normalizedStatus == .paid
         case .completed:
             return reservation.normalizedStatus == .completed
         case .canceled:
@@ -133,6 +141,8 @@ private enum UnifiedReservationStatus: String, CaseIterable, Identifiable {
     case pending
     case confirmed
     case preparing
+    case readyForPayment
+    case paid
     case completed
     case canceled
 
@@ -143,6 +153,8 @@ private enum UnifiedReservationStatus: String, CaseIterable, Identifiable {
         case .pending: return "Pendiente"
         case .confirmed: return "Confirmada"
         case .preparing: return "Preparando"
+        case .readyForPayment: return "Listo para pagar"
+        case .paid: return "Pagado"
         case .completed: return "Completada"
         case .canceled: return "Cancelada"
         }
@@ -153,6 +165,8 @@ private enum UnifiedReservationStatus: String, CaseIterable, Identifiable {
         case .pending: return "hourglass"
         case .confirmed: return "checkmark.seal.fill"
         case .preparing: return "flame.fill"
+        case .readyForPayment: return "checkmark.seal.fill"
+        case .paid: return "creditcard.fill"
         case .completed: return "checkmark.circle.fill"
         case .canceled: return "xmark.circle.fill"
         }
@@ -276,7 +290,8 @@ private enum UnifiedReservation: Identifiable, Hashable {
             case .pending: return .pending
             case .confirmed: return .confirmed
             case .preparing: return .preparing
-            case .completed: return .completed
+            case .readyForPayment: return .readyForPayment
+            case .paid: return .paid
             case .canceled: return .canceled
             }
 
@@ -291,7 +306,12 @@ private enum UnifiedReservation: Identifiable, Hashable {
     }
 
     var isTerminal: Bool {
-        normalizedStatus == .completed || normalizedStatus == .canceled
+        switch normalizedStatus {
+        case .paid, .completed, .canceled:
+            return true
+        case .pending, .confirmed, .preparing, .readyForPayment:
+            return false
+        }
     }
 
     var isCanceled: Bool {
@@ -439,7 +459,7 @@ struct BookingsView: View {
             .searchable(
                 text: $searchText,
                 placement: .navigationBarDrawer(displayMode: .always),
-                prompt: "Buscar por cliente, cédula, plato o actividad"
+                prompt: "Buscar por cliente, plato o actividad"
             )
             .navigationDestination(item: $selectedReservation) { reservation in
                 switch reservation {
@@ -460,7 +480,9 @@ struct BookingsView: View {
                 isPresented: Binding(
                     get: { adventureBookingToCancel != nil },
                     set: { isPresented in
-                        if !isPresented { adventureBookingToCancel = nil }
+                        if !isPresented {
+                            adventureBookingToCancel = nil
+                        }
                     }
                 ),
                 titleVisibility: .visible
@@ -764,7 +786,7 @@ struct BookingsView: View {
         case .upcoming:
             return "Las próximas reservas de comida, aventura o eventos aparecerán aquí."
         case .history:
-            return "Tus reservas completadas, pasadas o canceladas aparecerán aquí."
+            return "Tus reservas pagadas, completadas, pasadas o canceladas aparecerán aquí."
         case .all:
             return "Cuando hagas pedidos o reserves experiencias, aparecerán aquí."
         }
@@ -820,25 +842,37 @@ struct BookingsView: View {
         switch sortOption {
         case .serviceTimeAscending:
             return reservations.sorted {
-                if $0.serviceDate != $1.serviceDate { return $0.serviceDate < $1.serviceDate }
+                if $0.serviceDate != $1.serviceDate {
+                    return $0.serviceDate < $1.serviceDate
+                }
+
                 return $0.createdAt < $1.createdAt
             }
 
         case .serviceTimeDescending:
             return reservations.sorted {
-                if $0.serviceDate != $1.serviceDate { return $0.serviceDate > $1.serviceDate }
+                if $0.serviceDate != $1.serviceDate {
+                    return $0.serviceDate > $1.serviceDate
+                }
+
                 return $0.createdAt > $1.createdAt
             }
 
         case .newestCreated:
             return reservations.sorted {
-                if $0.createdAt != $1.createdAt { return $0.createdAt > $1.createdAt }
+                if $0.createdAt != $1.createdAt {
+                    return $0.createdAt > $1.createdAt
+                }
+
                 return $0.serviceDate > $1.serviceDate
             }
 
         case .highestTotal:
             return reservations.sorted {
-                if $0.total != $1.total { return $0.total > $1.total }
+                if $0.total != $1.total {
+                    return $0.total > $1.total
+                }
+
                 return $0.serviceDate < $1.serviceDate
             }
         }
@@ -871,8 +905,19 @@ struct BookingsView: View {
     }
 
     private func groupedByStatus(_ reservations: [UnifiedReservation]) -> [UnifiedReservationsGroup] {
-        let order: [UnifiedReservationStatus] = [.pending, .confirmed, .preparing, .completed, .canceled]
-        let buckets = Dictionary(grouping: reservations) { $0.normalizedStatus }
+        let order: [UnifiedReservationStatus] = [
+            .pending,
+            .confirmed,
+            .preparing,
+            .readyForPayment,
+            .paid,
+            .completed,
+            .canceled
+        ]
+
+        let buckets = Dictionary(grouping: reservations) {
+            $0.normalizedStatus
+        }
 
         return order.compactMap { status in
             guard let reservations = buckets[status], !reservations.isEmpty else {
@@ -910,8 +955,12 @@ struct BookingsView: View {
             return "Reserva aceptada"
         case .preparing:
             return "Pedido en preparación"
+        case .readyForPayment:
+            return "Pedido servido y listo para pagar"
+        case .paid:
+            return "Pedido pagado"
         case .completed:
-            return "Reserva finalizada"
+            return "Experiencia finalizada"
         case .canceled:
             return "Reserva cancelada"
         }
@@ -919,30 +968,39 @@ struct BookingsView: View {
 
     private var todayCount: Int {
         let today = calendar.startOfDay(for: Date())
+
         return allReservations.filter {
             !$0.isTerminal && $0.occurs(on: today, calendar: calendar)
-        }.count
+        }
+        .count
     }
 
     private var upcomingCount: Int {
         let today = calendar.startOfDay(for: Date())
+
         return allReservations.filter {
             !$0.isTerminal && calendar.startOfDay(for: $0.serviceDate) > today
-        }.count
+        }
+        .count
     }
 
     private var historyCount: Int {
         let today = calendar.startOfDay(for: Date())
+
         return allReservations.filter {
             $0.isTerminal || $0.endDate < today
-        }.count
+        }
+        .count
     }
 
     private var canceledCount: Int {
         allReservations.filter(\.isCanceled).count
     }
 
-    private func count(status: UnifiedReservationStatus, in reservations: [UnifiedReservation]) -> Int {
+    private func count(
+        status: UnifiedReservationStatus,
+        in reservations: [UnifiedReservation]
+    ) -> Int {
         reservations.filter { $0.normalizedStatus == status }.count
     }
 
@@ -1084,6 +1142,8 @@ private struct UnifiedReservationAgendaCard: View {
         case .pending: return .orange
         case .confirmed: return .green
         case .preparing: return .purple
+        case .readyForPayment: return .blue
+        case .paid: return .green
         case .completed: return .blue
         case .canceled: return .red
         }
@@ -1193,9 +1253,12 @@ private struct UnifiedReservationAgendaCard: View {
     private func restaurantPreview(_ order: Order) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
-                Label(order.serviceMode.title, systemImage: order.isScheduledForLater ? "calendar.badge.clock" : "bolt.fill")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(kindPalette.primary)
+                Label(
+                    order.serviceMode.title,
+                    systemImage: order.isScheduledForLater ? "calendar.badge.clock" : "bolt.fill"
+                )
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(kindPalette.primary)
 
                 Spacer()
 
@@ -1232,7 +1295,7 @@ private struct UnifiedReservationAgendaCard: View {
                 }
             }
 
-            preparationProgress(order)
+            deliveryProgress(order)
         }
     }
 
@@ -1291,20 +1354,21 @@ private struct UnifiedReservationAgendaCard: View {
         }
     }
 
-    private func preparationProgress(_ order: Order) -> some View {
-        let total = max(1, order.totalItems)
-        let prepared = order.preparedItemsCount
-        let value = Double(prepared) / Double(total)
+    private func deliveryProgress(_ order: Order) -> some View {
+        let activeItems = order.items.filter { $0.status != .canceled }
+        let deliveredItems = activeItems.filter { $0.status == .delivered }
+        let total = activeItems.count
+        let value = total > 0 ? Double(deliveredItems.count) / Double(total) : 0
 
         return VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text("Preparación")
+                Text("Entrega")
                     .font(.caption.bold())
                     .foregroundStyle(neutralPalette.textSecondary)
 
                 Spacer()
 
-                Text("\(prepared)/\(order.totalItems)")
+                Text("\(deliveredItems.count)/\(total)")
                     .font(.caption.bold())
                     .foregroundStyle(neutralPalette.textSecondary)
             }

@@ -19,13 +19,13 @@ struct OrdersSummaryView: View {
         orders.filter { $0.recalculatedStatus() == .preparing }.count
     }
 
-    private var completedCount: Int {
-        orders.filter { $0.recalculatedStatus() == .completed }.count
+    private var readyForPaymentCount: Int {
+        orders.filter { $0.recalculatedStatus() == .readyForPayment }.count
     }
 
     private var totalRevenue: Double {
         orders
-            .filter { $0.recalculatedStatus() != .canceled }
+            .filter { $0.recalculatedStatus().countsAsRevenue }
             .reduce(0) { $0 + $1.totalAmount }
     }
 
@@ -46,7 +46,7 @@ struct OrdersSummaryView: View {
 
             SummaryMetricCard(
                 theme: theme,
-                title: "En preparación",
+                title: "En cocina",
                 value: "\(preparingCount)",
                 systemImage: "flame.fill",
                 tone: .accent
@@ -54,15 +54,15 @@ struct OrdersSummaryView: View {
 
             SummaryMetricCard(
                 theme: theme,
-                title: "Completados",
-                value: "\(completedCount)",
-                systemImage: "checkmark.circle.fill",
+                title: "Listos para pagar",
+                value: "\(readyForPaymentCount)",
+                systemImage: "creditcard.fill",
                 tone: .success
             )
 
             SummaryMetricCard(
                 theme: theme,
-                title: "Ingresos",
+                title: "Ingresos pagados",
                 value: totalRevenue.priceText,
                 systemImage: "dollarsign.circle.fill",
                 tone: .primary,

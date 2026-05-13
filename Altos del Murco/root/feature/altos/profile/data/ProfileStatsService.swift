@@ -32,6 +32,7 @@ private final class CompositeProfileStatsListenerToken: ProfileStatsListenerToke
     func remove() {
         registrations.forEach { $0.remove() }
         registrations.removeAll()
+
         walletListenerToken?.remove()
         walletListenerToken = nil
     }
@@ -53,7 +54,9 @@ final class ProfileStatsService {
     }
 
     func loadStats() async throws -> ProfileStats {
-        guard let uid = currentUserId else { return .empty }
+        guard let uid = currentUserId else {
+            return .empty
+        }
 
         async let ordersTask = db
             .collection(FirestoreConstants.restaurant_orders)
@@ -81,16 +84,29 @@ final class ProfileStatsService {
             return dto.toDomain(documentId: document.documentID)
         }
 
-        let completedOrders = orders.filter { $0.recalculatedStatus() == .completed }
-        let completedBookings = bookings.filter { $0.status == .completed }
+        // Restaurant success lifecycle is paid, not completed.
+        let paidOrders = orders.filter { order in
+            order.recalculatedStatus() == .paid
+        }
 
-        let restaurantSpent = completedOrders.reduce(0) { $0 + $1.totalAmount }
-        let adventureSpent = completedBookings.reduce(0) { $0 + $1.totalAmount }
+        // Adventure keeps its own completed state.
+        let completedBookings = bookings.filter { booking in
+            booking.status == .completed
+        }
+
+        let restaurantSpent = paidOrders.reduce(0) { partial, order in
+            partial + order.totalAmount
+        }
+
+        let adventureSpent = completedBookings.reduce(0) { partial, booking in
+            partial + booking.totalAmount
+        }
+
         let totalSpent = restaurantSpent + adventureSpent
 
         return ProfileStats(
             points: wallet.points,
-            completedOrders: completedOrders.count,
+            completedOrders: paidOrders.count,
             completedBookings: completedBookings.count,
             restaurantSpent: restaurantSpent,
             adventureSpent: adventureSpent,
@@ -149,7 +165,7 @@ final class ProfileStatsService {
                 emit()
             }
 
-        let walletListener = loyaltyRewardsService.observeWalletSnapshot() { result in
+        let walletListener = loyaltyRewardsService.observeWalletSnapshot { result in
             switch result {
             case .success:
                 emit()
@@ -162,7 +178,10 @@ final class ProfileStatsService {
         emit()
 
         return CompositeProfileStatsListenerToken(
-            registrations: [ordersRegistration, bookingsRegistration],
+            registrations: [
+                ordersRegistration,
+                bookingsRegistration
+            ],
             walletListenerToken: walletListener
         )
     }

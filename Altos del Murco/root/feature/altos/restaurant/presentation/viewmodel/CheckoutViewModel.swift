@@ -164,11 +164,20 @@ final class CheckoutViewModel: ObservableObject {
     }
 
     func clearError() {
-        state.errorMessage = nil
+        // Defer mutation to avoid publishing during view updates
+        let shouldClear = state.errorMessage != nil
+        guard shouldClear else { return }
+        Task { @MainActor in
+            self.state.errorMessage = nil
+        }
     }
 
     func presentError(_ message: String) {
-        state.errorMessage = message
+        // Defer mutation to avoid publishing during view updates
+        guard state.errorMessage != message else { return }
+        Task { @MainActor in
+            self.state.errorMessage = message
+        }
     }
 
     @discardableResult
@@ -314,3 +323,4 @@ final class CheckoutViewModel: ObservableObject {
         (value * 100).rounded() / 100
     }
 }
+

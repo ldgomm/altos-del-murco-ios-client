@@ -10,6 +10,7 @@ import SwiftUI
 private enum OrdersGroupingOption: String, CaseIterable, Identifiable {
     case byDate = "Fecha"
     case byStatus = "Estado"
+
     var id: String { rawValue }
 }
 
@@ -17,6 +18,7 @@ private enum OrdersSortOption: String, CaseIterable, Identifiable {
     case newestFirst = "Más recientes"
     case oldestFirst = "Más antiguos"
     case highestTotal = "Mayor total"
+
     var id: String { rawValue }
 }
 
@@ -24,8 +26,9 @@ private enum OrdersStatusFilter: String, CaseIterable, Identifiable {
     case all = "Todos"
     case pending = "Pendiente"
     case confirmed = "Confirmado"
-    case preparing = "Preparando"
-    case completed = "Completado"
+    case preparing = "En cocina"
+    case readyForPayment = "Listo para pagar"
+    case paid = "Pagado"
     case canceled = "Cancelado"
 
     var id: String { rawValue }
@@ -36,7 +39,8 @@ private enum OrdersStatusFilter: String, CaseIterable, Identifiable {
         case .pending: return .pending
         case .confirmed: return .confirmed
         case .preparing: return .preparing
-        case .completed: return .completed
+        case .readyForPayment: return .readyForPayment
+        case .paid: return .paid
         case .canceled: return .canceled
         }
     }
@@ -50,6 +54,7 @@ private struct OrdersGroup: Identifiable {
 
 struct OrdersView: View {
     @ObservedObject var viewModel: OrdersViewModel
+
     @EnvironmentObject private var sessionViewModel: AppSessionViewModel
     @Environment(\.colorScheme) private var colorScheme
 
@@ -73,17 +78,25 @@ struct OrdersView: View {
         switch sortOption {
         case .newestFirst:
             return filteredOrders.sorted {
-                if $0.scheduledAt != $1.scheduledAt { return $0.scheduledAt > $1.scheduledAt }
+                if $0.scheduledAt != $1.scheduledAt {
+                    return $0.scheduledAt > $1.scheduledAt
+                }
                 return $0.createdAt > $1.createdAt
             }
+
         case .oldestFirst:
             return filteredOrders.sorted {
-                if $0.scheduledAt != $1.scheduledAt { return $0.scheduledAt < $1.scheduledAt }
+                if $0.scheduledAt != $1.scheduledAt {
+                    return $0.scheduledAt < $1.scheduledAt
+                }
                 return $0.createdAt < $1.createdAt
             }
+
         case .highestTotal:
             return filteredOrders.sorted {
-                if $0.totalAmount != $1.totalAmount { return $0.totalAmount > $1.totalAmount }
+                if $0.totalAmount != $1.totalAmount {
+                    return $0.totalAmount > $1.totalAmount
+                }
                 return $0.scheduledAt < $1.scheduledAt
             }
         }
@@ -92,21 +105,34 @@ struct OrdersView: View {
     private var groupedOrders: [OrdersGroup] {
         switch grouping {
         case .byStatus:
-            let orderedStatuses: [OrderStatus] = [.pending, .confirmed, .preparing, .completed, .canceled]
+            let orderedStatuses: [OrderStatus] = [
+                .pending,
+                .confirmed,
+                .preparing,
+                .readyForPayment,
+                .paid,
+                .canceled
+            ]
 
-            let buckets = Dictionary(grouping: sortedOrders) { $0.recalculatedStatus() }
+            let buckets = Dictionary(grouping: sortedOrders) { order in
+                order.recalculatedStatus()
+            }
+
             return orderedStatuses.compactMap { status in
                 guard let orders = buckets[status], !orders.isEmpty else { return nil }
+
                 return OrdersGroup(
                     id: status.rawValue,
-                    title: status.title,
+                    title: status.clientTitle,
                     orders: orders
                 )
             }
 
         case .byDate:
             let calendar = Calendar.current
-            let buckets = Dictionary(grouping: sortedOrders) { calendar.startOfDay(for: $0.scheduledAt) }
+            let buckets = Dictionary(grouping: sortedOrders) { order in
+                calendar.startOfDay(for: order.scheduledAt)
+            }
 
             return buckets
                 .map { day, orders in
@@ -159,7 +185,7 @@ struct OrdersView: View {
             stateCard(
                 title: "Aún no hay pedidos",
                 systemImage: "tray",
-                description: "Los pedidos aparecerán aquí una vez que los clientes los realicen."
+                description: "Los pedidos aparecerán aquí una vez que los realices."
             )
         } else {
             ordersList
@@ -213,7 +239,14 @@ struct OrdersView: View {
                         }
                         .buttonStyle(.plain)
                         .contentShape(Rectangle())
-                        .listRowInsets(EdgeInsets(top: 6, leading: 8, bottom: 6, trailing: 8))
+                        .listRowInsets(
+                            EdgeInsets(
+                                top: 6,
+                                leading: 8,
+                                bottom: 6,
+                                trailing: 8
+                            )
+                        )
                         .listRowBackground(Color.clear)
                     }
                 } header: {
@@ -237,7 +270,14 @@ struct OrdersView: View {
             OrdersSummaryView(orders: filteredOrders)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .appCardStyle(.restaurant, emphasized: false)
-                .listRowInsets(EdgeInsets(top: 8, leading: 8, bottom: 10, trailing: 8))
+                .listRowInsets(
+                    EdgeInsets(
+                        top: 8,
+                        leading: 8,
+                        bottom: 10,
+                        trailing: 8
+                    )
+                )
                 .listRowBackground(Color.clear)
         } header: {
             BrandSectionHeader(
@@ -275,7 +315,14 @@ struct OrdersView: View {
             }
             .padding(.vertical, 4)
             .appCardStyle(.restaurant, emphasized: false)
-            .listRowInsets(EdgeInsets(top: 8, leading: 8, bottom: 10, trailing: 8))
+            .listRowInsets(
+                EdgeInsets(
+                    top: 8,
+                    leading: 8,
+                    bottom: 10,
+                    trailing: 8
+                )
+            )
             .listRowBackground(Color.clear)
         } header: {
             Text("Herramientas de pedidos")
@@ -309,17 +356,25 @@ struct OrdersView: View {
         switch sortOption {
         case .newestFirst:
             return orders.sorted {
-                if $0.scheduledAt != $1.scheduledAt { return $0.scheduledAt > $1.scheduledAt }
+                if $0.scheduledAt != $1.scheduledAt {
+                    return $0.scheduledAt > $1.scheduledAt
+                }
                 return $0.createdAt > $1.createdAt
             }
+
         case .oldestFirst:
             return orders.sorted {
-                if $0.scheduledAt != $1.scheduledAt { return $0.scheduledAt < $1.scheduledAt }
+                if $0.scheduledAt != $1.scheduledAt {
+                    return $0.scheduledAt < $1.scheduledAt
+                }
                 return $0.createdAt < $1.createdAt
             }
+
         case .highestTotal:
             return orders.sorted {
-                if $0.totalAmount != $1.totalAmount { return $0.totalAmount > $1.totalAmount }
+                if $0.totalAmount != $1.totalAmount {
+                    return $0.totalAmount > $1.totalAmount
+                }
                 return $0.scheduledAt < $1.scheduledAt
             }
         }
@@ -327,8 +382,15 @@ struct OrdersView: View {
 
     private func dateTitle(for day: Date) -> String {
         let calendar = Calendar.current
-        if calendar.isDateInToday(day) { return "Hoy" }
-        if calendar.isDateInYesterday(day) { return "Ayer" }
+
+        if calendar.isDateInToday(day) {
+            return "Hoy"
+        }
+
+        if calendar.isDateInYesterday(day) {
+            return "Ayer"
+        }
+
         return day.formatted(date: .abbreviated, time: .omitted)
     }
 }

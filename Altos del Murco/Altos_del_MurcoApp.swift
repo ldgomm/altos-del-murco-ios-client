@@ -69,11 +69,16 @@ struct AltosDelMurcoApp: App {
             let ordersService: OrdersServiceable = OrdersService(
                 loyaltyRewardsService: loyaltyRewardsService
             )
+            
             let observeOrdersUseCase = ObserveOrdersUseCase(service: ordersService)
             let submitOrderUseCase = SubmitOrderUseCase(service: ordersService)
+            let cancelOrderUseCase = CancelOrderUseCase(service: ordersService)
 
             _ordersViewModel = StateObject(
-                wrappedValue: OrdersViewModel(observeOrdersUseCase: observeOrdersUseCase)
+                wrappedValue: OrdersViewModel(
+                    observeOrdersUseCase: observeOrdersUseCase,
+                    cancelOrderUseCase: cancelOrderUseCase
+                )
             )
             _checkoutViewModel = StateObject(
                 wrappedValue: CheckoutViewModel(

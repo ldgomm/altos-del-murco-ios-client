@@ -9,7 +9,7 @@ import Foundation
 
 struct ObserveOrdersUseCase {
     let service: OrdersServiceable
-    
+
     func execute() -> AsyncThrowingStream<[Order], Error> {
         service.observeOrders()
     }

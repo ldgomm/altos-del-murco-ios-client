@@ -84,7 +84,10 @@ private final class LoyaltyWalletObservationCoordinator {
 
         self[keyPath: keyPath] = true
 
-        guard hasWalletSnapshot, hasTemplatesSnapshot, hasOrdersSnapshot, hasBookingsSnapshot else {
+        guard hasWalletSnapshot,
+              hasTemplatesSnapshot,
+              hasOrdersSnapshot,
+              hasBookingsSnapshot else {
             return
         }
 
@@ -93,12 +96,8 @@ private final class LoyaltyWalletObservationCoordinator {
 }
 
 protocol LoyaltyRewardsServiceable {
-    /// Legacy parameter name kept to avoid breaking every view immediately.
-    /// The implementation ignores this value and always uses Firebase Auth uid.
     func loadWalletSnapshot() async throws -> RewardWalletSnapshot
 
-    /// Legacy parameter name kept to avoid breaking every view immediately.
-    /// The implementation ignores this value and always uses Firebase Auth uid.
     func observeWalletSnapshot(
         onChange: @escaping (Result<RewardWalletSnapshot, Error>) -> Void
     ) -> LoyaltyRewardsListenerToken
@@ -161,20 +160,24 @@ final class LoyaltyRewardsService: LoyaltyRewardsServiceable {
 
         let currentLevel = LoyaltyLevel.from(totalSpent: totals.totalSpent)
 
-        let eligibleTemplates = templates.filter { template in
-            template.isActive &&
-            !template.isExpired &&
-            template.triggerMode == .automatic &&
-            template.isEligible(for: currentLevel) &&
-            usageCount(
-                templateId: template.id,
-                inside: walletDocument.events
-            ) < max(1, template.maxUsesPerClient)
-        }
-        .sorted { lhs, rhs in
-            if lhs.priority != rhs.priority { return lhs.priority < rhs.priority }
-            return lhs.title < rhs.title
-        }
+        let eligibleTemplates = templates
+            .filter { template in
+                template.isActive &&
+                !template.isExpired &&
+                template.triggerMode == .automatic &&
+                template.isEligible(for: currentLevel) &&
+                usageCount(
+                    templateId: template.id,
+                    inside: walletDocument.events
+                ) < max(1, template.maxUsesPerClient)
+            }
+            .sorted { lhs, rhs in
+                if lhs.priority != rhs.priority {
+                    return lhs.priority < rhs.priority
+                }
+
+                return lhs.title < rhs.title
+            }
 
         let reserved = walletDocument.events.filter { $0.status == .reserved }
         let consumed = walletDocument.events.filter { $0.status == .consumed }
@@ -204,7 +207,8 @@ final class LoyaltyRewardsService: LoyaltyRewardsServiceable {
             .collection(FirestoreConstants.client_loyalty_wallets)
             .document(uid)
 
-        let templatesRef = db.collection(FirestoreConstants.loyalty_reward_templates)
+        let templatesRef = db
+            .collection(FirestoreConstants.loyalty_reward_templates)
 
         let ordersQuery = db
             .collection(FirestoreConstants.restaurant_orders)
@@ -275,12 +279,12 @@ final class LoyaltyRewardsService: LoyaltyRewardsServiceable {
     ) async throws -> RewardComputationResult {
         let wallet = try await loadWalletSnapshot()
 
-        let lines = items.map {
+        let lines = items.map { item in
             RewardMenuLine(
-                menuItemId: $0.menuItemId,
-                name: $0.name,
-                unitPrice: $0.unitPrice,
-                quantity: $0.quantity
+                menuItemId: item.menuItemId,
+                name: item.name,
+                unitPrice: item.unitPrice,
+                quantity: item.quantity
             )
         }
 
@@ -299,8 +303,14 @@ final class LoyaltyRewardsService: LoyaltyRewardsServiceable {
         let wallet = try await loadWalletSnapshot()
 
         let activityLines = activityItems.compactMap { item -> RewardActivityLine? in
-            guard let activity = catalog.activity(for: item.activity) else { return nil }
-            let linePrice = AdventurePricingEngine.subtotal(for: item, catalog: catalog)
+            guard let activity = catalog.activity(for: item.activity) else {
+                return nil
+            }
+
+            let linePrice = AdventurePricingEngine.subtotal(
+                for: item,
+                catalog: catalog
+            )
 
             return RewardActivityLine(
                 activityId: activity.id,
@@ -309,12 +319,12 @@ final class LoyaltyRewardsService: LoyaltyRewardsServiceable {
             )
         }
 
-        let foodLines = foodItems.map {
+        let foodLines = foodItems.map { item in
             RewardMenuLine(
-                menuItemId: $0.menuItemId,
-                name: $0.name,
-                unitPrice: $0.unitPrice,
-                quantity: $0.quantity
+                menuItemId: item.menuItemId,
+                name: item.name,
+                unitPrice: item.unitPrice,
+                quantity: item.quantity
             )
         }
 
@@ -334,7 +344,9 @@ final class LoyaltyRewardsService: LoyaltyRewardsServiceable {
         guard !appliedRewards.isEmpty else { return }
         guard let uid = currentUserId else { return }
 
-        let walletRef = db.collection(FirestoreConstants.client_loyalty_wallets).document(uid)
+        let walletRef = db
+            .collection(FirestoreConstants.client_loyalty_wallets)
+            .document(uid)
 
         _ = try await db.runTransaction { transaction, errorPointer in
             do {
@@ -351,11 +363,14 @@ final class LoyaltyRewardsService: LoyaltyRewardsServiceable {
                         .document(reward.templateId)
 
                     let templateSnapshot = try transaction.getDocument(templateRef)
+
                     guard templateSnapshot.exists else {
                         throw NSError(
                             domain: "LoyaltyRewardsService",
                             code: 10,
-                            userInfo: [NSLocalizedDescriptionKey: "Reward template \(reward.templateId) no longer exists."]
+                            userInfo: [
+                                NSLocalizedDescriptionKey: "Reward template \(reward.templateId) no longer exists."
+                            ]
                         )
                     }
 
@@ -366,7 +381,9 @@ final class LoyaltyRewardsService: LoyaltyRewardsServiceable {
                         throw NSError(
                             domain: "LoyaltyRewardsService",
                             code: 11,
-                            userInfo: [NSLocalizedDescriptionKey: "The reward \(template.title) is no longer available."]
+                            userInfo: [
+                                NSLocalizedDescriptionKey: "The reward \(template.title) is no longer available."
+                            ]
                         )
                     }
 
@@ -379,7 +396,9 @@ final class LoyaltyRewardsService: LoyaltyRewardsServiceable {
                         throw NSError(
                             domain: "LoyaltyRewardsService",
                             code: 12,
-                            userInfo: [NSLocalizedDescriptionKey: "The reward \(template.title) is no longer available."]
+                            userInfo: [
+                                NSLocalizedDescriptionKey: "The reward \(template.title) is no longer available."
+                            ]
                         )
                     }
 
@@ -404,7 +423,12 @@ final class LoyaltyRewardsService: LoyaltyRewardsServiceable {
                     events: events
                 )
 
-                try transaction.setData(from: updated, forDocument: walletRef, merge: true)
+                try transaction.setData(
+                    from: updated,
+                    forDocument: walletRef,
+                    merge: true
+                )
+
                 return nil
             } catch {
                 errorPointer?.pointee = error as NSError
@@ -437,7 +461,9 @@ final class LoyaltyRewardsService: LoyaltyRewardsServiceable {
     ) async throws {
         guard let uid = currentUserId else { return }
 
-        let walletRef = db.collection(FirestoreConstants.client_loyalty_wallets).document(uid)
+        let walletRef = db
+            .collection(FirestoreConstants.client_loyalty_wallets)
+            .document(uid)
 
         _ = try await db.runTransaction { transaction, errorPointer in
             do {
@@ -447,8 +473,13 @@ final class LoyaltyRewardsService: LoyaltyRewardsServiceable {
                 )
 
                 let updatedEvents = wallet.events.map { event in
-                    guard event.referenceId == referenceId else { return event }
-                    guard event.status == .reserved else { return event }
+                    guard event.referenceId == referenceId else {
+                        return event
+                    }
+
+                    guard event.status == .reserved else {
+                        return event
+                    }
 
                     return LoyaltyWalletEvent(
                         id: event.id,
@@ -469,7 +500,12 @@ final class LoyaltyRewardsService: LoyaltyRewardsServiceable {
                     events: updatedEvents
                 )
 
-                try transaction.setData(from: updated, forDocument: walletRef, merge: true)
+                try transaction.setData(
+                    from: updated,
+                    forDocument: walletRef,
+                    merge: true
+                )
+
                 return nil
             } catch {
                 errorPointer?.pointee = error as NSError
@@ -484,9 +520,14 @@ final class LoyaltyRewardsService: LoyaltyRewardsServiceable {
             .getDocuments()
 
         return try snapshot.documents
-            .map { try $0.data(as: LoyaltyRewardTemplateDto.self).toDomain() }
+            .map { document in
+                try document.data(as: LoyaltyRewardTemplateDto.self).toDomain()
+            }
             .sorted { lhs, rhs in
-                if lhs.priority != rhs.priority { return lhs.priority < rhs.priority }
+                if lhs.priority != rhs.priority {
+                    return lhs.priority < rhs.priority
+                }
+
                 return lhs.title < rhs.title
             }
     }
@@ -494,7 +535,10 @@ final class LoyaltyRewardsService: LoyaltyRewardsServiceable {
     private func fetchWalletDocument(
         userId: String
     ) async throws -> LoyaltyWalletDocument {
-        let ref = db.collection(FirestoreConstants.client_loyalty_wallets).document(userId)
+        let ref = db
+            .collection(FirestoreConstants.client_loyalty_wallets)
+            .document(userId)
+
         let snapshot = try await ref.getDocument()
 
         guard snapshot.exists else {
@@ -510,7 +554,11 @@ final class LoyaltyRewardsService: LoyaltyRewardsServiceable {
 
     private func computeTotals(
         forUserId userId: String
-    ) async throws -> (restaurantSpent: Double, adventureSpent: Double, totalSpent: Double) {
+    ) async throws -> (
+        restaurantSpent: Double,
+        adventureSpent: Double,
+        totalSpent: Double
+    ) {
         async let ordersTask = db
             .collection(FirestoreConstants.restaurant_orders)
             .whereField("userId", isEqualTo: userId)
@@ -534,11 +582,23 @@ final class LoyaltyRewardsService: LoyaltyRewardsServiceable {
             return dto.toDomain(documentId: document.documentID)
         }
 
-        let completedOrders = orders.filter { $0.recalculatedStatus() == .completed }
-        let completedBookings = bookings.filter { $0.status == .completed }
+        // Restaurant revenue starts only when the order is paid.
+        let paidOrders = orders.filter { order in
+            order.recalculatedStatus() == .paid
+        }
 
-        let restaurantSpent = completedOrders.reduce(0) { $0 + $1.totalAmount }
-        let adventureSpent = completedBookings.reduce(0) { $0 + $1.totalAmount }
+        // Adventure keeps its own completed lifecycle.
+        let completedBookings = bookings.filter { booking in
+            booking.status == .completed
+        }
+
+        let restaurantSpent = paidOrders.reduce(0) { partial, order in
+            partial + order.totalAmount
+        }
+
+        let adventureSpent = completedBookings.reduce(0) { partial, booking in
+            partial + booking.totalAmount
+        }
 
         return (
             restaurantSpent: restaurantSpent,
@@ -556,17 +616,21 @@ final class LoyaltyRewardsService: LoyaltyRewardsServiceable {
         templateId: String,
         inside events: [LoyaltyWalletEvent]
     ) -> Int {
-        Self.usageCount(templateId: templateId, inside: events)
+        Self.usageCount(
+            templateId: templateId,
+            inside: events
+        )
     }
 
     private static func usageCount(
         templateId: String,
         inside events: [LoyaltyWalletEvent]
     ) -> Int {
-        events.filter {
-            $0.templateId == templateId &&
-            ($0.status == .reserved || $0.status == .consumed)
-        }.count
+        events.filter { event in
+            event.templateId == templateId &&
+            (event.status == .reserved || event.status == .consumed)
+        }
+        .count
     }
 
     private static func loadWalletDocument(

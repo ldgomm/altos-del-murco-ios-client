@@ -10,9 +10,10 @@ import SwiftUI
 struct OrderStatusBadge: View {
     let status: OrderStatus
     var theme: AppSectionTheme = .restaurant
-    
+    var useClientTitle: Bool = true
+
     @Environment(\.colorScheme) private var colorScheme
-    
+
     private var palette: ThemePalette {
         AppTheme.palette(for: theme, scheme: colorScheme)
     }
@@ -22,9 +23,11 @@ struct OrderStatusBadge: View {
             Circle()
                 .fill(statusColor)
                 .frame(width: 7, height: 7)
-            
-            Text(status.title)
+
+            Text(useClientTitle ? status.clientTitle : status.title)
                 .font(.caption.weight(.semibold))
+                .lineLimit(1)
+                .minimumScaleFactor(0.76)
         }
         .foregroundStyle(statusColor)
         .padding(.horizontal, 10)
@@ -50,7 +53,12 @@ struct OrderStatusBadge: View {
                 light: UIColor(hex: 0x7C3AED),
                 dark: UIColor(hex: 0xB794F4)
             )
-        case .completed:
+        case .readyForPayment:
+            return Color.adaptive(
+                light: UIColor(hex: 0x2563EB),
+                dark: UIColor(hex: 0x60A5FA)
+            )
+        case .paid:
             return palette.success
         case .canceled:
             return palette.destructive
@@ -59,12 +67,11 @@ struct OrderStatusBadge: View {
 }
 
 struct ItemStatusBadge: View {
-    let isCompleted: Bool
-    let isStarted: Bool
+    let status: OrderItemStatus
     var theme: AppSectionTheme = .restaurant
-    
+
     @Environment(\.colorScheme) private var colorScheme
-    
+
     private var palette: ThemePalette {
         AppTheme.palette(for: theme, scheme: colorScheme)
     }
@@ -74,8 +81,8 @@ struct ItemStatusBadge: View {
             Circle()
                 .fill(color)
                 .frame(width: 6, height: 6)
-            
-            Text(title)
+
+            Text(status.clientTitle)
                 .font(.caption2.weight(.semibold))
         }
         .foregroundStyle(color)
@@ -91,101 +98,18 @@ struct ItemStatusBadge: View {
         )
     }
 
-    private var title: String {
-        if isCompleted { return "Ready" }
-        if isStarted { return "In progress" }
-        return "Waiting"
-    }
-
     private var color: Color {
-        if isCompleted { return palette.success }
-        if isStarted { return palette.warning }
-        return palette.textSecondary
-    }
-}
-
-struct InfoChip: View {
-    let text: String
-    let systemImage: String
-    var theme: AppSectionTheme = .restaurant
-    
-    @Environment(\.colorScheme) private var colorScheme
-    
-    private var palette: ThemePalette {
-        AppTheme.palette(for: theme, scheme: colorScheme)
-    }
-
-    var body: some View {
-        Label(text, systemImage: systemImage)
-            .font(.caption2.weight(.medium))
-            .foregroundStyle(palette.textSecondary)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 7)
-            .background(
-                Capsule()
-                    .fill(palette.chipGradient)
-            )
-            .overlay(
-                Capsule()
-                    .stroke(palette.stroke, lineWidth: 1)
-            )
-    }
-}
-
-struct DetailMetricView: View {
-    let title: String
-    let value: String
-    let systemImage: String
-    var theme: AppSectionTheme = .restaurant
-    
-    @Environment(\.colorScheme) private var colorScheme
-    
-    private var palette: ThemePalette {
-        AppTheme.palette(for: theme, scheme: colorScheme)
-    }
-
-    var body: some View {
-        HStack(spacing: 12) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(palette.chipGradient)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 12, style: .continuous)
-                            .stroke(palette.stroke, lineWidth: 1)
-                    )
-                    .frame(width: 40, height: 40)
-                
-                Image(systemName: systemImage)
-                    .font(.headline)
-                    .foregroundStyle(palette.primary)
-            }
-
-            VStack(alignment: .leading, spacing: 3) {
-                Text(title)
-                    .font(.caption)
-                    .foregroundStyle(palette.textSecondary)
-
-                Text(value)
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(palette.textPrimary)
-            }
-
-            Spacer()
+        switch status {
+        case .pending:
+            return palette.textSecondary
+        case .preparing:
+            return palette.warning
+        case .readyForDelivery:
+            return palette.primary
+        case .delivered:
+            return palette.success
+        case .canceled:
+            return palette.destructive
         }
-        .padding()
-        .background(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(palette.cardGradient)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .stroke(palette.stroke, lineWidth: 1)
-        )
-        .shadow(
-            color: palette.shadow.opacity(colorScheme == .dark ? 0.16 : 0.06),
-            radius: 10,
-            x: 0,
-            y: 5
-        )
     }
 }

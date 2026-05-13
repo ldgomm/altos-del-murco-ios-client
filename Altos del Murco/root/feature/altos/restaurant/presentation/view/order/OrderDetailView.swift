@@ -9,6 +9,7 @@ import SwiftUI
 
 struct OrderDetailView: View {
     let order: Order
+
     @Environment(\.colorScheme) private var colorScheme
 
     private var palette: ThemePalette {
@@ -19,30 +20,57 @@ struct OrderDetailView: View {
         order.recalculatedStatus()
     }
 
+    private var activeItems: [OrderItem] {
+        order.items.filter { $0.status != .canceled }
+    }
+
+    private var deliveredItems: [OrderItem] {
+        activeItems.filter { $0.status == .delivered }
+    }
+
     private var progressValue: Double {
-        guard order.totalItems > 0 else { return 0 }
-        return Double(order.preparedItemsCount) / Double(order.totalItems)
+        guard !activeItems.isEmpty else { return 0 }
+        return Double(deliveredItems.count) / Double(activeItems.count)
+    }
+
+    private var progressText: String {
+        guard !activeItems.isEmpty else { return "Sin productos activos" }
+        return "\(deliveredItems.count)/\(activeItems.count) servidos"
     }
 
     var body: some View {
         List {
             Section {
                 headerCard
-                    .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+                    .listRowInsets(
+                        EdgeInsets(
+                            top: 8,
+                            leading: 16,
+                            bottom: 8,
+                            trailing: 16
+                        )
+                    )
                     .listRowBackground(Color.clear)
             }
 
             Section {
                 ForEach(order.items) { item in
                     OrderDetailItemRow(item: item)
-                        .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
+                        .listRowInsets(
+                            EdgeInsets(
+                                top: 6,
+                                leading: 16,
+                                bottom: 6,
+                                trailing: 16
+                            )
+                        )
                         .listRowBackground(Color.clear)
                 }
             } header: {
                 BrandSectionHeader(
                     theme: .restaurant,
                     title: "Productos",
-                    subtitle: "Todo lo incluido en este pedido"
+                    subtitle: "Cada línea representa una unidad exacta del pedido."
                 )
                 .padding(.horizontal, 16)
                 .padding(.top, 8)
@@ -52,7 +80,14 @@ struct OrderDetailView: View {
             if !order.appliedRewards.isEmpty {
                 Section {
                     rewardsCard
-                        .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+                        .listRowInsets(
+                            EdgeInsets(
+                                top: 8,
+                                leading: 16,
+                                bottom: 8,
+                                trailing: 16
+                            )
+                        )
                         .listRowBackground(Color.clear)
                 } header: {
                     BrandSectionHeader(
@@ -68,7 +103,14 @@ struct OrderDetailView: View {
 
             Section {
                 amountsCard
-                    .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+                    .listRowInsets(
+                        EdgeInsets(
+                            top: 8,
+                            leading: 16,
+                            bottom: 8,
+                            trailing: 16
+                        )
+                    )
                     .listRowBackground(Color.clear)
             } header: {
                 BrandSectionHeader(
@@ -92,7 +134,7 @@ struct OrderDetailView: View {
         VStack(alignment: .leading, spacing: 18) {
             HStack(alignment: .top, spacing: 12) {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text(order.clientName.isEmpty ? "Cliente sin reserva" : order.clientName)
+                    Text(order.clientName.isEmpty ? "Cliente" : order.clientName)
                         .font(.title3.bold())
                         .foregroundStyle(palette.textPrimary)
 
@@ -115,7 +157,7 @@ struct OrderDetailView: View {
 
                 DetailMetricView(
                     title: "Productos",
-                    value: "\(order.totalItems)",
+                    value: "\(order.items.count)",
                     systemImage: "fork.knife"
                 )
             }
@@ -150,31 +192,110 @@ struct OrderDetailView: View {
                 }
             }
 
+            if effectiveStatus == .readyForPayment {
+                statusNoticeCard(
+                    title: "Pedido servido",
+                    message: "Tu pedido ya fue servido y está listo para pagar.",
+                    systemImage: "checkmark.seal.fill",
+                    tint: palette.success
+                )
+            } else if effectiveStatus == .paid {
+                statusNoticeCard(
+                    title: "Pedido pagado",
+                    message: paidMessage,
+                    systemImage: "creditcard.fill",
+                    tint: palette.success
+                )
+            } else if effectiveStatus == .canceled {
+                statusNoticeCard(
+                    title: "Pedido cancelado",
+                    message: "Este pedido fue cancelado.",
+                    systemImage: "xmark.octagon.fill",
+                    tint: palette.destructive
+                )
+            }
+
             VStack(alignment: .leading, spacing: 10) {
                 HStack {
-                    Text("Progreso de preparación")
+                    Text("Progreso de entrega")
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(palette.textPrimary)
 
                     Spacer()
 
-                    Text("\(order.preparedItemsCount)/\(order.totalItems)")
+                    Text(progressText)
                         .font(.subheadline)
                         .foregroundStyle(palette.textSecondary)
                 }
 
                 ProgressView(value: progressValue)
-                    .tint(palette.accent)
-            }
-
-            if order.requiresReconfirmation {
-                Label("Este pedido necesita reconfirmación antes de que cocina continúe.", systemImage: "exclamationmark.triangle.fill")
-                    .font(.subheadline)
-                    .foregroundStyle(palette.warning)
-                    .padding(.top, 2)
+                    .tint(progressTint)
             }
         }
         .appCardStyle(.restaurant, emphasized: false)
+    }
+
+    private var paidMessage: String {
+        if let paidAt = order.paidAt {
+            return "Pago registrado el \(paidAt.shortDateTimeString)."
+        }
+
+        return "Pago registrado correctamente."
+    }
+
+    private var progressTint: Color {
+        switch effectiveStatus {
+        case .pending:
+            return palette.warning
+        case .confirmed:
+            return palette.secondary
+        case .preparing:
+            return palette.accent
+        case .readyForPayment, .paid:
+            return palette.success
+        case .canceled:
+            return palette.destructive
+        }
+    }
+
+    private func statusNoticeCard(
+        title: String,
+        message: String,
+        systemImage: String,
+        tint: Color
+    ) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: systemImage)
+                .font(.headline)
+                .foregroundStyle(tint)
+                .frame(width: 28, height: 28)
+                .background(
+                    Circle()
+                        .fill(tint.opacity(0.14))
+                )
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title)
+                    .font(.subheadline.bold())
+                    .foregroundStyle(palette.textPrimary)
+
+                Text(message)
+                    .font(.caption)
+                    .foregroundStyle(palette.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Spacer()
+        }
+        .padding(14)
+        .background(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(tint.opacity(colorScheme == .dark ? 0.16 : 0.10))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(tint.opacity(colorScheme == .dark ? 0.28 : 0.18), lineWidth: 1)
+        )
     }
 
     private var rewardsCard: some View {
@@ -218,11 +339,24 @@ struct OrderDetailView: View {
 
             Divider().overlay(palette.stroke)
             detailLine(title: "Total", value: order.totalAmount.priceText, emphasized: true)
+
+            if effectiveStatus == .paid {
+                Divider().overlay(palette.stroke)
+                detailLine(
+                    title: "Estado de pago",
+                    value: "Pagado",
+                    emphasized: true
+                )
+            }
         }
         .appCardStyle(.restaurant)
     }
 
-    private func detailLine(title: String, value: String, emphasized: Bool = false) -> some View {
+    private func detailLine(
+        title: String,
+        value: String,
+        emphasized: Bool = false
+    ) -> some View {
         HStack(spacing: 12) {
             Text(title)
                 .font(.subheadline)
@@ -235,5 +369,63 @@ struct OrderDetailView: View {
                 .foregroundStyle(emphasized ? palette.primary : palette.textPrimary)
         }
         .padding(.vertical, 14)
+    }
+}
+
+struct DetailMetricView: View {
+    let title: String
+    let value: String
+    let systemImage: String
+    var theme: AppSectionTheme = .restaurant
+    
+    @Environment(\.colorScheme) private var colorScheme
+    
+    private var palette: ThemePalette {
+        AppTheme.palette(for: theme, scheme: colorScheme)
+    }
+
+    var body: some View {
+        HStack(spacing: 12) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(palette.chipGradient)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .stroke(palette.stroke, lineWidth: 1)
+                    )
+                    .frame(width: 40, height: 40)
+                
+                Image(systemName: systemImage)
+                    .font(.headline)
+                    .foregroundStyle(palette.primary)
+            }
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title)
+                    .font(.caption)
+                    .foregroundStyle(palette.textSecondary)
+
+                Text(value)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(palette.textPrimary)
+            }
+
+            Spacer()
+        }
+        .padding()
+        .background(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(palette.cardGradient)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(palette.stroke, lineWidth: 1)
+        )
+        .shadow(
+            color: palette.shadow.opacity(colorScheme == .dark ? 0.16 : 0.06),
+            radius: 10,
+            x: 0,
+            y: 5
+        )
     }
 }

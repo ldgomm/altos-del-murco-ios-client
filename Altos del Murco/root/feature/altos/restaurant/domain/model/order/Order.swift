@@ -7,14 +7,18 @@
 
 import Foundation
 
-enum OrderServiceMode: String, Codable, Hashable, CaseIterable {
+enum OrderServiceMode: String, Codable, Hashable, CaseIterable, Identifiable {
     case now
     case scheduled
 
+    var id: String { rawValue }
+
     var title: String {
         switch self {
-        case .now: return "Pedido inmediato"
-        case .scheduled: return "Reserva de comida"
+        case .now:
+            return "Pedido inmediato"
+        case .scheduled:
+            return "Reserva de comida"
         }
     }
 }
@@ -45,6 +49,12 @@ struct Order: Identifiable, Hashable, Codable {
     let revision: Int
     let lastConfirmedRevision: Int?
 
+    let readyForPaymentAt: Date?
+    let paidAt: Date?
+    let paymentMethod: String?
+    let paymentReference: String?
+    let paidByAdminId: String?
+
     init(
         id: String,
         userId: String,
@@ -63,7 +73,12 @@ struct Order: Identifiable, Hashable, Codable {
         totalAmount: Double,
         status: OrderStatus,
         revision: Int,
-        lastConfirmedRevision: Int?
+        lastConfirmedRevision: Int?,
+        readyForPaymentAt: Date? = nil,
+        paidAt: Date? = nil,
+        paymentMethod: String? = nil,
+        paymentReference: String? = nil,
+        paidByAdminId: String? = nil
     ) {
         let resolvedScheduledAt = scheduledAt ?? createdAt
         let resolvedMode = serviceMode ?? OrderScheduleResolver.mode(
@@ -72,123 +87,69 @@ struct Order: Identifiable, Hashable, Codable {
         )
 
         let cleanUserId = userId.trimmingCharacters(in: .whitespacesAndNewlines)
+        let cleanClientName = clientName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let cleanTableNumber = tableNumber.trimmingCharacters(in: .whitespacesAndNewlines)
         let cleanWhatsApp = whatsappNumber.trimmingCharacters(in: .whitespacesAndNewlines)
 
-        self.id = id
+        self.id = id.trimmingCharacters(in: .whitespacesAndNewlines)
         self.userId = cleanUserId
-        self.clientName = clientName.trimmingCharacters(in: .whitespacesAndNewlines)
-        self.tableNumber = tableNumber.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.clientName = cleanClientName.isEmpty ? "Cliente" : cleanClientName
+        self.tableNumber = cleanTableNumber
         self.whatsappNumber = resolvedMode == .scheduled ? cleanWhatsApp : ""
         self.createdAt = createdAt
         self.updatedAt = updatedAt
         self.scheduledAt = resolvedScheduledAt
         self.scheduledDayKey = scheduledDayKey ?? OrderScheduleResolver.dayKey(from: resolvedScheduledAt)
         self.serviceMode = resolvedMode
-        self.items = items
-        self.subtotal = max(0, subtotal)
-        self.loyaltyDiscountAmount = max(0, loyaltyDiscountAmount)
+        self.items = Order.normalizedItemLines(items)
+        self.subtotal = max(0, subtotal).roundedMoney
+        self.loyaltyDiscountAmount = max(0, loyaltyDiscountAmount).roundedMoney
         self.appliedRewards = appliedRewards
-        self.totalAmount = max(0, totalAmount)
+        self.totalAmount = max(0, totalAmount).roundedMoney
         self.status = status
-        self.revision = revision
+        self.revision = max(0, revision)
         self.lastConfirmedRevision = lastConfirmedRevision
-    }
-
-    func withClientId(_ uid: String) -> Order {
-        Order(
-            id: id,
-            userId: uid,
-            clientName: clientName,
-            tableNumber: tableNumber,
-            whatsappNumber: whatsappNumber,
-            createdAt: createdAt,
-            updatedAt: updatedAt,
-            scheduledAt: scheduledAt,
-            scheduledDayKey: scheduledDayKey,
-            serviceMode: serviceMode,
-            items: items,
-            subtotal: subtotal,
-            loyaltyDiscountAmount: loyaltyDiscountAmount,
-            appliedRewards: appliedRewards,
-            totalAmount: totalAmount,
-            status: status,
-            revision: revision,
-            lastConfirmedRevision: lastConfirmedRevision
-        )
-    }
-
-    func withTrustedPricing(
-        items trustedItems: [OrderItem],
-        appliedRewards: [AppliedReward],
-        discount: Double
-    ) -> Order {
-        let trustedSubtotal = trustedItems.reduce(0) { $0 + $1.totalPrice }.roundedMoney
-        let safeDiscount = min(max(0, discount), trustedSubtotal).roundedMoney
-
-        return Order(
-            id: id,
-            userId: userId,
-            clientName: clientName,
-            tableNumber: tableNumber,
-            whatsappNumber: whatsappNumber,
-            createdAt: createdAt,
-            updatedAt: Date(),
-            scheduledAt: scheduledAt,
-            scheduledDayKey: scheduledDayKey,
-            serviceMode: serviceMode,
-            items: trustedItems,
-            subtotal: trustedSubtotal,
-            loyaltyDiscountAmount: safeDiscount,
-            appliedRewards: appliedRewards,
-            totalAmount: max(0, trustedSubtotal - safeDiscount).roundedMoney,
-            status: status,
-            revision: revision,
-            lastConfirmedRevision: lastConfirmedRevision
-        )
-    }
-
-    func withLoyalty(
-        appliedRewards: [AppliedReward],
-        discount: Double
-    ) -> Order {
-        let safeDiscount = min(max(0, discount), subtotal).roundedMoney
-
-        return Order(
-            id: id,
-            userId: userId,
-            clientName: clientName,
-            tableNumber: tableNumber,
-            whatsappNumber: whatsappNumber,
-            createdAt: createdAt,
-            updatedAt: updatedAt,
-            scheduledAt: scheduledAt,
-            scheduledDayKey: scheduledDayKey,
-            serviceMode: serviceMode,
-            items: items,
-            subtotal: subtotal,
-            loyaltyDiscountAmount: safeDiscount,
-            appliedRewards: appliedRewards,
-            totalAmount: max(0, subtotal - safeDiscount).roundedMoney,
-            status: status,
-            revision: revision,
-            lastConfirmedRevision: lastConfirmedRevision
-        )
+        self.readyForPaymentAt = readyForPaymentAt
+        self.paidAt = paidAt
+        self.paymentMethod = paymentMethod?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfBlank
+        self.paymentReference = paymentReference?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfBlank
+        self.paidByAdminId = paidByAdminId?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfBlank
     }
 
     var totalItems: Int {
         items.reduce(0) { $0 + $1.quantity }
     }
 
-    var preparedItemsCount: Int {
-        items.reduce(0) { $0 + $1.preparedQuantity }
+    var activeItems: [OrderItem] {
+        items.filter { $0.status != .canceled }
     }
 
-    var allItemsCompleted: Bool {
-        !items.isEmpty && items.allSatisfy(\.isCompleted)
+    var canceledItems: [OrderItem] {
+        items.filter { $0.status == .canceled }
     }
 
-    var hasStartedPreparing: Bool {
-        items.contains(where: \.isStarted)
+    var readyForDeliveryItems: [OrderItem] {
+        activeItems
+            .filter { $0.status == .readyForDelivery }
+            .sorted { ($0.readyForDeliveryAt ?? $0.createdAt) < ($1.readyForDeliveryAt ?? $1.createdAt) }
+    }
+
+    var deliveredItems: [OrderItem] {
+        activeItems.filter { $0.status == .delivered }
+    }
+
+    var pendingOrPreparingItems: [OrderItem] {
+        activeItems.filter { item in
+            item.status == .pending || item.status == .preparing
+        }
+    }
+
+    var hasReadyForDeliveryItems: Bool {
+        !readyForDeliveryItems.isEmpty
+    }
+
+    var hasLoyaltyRewards: Bool {
+        !appliedRewards.isEmpty || loyaltyDiscountAmount > 0
     }
 
     var requiresReconfirmation: Bool {
@@ -201,19 +162,12 @@ struct Order: Identifiable, Hashable, Codable {
     }
 
     var isScheduledForLater: Bool {
-        serviceMode == .scheduled || scheduledAt.timeIntervalSince(createdAt) > OrderScheduleResolver.laterThreshold
-    }
-
-    var isScheduledForToday: Bool {
-        Calendar.current.isDateInToday(scheduledAt)
+        serviceMode == .scheduled ||
+        scheduledAt.timeIntervalSince(createdAt) > OrderScheduleResolver.laterThreshold
     }
 
     var shouldConsumeCurrentMenuStock: Bool {
-        !isScheduledForLater || Calendar.current.isDate(scheduledAt, inSameDayAs: Date())
-    }
-
-    var scheduleTitle: String {
-        isScheduledForLater ? "Reserva para" : "Preparar ahora"
+        !isScheduledForLater
     }
 
     var scheduledDateText: String {
@@ -226,13 +180,238 @@ struct Order: Identifiable, Hashable, Codable {
             : whatsappNumber
     }
 
+    var newestReadyForDeliveryAt: Date? {
+        readyForDeliveryItems.compactMap(\.readyForDeliveryAt).max()
+    }
+
+    var operationalReferenceDate: Date {
+        newestReadyForDeliveryAt ?? readyForPaymentAt ?? updatedAt
+    }
+
+    func withUserId(_ uid: String) -> Order {
+        replacing(userId: uid)
+    }
+
+    /// Compatibility helper for older call sites that used `clientId` wording.
+    /// The stored value is still the Firebase Auth UID.
+    func withClientId(_ uid: String) -> Order {
+        withUserId(uid)
+    }
+
+    func withTrustedPricing(
+        items trustedItems: [OrderItem],
+        appliedRewards: [AppliedReward],
+        discount: Double
+    ) -> Order {
+        let normalizedItems = Order.normalizedItemLines(trustedItems)
+        let trustedSubtotal = normalizedItems.reduce(0) { $0 + $1.totalPrice }.roundedMoney
+        let safeDiscount = min(max(0, discount), trustedSubtotal).roundedMoney
+
+        return replacing(
+            updatedAt: Date(),
+            items: normalizedItems,
+            subtotal: trustedSubtotal,
+            loyaltyDiscountAmount: safeDiscount,
+            appliedRewards: appliedRewards,
+            totalAmount: max(0, trustedSubtotal - safeDiscount).roundedMoney
+        )
+    }
+
+    func withLoyalty(
+        appliedRewards: [AppliedReward],
+        discount: Double
+    ) -> Order {
+        let safeDiscount = min(max(0, discount), subtotal).roundedMoney
+
+        return replacing(
+            updatedAt: Date(),
+            loyaltyDiscountAmount: safeDiscount,
+            appliedRewards: appliedRewards,
+            totalAmount: max(0, subtotal - safeDiscount).roundedMoney
+        )
+    }
+
+    /// Shared domain status calculation. Use this everywhere.
     func recalculatedStatus() -> OrderStatus {
+        if status == .paid { return .paid }
         if status == .canceled { return .canceled }
-        if requiresReconfirmation { return .pending }
-        if allItemsCompleted { return .completed }
-        if hasStartedPreparing { return .preparing }
-        if status == .confirmed { return .confirmed }
-        return .pending
+        if status == .pending { return .pending }
+
+        let activeItems = items.filter { $0.status != .canceled }
+
+        guard !activeItems.isEmpty else {
+            return status
+        }
+
+        if activeItems.allSatisfy({ $0.status == .delivered }) {
+            return .readyForPayment
+        }
+
+        if activeItems.contains(where: {
+            $0.status == .preparing ||
+            $0.status == .readyForDelivery ||
+            $0.status == .delivered
+        }) {
+            return .preparing
+        }
+
+        return .confirmed
+    }
+
+    func confirming(now: Date = Date()) -> Order {
+        guard status == .pending else {
+            return replacing(updatedAt: now, status: recalculatedStatus())
+        }
+
+        return replacing(
+            updatedAt: now,
+            status: .confirmed,
+            lastConfirmedRevision: revision
+        )
+    }
+
+    func canceling(reason: String? = nil, now: Date = Date()) -> Order {
+        let canceledItems = items.map { item in
+            item.status == .canceled
+                ? item
+                : item.updatingStatus(.canceled, now: now, reason: reason)
+        }
+
+        return replacing(
+            updatedAt: now,
+            items: canceledItems,
+            status: .canceled
+        )
+    }
+
+    func markingPaid(
+        paymentMethod: String?,
+        paymentReference: String?,
+        paidByAdminId: String?,
+        now: Date = Date()
+    ) -> Order {
+        replacing(
+            updatedAt: now,
+            status: .paid,
+            paidAt: now,
+            paymentMethod: paymentMethod,
+            paymentReference: paymentReference,
+            paidByAdminId: paidByAdminId
+        )
+    }
+
+    func updatingItem(
+        itemId: UUID,
+        transform: (OrderItem) -> OrderItem,
+        now: Date = Date()
+    ) -> Order {
+        let updatedItems = items.map { item in
+            item.id == itemId ? transform(item) : item
+        }
+
+        var updated = replacing(
+            updatedAt: now,
+            items: updatedItems
+        )
+
+        let newStatus = updated.recalculatedStatus()
+        let readyAt = updated.readyForPaymentAt ?? (newStatus == .readyForPayment ? now : nil)
+
+        updated = updated.replacing(
+            status: newStatus,
+            readyForPaymentAt: readyAt
+        )
+
+        return updated
+    }
+
+    func updatingItems(
+        _ newItems: [OrderItem],
+        subtotal: Double,
+        totalAmount: Double,
+        now: Date = Date()
+    ) -> Order {
+        let normalizedItems = Order.normalizedItemLines(newItems)
+        var updated = replacing(
+            updatedAt: now,
+            items: normalizedItems,
+            subtotal: subtotal,
+            totalAmount: totalAmount,
+            revision: revision + 1
+        )
+
+        let nextStatus = updated.status == .pending ? .pending : updated.recalculatedStatus()
+        updated = updated.replacing(status: nextStatus)
+        return updated
+    }
+
+    func replacing(
+        id: String? = nil,
+        userId: String? = nil,
+        clientName: String? = nil,
+        tableNumber: String? = nil,
+        whatsappNumber: String? = nil,
+        createdAt: Date? = nil,
+        updatedAt: Date? = nil,
+        scheduledAt: Date? = nil,
+        scheduledDayKey: String? = nil,
+        serviceMode: OrderServiceMode? = nil,
+        items: [OrderItem]? = nil,
+        subtotal: Double? = nil,
+        loyaltyDiscountAmount: Double? = nil,
+        appliedRewards: [AppliedReward]? = nil,
+        totalAmount: Double? = nil,
+        status: OrderStatus? = nil,
+        revision: Int? = nil,
+        lastConfirmedRevision: Int? = nil,
+        readyForPaymentAt: Date? = nil,
+        paidAt: Date? = nil,
+        paymentMethod: String? = nil,
+        paymentReference: String? = nil,
+        paidByAdminId: String? = nil
+    ) -> Order {
+        Order(
+            id: id ?? self.id,
+            userId: userId ?? self.userId,
+            clientName: clientName ?? self.clientName,
+            tableNumber: tableNumber ?? self.tableNumber,
+            whatsappNumber: whatsappNumber ?? self.whatsappNumber,
+            createdAt: createdAt ?? self.createdAt,
+            updatedAt: updatedAt ?? self.updatedAt,
+            scheduledAt: scheduledAt ?? self.scheduledAt,
+            scheduledDayKey: scheduledDayKey ?? self.scheduledDayKey,
+            serviceMode: serviceMode ?? self.serviceMode,
+            items: items ?? self.items,
+            subtotal: subtotal ?? self.subtotal,
+            loyaltyDiscountAmount: loyaltyDiscountAmount ?? self.loyaltyDiscountAmount,
+            appliedRewards: appliedRewards ?? self.appliedRewards,
+            totalAmount: totalAmount ?? self.totalAmount,
+            status: status ?? self.status,
+            revision: revision ?? self.revision,
+            lastConfirmedRevision: lastConfirmedRevision ?? self.lastConfirmedRevision,
+            readyForPaymentAt: readyForPaymentAt ?? self.readyForPaymentAt,
+            paidAt: paidAt ?? self.paidAt,
+            paymentMethod: paymentMethod ?? self.paymentMethod,
+            paymentReference: paymentReference ?? self.paymentReference,
+            paidByAdminId: paidByAdminId ?? self.paidByAdminId
+        )
+    }
+
+    private static func normalizedItemLines(_ source: [OrderItem]) -> [OrderItem] {
+        source.flatMap { item in
+            guard item.quantity > 1 else { return [item] }
+
+            return OrderItem.normalizedUnits(
+                sourceCartItemId: item.sourceCartItemId,
+                menuItemId: item.menuItemId,
+                name: item.name,
+                itemDescription: item.itemDescription,
+                unitPrice: item.unitPrice,
+                quantity: item.quantity,
+                notes: item.notes,
+                createdAt: item.createdAt
+            )
+        }
     }
 }
 
@@ -260,6 +439,15 @@ enum OrderScheduleResolver {
         formatter.dateStyle = .medium
         formatter.timeStyle = .short
         return formatter.string(from: date)
+    }
+}
+
+private extension Optional where Wrapped == String {
+    var nilIfBlank: String? {
+        guard let value = self?.trimmingCharacters(in: .whitespacesAndNewlines), !value.isEmpty else {
+            return nil
+        }
+        return value
     }
 }
 

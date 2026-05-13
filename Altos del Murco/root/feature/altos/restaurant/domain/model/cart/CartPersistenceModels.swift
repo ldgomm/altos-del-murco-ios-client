@@ -102,11 +102,3 @@ final class CartItemEntity {
         self.draft = draft
     }
 }
-
-private extension String {
-    var nilIfBlank: String? {
-        let clean = trimmingCharacters(in: .whitespacesAndNewlines)
-        return clean.isEmpty ? nil : clean
-    }
-}
- 
