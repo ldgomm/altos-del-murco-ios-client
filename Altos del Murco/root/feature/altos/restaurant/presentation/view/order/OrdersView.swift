@@ -261,7 +261,11 @@ struct OrdersView: View {
             viewModel.onEvent(.refresh)
         }
         .navigationDestination(item: $selectedOrder) { order in
-            OrderDetailView(order: order)
+            LiveOrderDetailView(
+                    orderId: order.id,
+                    fallbackOrder: order,
+                    ordersViewModel: viewModel
+                )
         }
     }
 

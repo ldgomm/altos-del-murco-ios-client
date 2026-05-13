@@ -23,7 +23,7 @@ struct OrderDetailView: View {
     private var activeItems: [OrderItem] {
         order.items.filter { $0.status != .canceled }
     }
-
+    
     private var deliveredItems: [OrderItem] {
         activeItems.filter { $0.status == .delivered }
     }

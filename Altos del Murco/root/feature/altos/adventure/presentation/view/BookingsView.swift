@@ -464,8 +464,11 @@ struct BookingsView: View {
             .navigationDestination(item: $selectedReservation) { reservation in
                 switch reservation {
                 case .restaurant(let order):
-                    OrderDetailView(order: order)
-
+                    LiveOrderDetailView(
+                        orderId: order.id,
+                        fallbackOrder: order,
+                        ordersViewModel: ordersViewModel
+                    )
                 case .adventure(let booking):
                     ReserveViewDetail(
                         booking: booking,
